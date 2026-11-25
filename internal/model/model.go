@@ -93,6 +93,49 @@ type SiteSpec struct {
 	Hostnames []HostMatch `json:"hostnames,omitempty"`
 	// Route IDs in display order. Matching priority does not depend on it.
 	Routes []string `json:"routes,omitempty"`
+	// Server-level rewrites, run before a route is chosen.
+	Rewrite []Rewrite `json:"rewrite,omitempty"`
+	// Server-level return, after Rewrite.
+	Return *ReturnAction `json:"return,omitempty"`
+	// Inherited by routes that set none of their own, as in nginx.
+	ErrorPages []ErrorPage `json:"errorPages,omitempty"`
+}
+
+// Template strings (Rewrite.Replacement, ReturnAction.Text, TryFiles.Files,
+// TryFiles.URI, ErrorPage.URI) use nginx variables: $uri, $args, $host, $1
+// and so on. The proxy rejects unknown variables when it loads the snapshot.
+
+type RewriteFlag string
+
+const (
+	// No flag: continue with the next rewrite.
+	RewriteNext      RewriteFlag = ""
+	RewriteLast      RewriteFlag = "last"
+	RewriteBreak     RewriteFlag = "break"
+	RewriteRedirect  RewriteFlag = "redirect"
+	RewritePermanent RewriteFlag = "permanent"
+)
+
+// Rewrite is nginx rewrite.
+type Rewrite struct {
+	// PCRE2 pattern matched against the path.
+	Regex       string      `json:"regex"`
+	Replacement string      `json:"replacement"`
+	Flag        RewriteFlag `json:"flag,omitempty"`
+}
+
+// ErrorPage is nginx error_page. Exactly one of URI and Route is set.
+type ErrorPage struct {
+	Codes []uint32 `json:"codes"`
+	// Path for an internal redirect, or an absolute http(s) URL for a
+	// redirect.
+	URI string `json:"uri,omitempty"`
+	// Route ID handling the error like an nginx named location (@name); its
+	// path match is not used.
+	Route string `json:"route,omitempty"`
+	// Nil keeps the original code, 0 takes the redirected request's status
+	// (nginx "error_page 404 = /x"), anything else replaces the code.
+	Status *uint32 `json:"status,omitempty"`
 }
 
 type HostMatchType string
@@ -119,8 +162,14 @@ type Route struct {
 }
 
 type RouteSpec struct {
-	Match  Match  `json:"match"`
-	Action Action `json:"action"`
+	Match   Match     `json:"match"`
+	Rewrite []Rewrite `json:"rewrite,omitempty"`
+	Action  Action    `json:"action"`
+	// Nested route IDs (nginx location inside a prefix location). Their paths
+	// must lie inside this route's prefix.
+	Children []string `json:"children,omitempty"`
+	// Empty inherits the parent route's, then the site's.
+	ErrorPages []ErrorPage `json:"errorPages,omitempty"`
 }
 
 type Match struct {
@@ -152,6 +201,7 @@ type ActionType string
 const (
 	ActionStatic ActionType = "static"
 	ActionProxy  ActionType = "proxy"
+	ActionReturn ActionType = "return"
 )
 
 // Action carries the settings for Type and nothing else.
@@ -159,12 +209,35 @@ type Action struct {
 	Type   ActionType    `json:"type"`
 	Static *StaticAction `json:"static,omitempty"`
 	Proxy  *ProxyAction  `json:"proxy,omitempty"`
+	Return *ReturnAction `json:"return,omitempty"`
 }
 
 type StaticAction struct {
 	// Absolute directory path.
-	Root  string   `json:"root"`
-	Index []string `json:"index,omitempty"`
+	Root     string    `json:"root"`
+	Index    []string  `json:"index,omitempty"`
+	TryFiles *TryFiles `json:"tryFiles,omitempty"`
+}
+
+// TryFiles is nginx try_files. Exactly one of URI, Status and Route is the
+// fallback.
+type TryFiles struct {
+	// Paths under Root; a trailing "/" matches a directory.
+	Files []string `json:"files"`
+	// Internal redirect, for example "/index.html".
+	URI string `json:"uri,omitempty"`
+	// Answer with this code, nginx "=404".
+	Status uint32 `json:"status,omitempty"`
+	// Route ID, like an nginx named location (@name).
+	Route string `json:"route,omitempty"`
+}
+
+// ReturnAction is nginx return.
+type ReturnAction struct {
+	// 0-999. 444 closes the connection without a response.
+	Status uint32 `json:"status"`
+	// Location for 301, 302, 303, 307 and 308, otherwise the body.
+	Text string `json:"text,omitempty"`
 }
 
 type ProxyAction struct {

@@ -18,7 +18,10 @@ serving its last good snapshot when the control plane is unavailable.
 
 Early development. The control plane stores Listener, Site, Route and Upstream
 resources in SQLite, serves them over a REST API, compiles them into snapshots
-and pushes every applied snapshot to connected proxies.
+and pushes every applied snapshot to connected proxies. Routes cover the nginx
+location kinds (exact, prefix, `^~`, `~`, `~*`) and nesting, rewrite, return,
+error_page and try_files; error pages and try_files can hand off to another
+route like an nginx named location.
 
 Run both processes together (development, home lab):
 
