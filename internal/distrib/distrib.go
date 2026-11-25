@@ -51,14 +51,25 @@ type Distributor struct {
 	log *slog.Logger
 
 	mu     sync.Mutex
-	latest *snapshotv1.Snapshot
-	nodes  map[string]*node
+	latest *published
+	// challenges is the ACME challenge set; version counts replacements.
+	challenges *distribv1.Challenges
+	chVersion  uint64
+	nodes      map[string]*node
+}
+
+// published is a snapshot as sent: the exact bytes the hash covers.
+type published struct {
+	revision uint64
+	data     []byte
 }
 
 type node struct {
 	status NodeStatus
 	// wake has room for one signal: a newer snapshot may be available.
 	wake chan struct{}
+	// Challenge set version last sent on this connection.
+	sentChallenges uint64
 	// replaced is closed when a newer connection takes over the node ID.
 	replaced chan struct{}
 }
@@ -76,17 +87,30 @@ func (d *Distributor) Publish(b []byte) error {
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if d.latest != nil && d.latest.GetRevision() >= snap.GetRevision() {
+	if d.latest != nil && d.latest.revision >= snap.GetRevision() {
 		return nil
 	}
-	d.latest = snap
+	d.latest = &published{revision: snap.GetRevision(), data: slices.Clone(b)}
+	d.wakeAll()
+	return nil
+}
+
+// SetChallenges replaces the ACME challenges every proxy answers.
+func (d *Distributor) SetChallenges(c *distribv1.Challenges) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.challenges = c
+	d.chVersion++
+	d.wakeAll()
+}
+
+func (d *Distributor) wakeAll() {
 	for _, n := range d.nodes {
 		select {
 		case n.wake <- struct{}{}:
 		default:
 		}
 	}
-	return nil
 }
 
 // Nodes returns the connected proxies ordered by node ID.
@@ -177,20 +201,39 @@ func (d *Distributor) sendLoop(ctx context.Context, stream distribv1.Distributio
 	for {
 		d.mu.Lock()
 		snap := d.latest
-		if snap != nil && snap.GetRevision() == n.status.SentRevision {
+		if snap != nil && snap.revision == n.status.SentRevision {
 			snap = nil
+		}
+		var ch *distribv1.Challenges
+		chVersion := d.chVersion
+		if chVersion != n.sentChallenges {
+			ch = d.challenges
+			if ch == nil {
+				ch = &distribv1.Challenges{}
+			}
 		}
 		d.mu.Unlock()
 
-		if snap != nil {
-			resp := &distribv1.SyncResponse{Kind: &distribv1.SyncResponse_Snapshot{Snapshot: snap}}
+		// Challenges go first: a snapshot may add a site whose certificate
+		// is being issued.
+		if ch != nil {
+			resp := &distribv1.SyncResponse{Kind: &distribv1.SyncResponse_Challenges{Challenges: ch}}
 			if err := stream.Send(resp); err != nil {
 				return err
 			}
 			d.mu.Lock()
-			n.status.SentRevision = snap.GetRevision()
+			n.sentChallenges = chVersion
 			d.mu.Unlock()
-			d.log.Info("snapshot sent", "node", n.status.NodeID, "revision", snap.GetRevision())
+		}
+		if snap != nil {
+			resp := &distribv1.SyncResponse{Kind: &distribv1.SyncResponse_SnapshotData{SnapshotData: snap.data}}
+			if err := stream.Send(resp); err != nil {
+				return err
+			}
+			d.mu.Lock()
+			n.status.SentRevision = snap.revision
+			d.mu.Unlock()
+			d.log.Info("snapshot sent", "node", n.status.NodeID, "revision", snap.revision)
 		}
 
 		select {

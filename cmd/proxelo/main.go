@@ -17,6 +17,7 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
+	"github.com/null-variable/proxelo/internal/acme"
 	"github.com/null-variable/proxelo/internal/api"
 	"github.com/null-variable/proxelo/internal/compile"
 	"github.com/null-variable/proxelo/internal/distrib"
@@ -77,6 +78,8 @@ func control(args []string) error {
 	listen := fs.String("listen", envOr("PROXELO_ADMIN_LISTEN", "127.0.0.1:9443"), "admin API address (env PROXELO_ADMIN_LISTEN)")
 	socket := fs.String("socket", envOr("PROXELO_CONTROL_SOCKET", "/run/proxelo/control.sock"), "Unix socket proxies connect to (env PROXELO_CONTROL_SOCKET)")
 	proxyBin := fs.String("proxy", envOr("PROXELO_PROXY", ""), "proxelo-proxy binary for dry-loads and simulation (env PROXELO_PROXY; default: next to this binary, then $PATH)")
+	acmeDir := fs.String("acme-directory", envOr("PROXELO_ACME_DIRECTORY", acme.LetsEncrypt), "ACME directory URL (env PROXELO_ACME_DIRECTORY)")
+	acmeEmail := fs.String("acme-email", envOr("PROXELO_ACME_EMAIL", ""), "ACME account contact email (env PROXELO_ACME_EMAIL)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -115,6 +118,29 @@ func control(args []string) error {
 		}
 	}
 
+	certs := acme.New(acme.Config{
+		Directory: *acmeDir,
+		Email:     *acmeEmail,
+		// A renewed certificate replaces only itself in the latest applied
+		// revision; edits not applied yet stay unapplied.
+		Apply: func(ctx context.Context, c *model.Certificate) error {
+			rev, err := st.ApplyChange(ctx, "certificate "+c.ID+" issued", sim.DryLoad, func(cfg *model.Config) {
+				for i, old := range cfg.Certificates {
+					if old.ID == c.ID {
+						cfg.Certificates[i] = c
+					}
+				}
+			})
+			if errors.Is(err, store.ErrNotFound) {
+				return nil // nothing applied yet; the next apply includes it
+			}
+			if err != nil {
+				return err
+			}
+			return dist.Publish(rev.Snapshot)
+		},
+	}, st, dist, log)
+
 	ln, err := distrib.Listen(*socket)
 	if err != nil {
 		return fmt.Errorf("control socket: %w", err)
@@ -122,11 +148,12 @@ func control(args []string) error {
 	grpcSrv := distrib.NewServer(dist)
 	srv := &http.Server{
 		Addr:              *listen,
-		Handler:           api.Handler(st, dist, sim, log),
+		Handler:           api.Handler(st, dist, sim, certs.Kick, log),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	go certs.Run(ctx)
 	errc := make(chan error, 2)
 	go func() { errc <- fmt.Errorf("control socket: %w", grpcSrv.Serve(ln)) }()
 	go func() { errc <- srv.ListenAndServe() }()

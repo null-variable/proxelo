@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	snapshotv1 "github.com/null-variable/proxelo-api/gen/go/proxelo/snapshot/v1"
 	"google.golang.org/protobuf/proto"
@@ -97,18 +98,50 @@ func (c *compiler) compile(cfg model.Config, revision uint64) *snapshotv1.Snapsh
 	sites := newIndex(c, "sites", cfg.Sites)
 	routes := newIndex(c, "routes", cfg.Routes)
 	upstreams := newIndex(c, "upstreams", cfg.Upstreams)
+	certs := newIndex(c, "certificates", cfg.Certificates)
+	policies := newIndex(c, "policies", cfg.Policies)
 
 	snap := &snapshotv1.Snapshot{Revision: revision}
 
+	// Certificates not issued yet (ACME) have no chain and are left out;
+	// references to them are dropped until they are.
+	certPos := map[string]uint32{}
+	for _, ct := range certs.items {
+		if ct.Spec.ChainPEM == "" || ct.Spec.KeyPEM == "" {
+			continue
+		}
+		certPos[ct.ID] = uint32(len(snap.Certificates))
+		snap.Certificates = append(snap.Certificates, &snapshotv1.Certificate{
+			Id: ct.ID, ChainPem: ct.Spec.ChainPEM, KeyPem: ct.Spec.KeyPEM,
+		})
+	}
+	cert := func(path, id string) (uint32, bool) {
+		if _, ok := certs.resolve(c, path, "certificate", id); !ok {
+			return 0, false
+		}
+		i, ok := certPos[id]
+		return i, ok
+	}
+
 	for _, l := range listeners.items {
-		out := &snapshotv1.Listener{Id: l.ID, Address: l.Spec.Address, ReusePort: l.Spec.ReusePort, Backlog: l.Spec.Backlog}
+		base := fmt.Sprintf("listeners[%s].spec", l.ID)
+		out := &snapshotv1.Listener{Id: l.ID, Address: l.Spec.Address, ReusePort: l.Spec.ReusePort, Backlog: l.Spec.Backlog, Http2: l.Spec.HTTP2}
 		if id := l.Spec.DefaultSite; id != "" {
-			if i, ok := sites.resolve(c, fmt.Sprintf("listeners[%s].spec.defaultSite", l.ID), "site", id); ok {
+			if i, ok := sites.resolve(c, base+".defaultSite", "site", id); ok {
 				out.DefaultSite = proto.Uint32(i)
+			}
+		}
+		if t := l.Spec.TLS; t != nil {
+			out.Tls = &snapshotv1.ListenerTls{MinVersion: tlsVersions[t.MinVersion], Ciphers: t.Ciphers}
+			if id := t.DefaultCertificate; id != "" {
+				if i, ok := cert(base+".tls.defaultCertificate", id); ok {
+					out.Tls.DefaultCertificate = proto.Uint32(i)
+				}
 			}
 		}
 		snap.Listeners = append(snap.Listeners, out)
 	}
+	logs := map[logKey]uint32{}
 
 	// Hostnames must be unique per listener, as nginx server_name selection
 	// would otherwise depend on declaration order.
@@ -144,35 +177,81 @@ func (c *compiler) compile(cfg model.Config, revision uint64) *snapshotv1.Snapsh
 				out.Hostnames = append(out.Hostnames, &snapshotv1.HostMatch{Kind: kind, Value: h.Value})
 			}
 		}
+		for i, id := range s.Spec.Certificates {
+			if ci, ok := cert(fmt.Sprintf("%s.certificates[%d]", base, i), id); ok {
+				out.Certificates = append(out.Certificates, ci)
+			}
+		}
+		out.RedirectHttps = s.Spec.RedirectHTTPToHTTPS
 		st := &site{
-			c: c, out: out, routes: routes, upstreams: upstreams,
+			c: c, out: out, routes: routes, upstreams: upstreams, policies: policies,
+			snap: snap, logs: logs,
 			named: map[string]uint32{}, placed: map[string]string{},
 		}
+		st.sitePolicies = st.resolvePolicies(base+".policies", s.Spec.Policies)
+		eff := st.effective(st.sitePolicies)
+		out.ResponseHeaders = eff.response
+		out.AccessLog = eff.log
 		out.Rewrites = st.rewrites(s.Spec.Rewrite)
 		if r := s.Spec.Return; r != nil {
 			out.Return = &snapshotv1.ReturnAction{Status: r.Status, Text: r.Text}
 		}
 		out.ErrorPages = st.errorPages(base+".errorPages", s.Spec.ErrorPages)
-		out.Routes = st.level(base+".routes", "", s.Spec.Routes, out.ErrorPages, nil)
+		out.Routes = st.level(base+".routes", "", s.Spec.Routes, out.ErrorPages, nil, st.sitePolicies)
 		snap.Sites = append(snap.Sites, out)
 	}
 
 	for _, u := range upstreams.items {
+		sp := u.Spec
 		out := &snapshotv1.Upstream{
-			Id:            u.ID,
-			Balancing:     snapshotv1.Upstream_BALANCING_ROUND_ROBIN,
-			KeepaliveIdle: u.Spec.Keepalive.Idle,
+			Id:                 u.ID,
+			Balancing:          snapshotv1.Upstream_BALANCING_ROUND_ROBIN,
+			KeepaliveIdle:      sp.Keepalive.Idle,
+			KeepaliveTimeoutMs: millis(sp.Keepalive.Timeout),
+			KeepaliveRequests:  sp.Keepalive.MaxRequests,
+			// nginx defaults: max_fails=1 fail_timeout=10s.
+			MaxFails:      1,
+			FailTimeoutMs: 10_000,
 		}
-		for _, t := range u.Spec.Targets {
+		if sp.Balancing.Algorithm == model.LeastConn {
+			out.Balancing = snapshotv1.Upstream_BALANCING_LEAST_CONN
+		}
+		if m := sp.PassiveHealth.MaxFails; m != nil {
+			out.MaxFails = *m
+		}
+		if v := millis(sp.PassiveHealth.FailTimeout); v != 0 {
+			out.FailTimeoutMs = v
+		}
+		for _, t := range sp.Targets {
 			w := t.Weight
 			if w == 0 {
 				w = 1
 			}
-			out.Targets = append(out.Targets, &snapshotv1.Target{Address: t.Address, Weight: w})
+			out.Targets = append(out.Targets, &snapshotv1.Target{Address: t.Address, Weight: w, Backup: t.Backup})
 		}
 		snap.Upstreams = append(snap.Upstreams, out)
 	}
 	return snap
+}
+
+var tlsVersions = map[string]snapshotv1.ListenerTls_Version{
+	"":    snapshotv1.ListenerTls_VERSION_UNSPECIFIED,
+	"1.0": snapshotv1.ListenerTls_VERSION_TLS1_0,
+	"1.1": snapshotv1.ListenerTls_VERSION_TLS1_1,
+	"1.2": snapshotv1.ListenerTls_VERSION_TLS1_2,
+	"1.3": snapshotv1.ListenerTls_VERSION_TLS1_3,
+}
+
+// millis converts a validated duration; empty is 0.
+func millis(d string) uint32 {
+	if d == "" {
+		return 0
+	}
+	v, err := time.ParseDuration(d)
+	if err != nil {
+		return 0 // reported by model.Validate
+	}
+	return uint32(v / time.Millisecond)
 }
 
 var hostKinds = map[model.HostMatchType]snapshotv1.HostMatch_Kind{
@@ -202,6 +281,11 @@ type site struct {
 	out       *snapshotv1.Site
 	routes    index[*model.Route]
 	upstreams index[*model.Upstream]
+	policies  index[*model.Policy]
+	snap      *snapshotv1.Snapshot
+	logs      map[logKey]uint32
+	// The site's own policies, which every route starts from.
+	sitePolicies []*model.Policy
 	// Route ID to index in out.NamedRoutes.
 	named map[string]uint32
 	// Route ID to the path of the reference that placed it in the tree.
@@ -211,7 +295,7 @@ type site struct {
 // level compiles sibling routes. parent is the prefix of the enclosing route,
 // or "" at the top level. inherited are the error pages of the enclosing
 // route or site. ancestors guards against cycles.
-func (st *site) level(path, parent string, ids []string, inherited []*snapshotv1.ErrorPage, ancestors []string) []*snapshotv1.Route {
+func (st *site) level(path, parent string, ids []string, inherited []*snapshotv1.ErrorPage, ancestors []string, pols []*model.Policy) []*snapshotv1.Route {
 	c := st.c
 	var out []*snapshotv1.Route
 	paths := map[pathKey]string{}
@@ -255,7 +339,8 @@ func (st *site) level(path, parent string, ids []string, inherited []*snapshotv1
 				c.add(ref, "route %q path %q is outside its parent prefix %q", id, m.Value, parent)
 			}
 		}
-		route := st.route(r)
+		own := routePolicies(pols, st.resolvePolicies(fmt.Sprintf("routes[%s].spec.policies", id), r.Spec.Policies), r.Spec.InheritPolicies)
+		route := st.route(r, own)
 		if route == nil {
 			continue
 		}
@@ -264,7 +349,7 @@ func (st *site) level(path, parent string, ids []string, inherited []*snapshotv1
 		}
 		if len(r.Spec.Children) > 0 {
 			route.Children = st.level(fmt.Sprintf("routes[%s].spec.children", id), m.Value,
-				r.Spec.Children, route.ErrorPages, append(ancestors, id))
+				r.Spec.Children, route.ErrorPages, append(ancestors, id), own)
 		}
 		out = append(out, route)
 	}
@@ -286,7 +371,11 @@ func (st *site) namedRoute(path, id string) (uint32, bool) {
 	// Reserve the slot first: the route may refer to itself or to other
 	// named routes.
 	st.out.NamedRoutes = append(st.out.NamedRoutes, nil)
-	route := st.route(st.routes.items[ri])
+	nr := st.routes.items[ri]
+	// A named route is reached from the site, so it starts from the site's
+	// policies.
+	route := st.route(nr, routePolicies(st.sitePolicies,
+		st.resolvePolicies(fmt.Sprintf("routes[%s].spec.policies", id), nr.Spec.Policies), nr.Spec.InheritPolicies))
 	if route == nil {
 		// Keep indexes valid; the compile fails anyway.
 		route = &snapshotv1.Route{}
@@ -334,8 +423,9 @@ func (st *site) errorPages(path string, eps []model.ErrorPage) []*snapshotv1.Err
 	return out
 }
 
-// route compiles r without its children.
-func (st *site) route(r *model.Route) *snapshotv1.Route {
+// route compiles r without its children. pols are the policies that apply to
+// it, outermost first.
+func (st *site) route(r *model.Route, pols []*model.Policy) *snapshotv1.Route {
 	c := st.c
 	m := r.Spec.Match
 	out := &snapshotv1.Route{
@@ -353,6 +443,8 @@ func (st *site) route(r *model.Route) *snapshotv1.Route {
 	out.Path.Kind = kind
 	out.Rewrites = st.rewrites(r.Spec.Rewrite)
 	out.ErrorPages = st.errorPages(fmt.Sprintf("routes[%s].spec.errorPages", r.ID), r.Spec.ErrorPages)
+	eff := st.effective(pols)
+	out.ResponseHeaders, out.RequestHeaders, out.AccessLog = eff.response, eff.request, eff.log
 
 	a := r.Spec.Action
 	switch {
@@ -385,11 +477,39 @@ func (st *site) route(r *model.Route) *snapshotv1.Route {
 		if !ok {
 			return nil
 		}
-		out.Action = &snapshotv1.Action{Kind: &snapshotv1.Action_Proxy{Proxy: &snapshotv1.ProxyAction{Upstream: ui}}}
+		pa := &snapshotv1.ProxyAction{
+			Upstream:         ui,
+			ConnectTimeoutMs: millis(a.Proxy.Timeouts.Connect),
+			SendTimeoutMs:    millis(a.Proxy.Timeouts.Send),
+			ReadTimeoutMs:    millis(a.Proxy.Timeouts.Read),
+		}
+		if rt := a.Proxy.Retry; rt != nil {
+			pa.NextUpstreamTries = rt.Tries
+			if len(rt.On) == 0 {
+				pa.NextUpstream = []snapshotv1.NextUpstream{snapshotv1.NextUpstream_NEXT_UPSTREAM_OFF}
+			}
+			for _, on := range rt.On {
+				pa.NextUpstream = append(pa.NextUpstream, nextUpstream[on])
+			}
+		}
+		out.Action = &snapshotv1.Action{Kind: &snapshotv1.Action_Proxy{Proxy: pa}}
 	default:
 		return nil // reported by model.Validate
 	}
 	return out
+}
+
+var nextUpstream = map[string]snapshotv1.NextUpstream{
+	"error":          snapshotv1.NextUpstream_NEXT_UPSTREAM_ERROR,
+	"timeout":        snapshotv1.NextUpstream_NEXT_UPSTREAM_TIMEOUT,
+	"http_500":       snapshotv1.NextUpstream_NEXT_UPSTREAM_HTTP_500,
+	"http_502":       snapshotv1.NextUpstream_NEXT_UPSTREAM_HTTP_502,
+	"http_503":       snapshotv1.NextUpstream_NEXT_UPSTREAM_HTTP_503,
+	"http_504":       snapshotv1.NextUpstream_NEXT_UPSTREAM_HTTP_504,
+	"http_403":       snapshotv1.NextUpstream_NEXT_UPSTREAM_HTTP_403,
+	"http_404":       snapshotv1.NextUpstream_NEXT_UPSTREAM_HTTP_404,
+	"http_429":       snapshotv1.NextUpstream_NEXT_UPSTREAM_HTTP_429,
+	"non_idempotent": snapshotv1.NextUpstream_NEXT_UPSTREAM_NON_IDEMPOTENT,
 }
 
 var matchOps = map[model.MatchOp]snapshotv1.ValueMatch_Op{

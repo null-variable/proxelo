@@ -4,7 +4,8 @@ go 1.26.0
 
 require (
 	cel.dev/cel-go v0.32.0
-	github.com/null-variable/proxelo-api v0.3.0
+	github.com/mholt/acmez/v3 v3.1.7
+	github.com/null-variable/proxelo-api v0.4.0
 	github.com/oklog/ulid/v2 v2.1.2
 	google.golang.org/grpc v1.85.0
 	google.golang.org/protobuf v1.36.12
@@ -20,6 +21,7 @@ require (
 	github.com/ncruces/go-strftime v1.1.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
+	golang.org/x/crypto v0.57.0 // indirect
 	golang.org/x/exp v0.0.0-20240823005443-9b4947da3948 // indirect
 	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect

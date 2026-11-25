@@ -2,10 +2,14 @@ package model
 
 import (
 	"fmt"
+	"maps"
+	"math"
 	"net"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // FieldError points at the field that is invalid, for example
@@ -73,13 +77,148 @@ func Validate(r Resource) FieldErrors {
 		r.Spec.validate(&es)
 	case *Upstream:
 		r.Spec.validate(&es)
+	case *Certificate:
+		r.Spec.validate(&es)
+	case *Policy:
+		r.Spec.validate(&es)
 	}
 	return es
 }
 
+// TLSVersions maps ListenerTLS.MinVersion values.
+var TLSVersions = []string{"1.0", "1.1", "1.2", "1.3"}
+
 func (s *ListenerSpec) validate(es *FieldErrors) {
 	if err := checkHostPort(s.Address); err != "" {
 		es.add("spec.address", "%s", err)
+	}
+	if t := s.TLS; t != nil {
+		if t.MinVersion != "" && !slices.Contains(TLSVersions, t.MinVersion) {
+			es.add("spec.tls.minVersion", "must be one of %s", strings.Join(TLSVersions, ", "))
+		}
+	}
+	if s.HTTP2 && s.TLS == nil {
+		es.add("spec.http2", "requires tls")
+	}
+}
+
+func checkDuration(es *FieldErrors, path, v string) {
+	if v == "" {
+		return
+	}
+	d, err := time.ParseDuration(v)
+	switch {
+	case err != nil:
+		es.add(path, "must be a duration such as \"5s\"")
+	case d <= 0 || d%time.Millisecond != 0:
+		es.add(path, "must be a positive whole number of milliseconds")
+	case d > time.Duration(math.MaxUint32)*time.Millisecond:
+		es.add(path, "is too long")
+	}
+}
+
+func (s *CertificateSpec) validate(es *FieldErrors) {
+	switch s.Source {
+	case "", CertUpload:
+		if s.ChainPEM == "" {
+			es.add("spec.chainPem", "is required")
+		}
+		if s.KeyPEM == "" {
+			es.add("spec.keyPem", "is required")
+		}
+		if len(s.Domains) > 0 {
+			es.add("spec.domains", "only for source %q", CertACME)
+		}
+		if s.ChainPEM != "" && s.KeyPEM != "" {
+			if _, err := ParseCertificate(s.ChainPEM, s.KeyPEM); err != nil {
+				es.add("spec.chainPem", "%v", err)
+			}
+		}
+	case CertACME:
+		if len(s.Domains) == 0 {
+			es.add("spec.domains", "at least one domain is required")
+		}
+		for i, d := range s.Domains {
+			if !isHostname(d) || strings.HasPrefix(d, ".") {
+				es.add(fmt.Sprintf("spec.domains[%d]", i), "must be a lowercase hostname")
+			}
+		}
+	default:
+		es.add("spec.source", "must be %q or %q", CertUpload, CertACME)
+	}
+}
+
+func (s *PolicySpec) validate(es *FieldErrors) {
+	for _, o := range []struct {
+		t   PolicyType
+		set bool
+	}{{PolicyHeaders, s.Headers != nil}, {PolicyAccessLog, s.AccessLog != nil}} {
+		if o.set && o.t != s.Type {
+			es.add("spec."+string(o.t), "must be empty when type is %q", s.Type)
+		}
+	}
+	switch s.Type {
+	case PolicyHeaders:
+		if s.Headers == nil {
+			es.add("spec.headers", "is required when type is %q", s.Type)
+			return
+		}
+		s.Headers.Response.validate(es, "spec.headers.response")
+		s.Headers.Request.validate(es, "spec.headers.request")
+		if s.Headers.Request.Always {
+			es.add("spec.headers.request.always", "applies to responses only")
+		}
+	case PolicyAccessLog:
+		l := s.AccessLog
+		if l == nil {
+			es.add("spec.accessLog", "is required when type is %q", s.Type)
+			return
+		}
+		if l.Path != "stdout" && l.Path != "stderr" && !strings.HasPrefix(l.Path, "/") {
+			es.add("spec.accessLog.path", "must be stdout, stderr or an absolute path")
+		}
+		if strings.Contains(l.Format, "\n") {
+			es.add("spec.accessLog.format", "must be one line")
+		}
+	default:
+		es.add("spec.type", "must be %q or %q", PolicyHeaders, PolicyAccessLog)
+	}
+}
+
+var headerNameRE = regexp.MustCompile("^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
+
+// Headers a policy may not change: framing and connection management are the
+// proxy's.
+var reservedHeaders = []string{"connection", "content-length", "transfer-encoding", "keep-alive", "upgrade", "te", "trailer", "proxy-connection"}
+
+func checkHeaderName(es *FieldErrors, path, name string) {
+	switch {
+	case !headerNameRE.MatchString(name):
+		es.add(path, "must be a header name")
+	case slices.Contains(reservedHeaders, strings.ToLower(name)):
+		es.add(path, "%q is managed by the proxy", name)
+	}
+}
+
+func checkHeaderValue(es *FieldErrors, path, v string) {
+	if strings.ContainsAny(v, "\r\n\x00") {
+		es.add(path, "must not contain CR, LF or NUL")
+	}
+}
+
+func (o *HeaderOps) validate(es *FieldErrors, path string) {
+	for _, name := range slices.Sorted(maps.Keys(o.Set)) {
+		p := fmt.Sprintf("%s.set[%s]", path, name)
+		checkHeaderName(es, p, name)
+		checkHeaderValue(es, p, o.Set[name])
+	}
+	for i, h := range o.Add {
+		p := fmt.Sprintf("%s.add[%d]", path, i)
+		checkHeaderName(es, p+".name", h.Name)
+		checkHeaderValue(es, p+".value", h.Value)
+	}
+	for i, n := range o.Remove {
+		checkHeaderName(es, fmt.Sprintf("%s.remove[%d]", path, i), n)
 	}
 }
 
@@ -115,6 +254,8 @@ func (s *SiteSpec) validate(es *FieldErrors) {
 		s.Return.validate(es, "spec.return")
 	}
 	checkErrorPages(es, "spec.errorPages", s.ErrorPages)
+	checkIDs(es, "spec.certificates", s.Certificates)
+	checkIDs(es, "spec.policies", s.Policies)
 }
 
 func checkRewrites(es *FieldErrors, path string, rs []Rewrite) {
@@ -220,6 +361,7 @@ func (s *RouteSpec) validate(es *FieldErrors) {
 		es.add("spec.children", "only prefix and prefixPriority routes can have children")
 	}
 	checkErrorPages(es, "spec.errorPages", s.ErrorPages)
+	checkIDs(es, "spec.policies", s.Policies)
 
 	a := s.Action
 	for _, o := range []struct {
@@ -254,6 +396,17 @@ func (s *RouteSpec) validate(es *FieldErrors) {
 		}
 		if a.Proxy.Upstream == "" {
 			es.add("spec.action.proxy.upstream", "is required")
+		}
+		t := a.Proxy.Timeouts
+		checkDuration(es, "spec.action.proxy.timeouts.connect", t.Connect)
+		checkDuration(es, "spec.action.proxy.timeouts.send", t.Send)
+		checkDuration(es, "spec.action.proxy.timeouts.read", t.Read)
+		if r := a.Proxy.Retry; r != nil {
+			for i, on := range r.On {
+				if _, ok := RetryConditions[on]; !ok {
+					es.add(fmt.Sprintf("spec.action.proxy.retry.on[%d]", i), "unknown condition %q", on)
+				}
+			}
 		}
 	case ActionReturn:
 		if a.Return == nil {
@@ -295,11 +448,25 @@ func (s *UpstreamSpec) validate(es *FieldErrors) {
 	if len(s.Targets) == 0 {
 		es.add("spec.targets", "at least one target is required")
 	}
+	primary := 0
 	for i, t := range s.Targets {
 		if err := checkHostPort(t.Address); err != "" {
 			es.add(fmt.Sprintf("spec.targets[%d].address", i), "%s", err)
 		}
+		if !t.Backup {
+			primary++
+		}
 	}
+	if len(s.Targets) > 0 && primary == 0 {
+		es.add("spec.targets", "at least one target must not be a backup")
+	}
+	switch s.Balancing.Algorithm {
+	case "", RoundRobin, LeastConn:
+	default:
+		es.add("spec.balancing.algorithm", "must be %q or %q", RoundRobin, LeastConn)
+	}
+	checkDuration(es, "spec.passiveHealth.failTimeout", s.PassiveHealth.FailTimeout)
+	checkDuration(es, "spec.keepalive.timeout", s.Keepalive.Timeout)
 }
 
 // checkHostPort returns a message if addr is not host:port with a numeric port.

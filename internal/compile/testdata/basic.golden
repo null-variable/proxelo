@@ -1,6 +1,6 @@
 {
   "revision": "1",
-  "hash": "HUPOifbitI2SSNFBnXq7DBzB7ArwVX82t/BZ4JYbm4A=",
+  "hash": "0XTlTd7UPMR8kZesGbzh10F+caftURA2Tp1CZ9dR+aw=",
   "listeners": [
     {
       "address": "0.0.0.0:8080",
@@ -59,7 +59,9 @@
       ],
       "balancing": "BALANCING_ROUND_ROBIN",
       "keepaliveIdle": 32,
-      "id": "up_api"
+      "id": "up_api",
+      "maxFails": 1,
+      "failTimeoutMs": 10000
     }
   ]
 }

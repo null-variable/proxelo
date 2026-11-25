@@ -42,6 +42,10 @@ CREATE TABLE IF NOT EXISTS revisions (
 	config     TEXT    NOT NULL,
 	snapshot   BLOB    NOT NULL
 );
+CREATE TABLE IF NOT EXISTS state (
+	key   TEXT NOT NULL PRIMARY KEY,
+	value BLOB NOT NULL
+);
 `
 
 // Store is safe for concurrent use.
@@ -227,9 +231,37 @@ func loadConfig(ctx context.Context, q rowsQuerier) (model.Config, error) {
 // A compile failure returns model.FieldErrors and stores nothing. verify, when
 // set, sees the serialized snapshot before it is stored and can reject it.
 func (s *Store) Apply(ctx context.Context, message string, verify func(snapshot []byte) error) (*Revision, error) {
+	return s.applyWith(ctx, message, verify, func(tx *sql.Tx) (model.Config, error) {
+		return loadConfig(ctx, tx)
+	})
+}
+
+// ApplyChange stores the next revision made from the latest one with change
+// applied to its config, leaving other unapplied edits out. Used for
+// changes the control plane makes itself, such as a renewed certificate.
+func (s *Store) ApplyChange(ctx context.Context, message string, verify func(snapshot []byte) error, change func(*model.Config)) (*Revision, error) {
+	return s.applyWith(ctx, message, verify, func(tx *sql.Tx) (model.Config, error) {
+		var cfgJSON string
+		err := tx.QueryRowContext(ctx, `SELECT config FROM revisions ORDER BY revision DESC LIMIT 1`).Scan(&cfgJSON)
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.Config{}, ErrNotFound
+		}
+		if err != nil {
+			return model.Config{}, err
+		}
+		var cfg model.Config
+		if err := json.Unmarshal([]byte(cfgJSON), &cfg); err != nil {
+			return cfg, err
+		}
+		change(&cfg)
+		return cfg, nil
+	})
+}
+
+func (s *Store) applyWith(ctx context.Context, message string, verify func(snapshot []byte) error, load func(*sql.Tx) (model.Config, error)) (*Revision, error) {
 	var rev *Revision
 	err := s.tx(ctx, func(tx *sql.Tx) error {
-		cfg, err := loadConfig(ctx, tx)
+		cfg, err := load(tx)
 		if err != nil {
 			return err
 		}
@@ -327,6 +359,48 @@ func scanRevision(row interface{ Scan(...any) error }, extra ...any) (*Revision,
 	}
 	rev.CreatedAt = t
 	return &rev, nil
+}
+
+// Put stores a control plane value, such as the ACME account.
+func (s *Store) Put(ctx context.Context, key string, value []byte) error {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO state (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, key, value)
+	return err
+}
+
+// Value returns a value stored with Put, or ErrNotFound.
+func (s *Store) Value(ctx context.Context, key string) ([]byte, error) {
+	var v []byte
+	err := s.db.QueryRowContext(ctx, `SELECT value FROM state WHERE key = ?`, key).Scan(&v)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return v, err
+}
+
+// SetCertificate stores an issued chain and key, or only a status, on
+// certificate id, keeping the rest of the resource, and returns it.
+func (s *Store) SetCertificate(ctx context.Context, id string, chainPEM, keyPEM string, status model.CertStatus) (*model.Certificate, error) {
+	var out *model.Certificate
+	err := s.tx(ctx, func(tx *sql.Tx) error {
+		cur, err := get(ctx, tx, model.CertificateKind, id)
+		if err != nil {
+			return err
+		}
+		c := cur.(*model.Certificate)
+		c.Spec.ChainPEM, c.Spec.KeyPEM, c.Spec.Status = chainPEM, keyPEM, status
+		c.ResourceVersion++
+		c.UpdatedAt = s.now()
+		body, err := json.Marshal(c)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE resources SET version = ?, body = ? WHERE id = ?`, c.ResourceVersion, string(body), id); err != nil {
+			return err
+		}
+		out = c
+		return nil
+	})
+	return out, err
 }
 
 func (s *Store) tx(ctx context.Context, fn func(*sql.Tx) error) error {

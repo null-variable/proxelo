@@ -33,12 +33,16 @@ type Distributor interface {
 // Simulator loads snapshots and runs requests with the proxy engine.
 type Simulator interface {
 	Run(snapshot []byte, requests []*simv1.HttpRequest) (*simv1.SimResponse, error)
+	// DryLoad rejects a snapshot the engine cannot load with
+	// model.FieldErrors.
+	DryLoad(snapshot []byte) error
 }
 
 // Handler returns the API handler. sim may be nil: apply then skips the
-// engine dry-load and /simulate answers 503.
-func Handler(st *store.Store, d Distributor, sim Simulator, log *slog.Logger) http.Handler {
-	a := &api{st: st, d: d, sim: sim, log: log}
+// engine dry-load and /simulate answers 503. certsChanged, when set, is
+// called after a certificate is created or changed, to issue ACME ones.
+func Handler(st *store.Store, d Distributor, sim Simulator, certsChanged func(), log *slog.Logger) http.Handler {
+	a := &api{st: st, d: d, sim: sim, certsChanged: certsChanged, log: log}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/{kind}", a.list)
 	mux.HandleFunc("POST /api/v1/{kind}", a.create)
@@ -55,10 +59,17 @@ func Handler(st *store.Store, d Distributor, sim Simulator, log *slog.Logger) ht
 }
 
 type api struct {
-	st  *store.Store
-	d   Distributor
-	sim Simulator
-	log *slog.Logger
+	st           *store.Store
+	d            Distributor
+	sim          Simulator
+	certsChanged func()
+	log          *slog.Logger
+}
+
+func (a *api) changed(k model.Kind) {
+	if k.Plural == model.CertificateKind.Plural && a.certsChanged != nil {
+		a.certsChanged()
+	}
 }
 
 // errorBody is the JSON body of every error response.
@@ -167,10 +178,11 @@ func (a *api) list(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
-	if items == nil {
-		items = []model.Resource{}
+	out := make([]model.Resource, len(items))
+	for i, it := range items {
+		out[i] = model.Redacted(it)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+	writeJSON(w, http.StatusOK, map[string]any{"items": out})
 }
 
 func (a *api) get(w http.ResponseWriter, r *http.Request) {
@@ -185,7 +197,7 @@ func (a *api) get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("ETag", etag(res))
-	writeJSON(w, http.StatusOK, res)
+	writeJSON(w, http.StatusOK, model.Redacted(res))
 }
 
 func (a *api) create(w http.ResponseWriter, r *http.Request) {
@@ -208,13 +220,15 @@ func (a *api) create(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
+	model.Prepare(res)
 	if err := a.st.Create(r.Context(), k, res); err != nil {
 		a.fail(w, err)
 		return
 	}
+	a.changed(k)
 	w.Header().Set("Location", "/api/v1/"+k.Plural+"/"+res.Common().ID)
 	w.Header().Set("ETag", etag(res))
-	writeJSON(w, http.StatusCreated, res)
+	writeJSON(w, http.StatusCreated, model.Redacted(res))
 }
 
 // patch applies a JSON merge patch (RFC 7396) to the stored resource.
@@ -272,12 +286,14 @@ func (a *api) patch(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
+	model.Prepare(res)
 	if err := a.st.Update(r.Context(), k, id, version, res); err != nil {
 		a.fail(w, err)
 		return
 	}
+	a.changed(k)
 	w.Header().Set("ETag", etag(res))
-	writeJSON(w, http.StatusOK, res)
+	writeJSON(w, http.StatusOK, model.Redacted(res))
 }
 
 // mergePatch implements RFC 7396.
@@ -377,10 +393,15 @@ func (a *api) revision(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
+	cfg := rev.Config
+	cfg.Certificates = nil
+	for _, c := range rev.Config.Certificates {
+		cfg.Certificates = append(cfg.Certificates, model.Redacted(c).(*model.Certificate))
+	}
 	writeJSON(w, http.StatusOK, struct {
 		*store.Revision
 		Config model.Config `json:"config"`
-	}{rev, rev.Config})
+	}{rev, cfg})
 }
 
 func (a *api) snapshot(w http.ResponseWriter, r *http.Request) {
@@ -393,21 +414,17 @@ func (a *api) snapshot(w http.ResponseWriter, r *http.Request) {
 	w.Write(rev.Snapshot)
 }
 
-// dryLoad loads a snapshot in the proxy engine before it is stored, so what
-// only the engine checks (PCRE2 grammar, template variables, CEL) fails the
-// apply instead of the proxies.
+// dryLoad rejects a snapshot the proxy engine cannot load.
 func (a *api) dryLoad(snapshot []byte) error {
 	if a.sim == nil {
 		return nil
 	}
-	resp, err := a.sim.Run(snapshot, nil)
-	if err != nil {
+	err := a.sim.DryLoad(snapshot)
+	var fe model.FieldErrors
+	if err != nil && !errors.As(err, &fe) {
 		return httpError{http.StatusServiceUnavailable, err.Error()}
 	}
-	if resp.Error != "" {
-		return model.FieldErrors{{Path: "snapshot", Message: resp.Error}}
-	}
-	return nil
+	return err
 }
 
 // simulateRequest is the body of POST /api/v1/simulate. Requests run against

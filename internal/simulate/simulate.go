@@ -5,6 +5,8 @@
 package simulate
 
 import (
+	"github.com/null-variable/proxelo/internal/model"
+
 	"bufio"
 	"encoding/binary"
 	"errors"
@@ -65,6 +67,25 @@ func (h *Helper) Run(snapshot []byte, requests []*simv1.HttpRequest) (*simv1.Sim
 		return nil, err
 	}
 	return resp, nil
+}
+
+// DryLoad loads a snapshot in the proxy engine before it is stored, so what
+// only the engine checks (PCRE2 grammar, template variables, CEL,
+// certificates) fails the change instead of the proxies.
+// Without a helper binary it accepts everything. A rejection is a
+// model.FieldErrors; ErrUnavailable-like failures are returned as is.
+func (h *Helper) DryLoad(snapshot []byte) error {
+	if h.bin == "" {
+		return nil
+	}
+	resp, err := h.Run(snapshot, nil)
+	if err != nil {
+		return err
+	}
+	if resp.Error != "" {
+		return model.FieldErrors{{Path: "snapshot", Message: resp.Error}}
+	}
+	return nil
 }
 
 func (h *Helper) start() error {

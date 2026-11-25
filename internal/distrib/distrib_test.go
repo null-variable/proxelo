@@ -99,7 +99,11 @@ func (p *proxy) recv() uint64 {
 		if r.err != nil {
 			p.t.Fatal(r.err)
 		}
-		return r.resp.GetSnapshot().GetRevision()
+		snap := &snapshotv1.Snapshot{}
+		if err := proto.Unmarshal(r.resp.GetSnapshotData(), snap); err != nil {
+			p.t.Fatalf("snapshot_data: %v", err)
+		}
+		return snap.GetRevision()
 	case <-time.After(5 * time.Second):
 		p.t.Fatal("no snapshot within 5s")
 		return 0

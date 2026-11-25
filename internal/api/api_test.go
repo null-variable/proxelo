@@ -45,7 +45,7 @@ func newClient(t *testing.T) *client {
 	}
 	t.Cleanup(func() { st.Close() })
 	d := &fakeDistributor{}
-	srv := httptest.NewServer(Handler(st, d, nil, slog.New(slog.DiscardHandler)))
+	srv := httptest.NewServer(Handler(st, d, nil, nil, slog.New(slog.DiscardHandler)))
 	t.Cleanup(srv.Close)
 	return &client{t: t, srv: srv, d: d}
 }
