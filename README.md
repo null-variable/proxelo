@@ -42,4 +42,4 @@ go test ./...
 
 ## License
 
-[MIT](LICENSE)
+Licensed under the [Apache License, Version 2.0](LICENSE). See [NOTICE](NOTICE).
