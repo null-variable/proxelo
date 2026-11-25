@@ -113,6 +113,7 @@ func (c *compiler) compile(cfg model.Config, revision uint64) *snapshotv1.Snapsh
 	// would otherwise depend on declaration order.
 	type hostKey struct {
 		listener uint32
+		kind     model.HostMatchType
 		host     string
 	}
 	hostOwner := map[hostKey]string{}
@@ -131,14 +132,16 @@ func (c *compiler) compile(cfg model.Config, revision uint64) *snapshotv1.Snapsh
 		}
 		for i, h := range s.Spec.Hostnames {
 			for _, li := range out.Listeners {
-				k := hostKey{li, h.Value}
+				k := hostKey{li, h.Type, h.Value}
 				if other, dup := hostOwner[k]; dup && other != s.ID {
 					c.add(fmt.Sprintf("%s.hostnames[%d]", base, i), "%q is already served by site %q on listener %q",
 						h.Value, other, listeners.items[li].ID)
 				}
 				hostOwner[k] = s.ID
 			}
-			out.Hostnames = append(out.Hostnames, &snapshotv1.HostMatch{Kind: snapshotv1.HostMatch_KIND_EXACT, Value: h.Value})
+			if kind, ok := hostKinds[h.Type]; ok {
+				out.Hostnames = append(out.Hostnames, &snapshotv1.HostMatch{Kind: kind, Value: h.Value})
+			}
 		}
 		paths := map[pathKey]string{}
 		for i, id := range s.Spec.Routes {
@@ -151,6 +154,10 @@ func (c *compiler) compile(cfg model.Config, revision uint64) *snapshotv1.Snapsh
 			}
 			r := routes.items[ri]
 			k := pathKey{r.Spec.Match.Path.Type, r.Spec.Match.Path.Value}
+			// nginx rejects "location /a" next to "location ^~ /a".
+			if k.kind == model.PathPrefixPriority {
+				k.kind = model.PathPrefix
+			}
 			if other, dup := paths[k]; dup {
 				c.add(fmt.Sprintf("%s.routes[%d]", base, i), "route %q has the same path match as route %q", id, other)
 			}
@@ -179,6 +186,20 @@ func (c *compiler) compile(cfg model.Config, revision uint64) *snapshotv1.Snapsh
 	return snap
 }
 
+var hostKinds = map[model.HostMatchType]snapshotv1.HostMatch_Kind{
+	model.HostExact:    snapshotv1.HostMatch_KIND_EXACT,
+	model.HostWildcard: snapshotv1.HostMatch_KIND_WILDCARD,
+	model.HostRegex:    snapshotv1.HostMatch_KIND_REGEX,
+}
+
+var pathKinds = map[model.PathMatchType]snapshotv1.PathMatch_Kind{
+	model.PathExact:          snapshotv1.PathMatch_KIND_EXACT,
+	model.PathPrefix:         snapshotv1.PathMatch_KIND_PREFIX,
+	model.PathPrefixPriority: snapshotv1.PathMatch_KIND_PREFIX_PRIORITY,
+	model.PathRegex:          snapshotv1.PathMatch_KIND_REGEX,
+	model.PathRegexCI:        snapshotv1.PathMatch_KIND_REGEX_CI,
+}
+
 type pathKey struct {
 	kind  model.PathMatchType
 	value string
@@ -186,14 +207,11 @@ type pathKey struct {
 
 func (c *compiler) route(r *model.Route, upstreams index[*model.Upstream]) *snapshotv1.Route {
 	out := &snapshotv1.Route{Path: &snapshotv1.PathMatch{Value: r.Spec.Match.Path.Value}}
-	switch r.Spec.Match.Path.Type {
-	case model.PathExact:
-		out.Path.Kind = snapshotv1.PathMatch_KIND_EXACT
-	case model.PathPrefix:
-		out.Path.Kind = snapshotv1.PathMatch_KIND_PREFIX
-	default:
+	kind, ok := pathKinds[r.Spec.Match.Path.Type]
+	if !ok {
 		return nil // reported by model.Validate
 	}
+	out.Path.Kind = kind
 
 	a := r.Spec.Action
 	switch {

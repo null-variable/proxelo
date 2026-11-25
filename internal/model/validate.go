@@ -90,11 +90,23 @@ func (s *SiteSpec) validate(es *FieldErrors) {
 	checkIDs(es, "spec.listeners", s.Listeners)
 	for i, h := range s.Hostnames {
 		p := fmt.Sprintf("spec.hostnames[%d]", i)
-		if h.Type != HostExact {
-			es.add(p+".type", "must be %q", HostExact)
-		}
-		if h.Value == "" || h.Value != strings.ToLower(h.Value) || strings.ContainsAny(h.Value, " \t/:") {
-			es.add(p+".value", "must be a lowercase hostname")
+		switch h.Type {
+		case HostExact:
+			if !isHostname(h.Value) {
+				es.add(p+".value", "must be a lowercase hostname")
+			}
+		case HostWildcard:
+			if !isWildcard(h.Value) {
+				es.add(p+".value", `must be "*.name", "name.*" or ".name" with a lowercase hostname`)
+			}
+		case HostRegex:
+			// The pattern grammar is PCRE2's; the proxy checks it when it
+			// loads the snapshot.
+			if h.Value == "" {
+				es.add(p+".value", "must not be empty")
+			}
+		default:
+			es.add(p+".type", "must be %q, %q or %q", HostExact, HostWildcard, HostRegex)
 		}
 	}
 	checkIDs(es, "spec.routes", s.Routes)
@@ -115,11 +127,19 @@ func checkIDs(es *FieldErrors, path string, ids []string) {
 
 func (s *RouteSpec) validate(es *FieldErrors) {
 	p := s.Match.Path
-	if p.Type != PathExact && p.Type != PathPrefix {
-		es.add("spec.match.path.type", "must be %q or %q", PathExact, PathPrefix)
-	}
-	if !strings.HasPrefix(p.Value, "/") {
-		es.add("spec.match.path.value", "must start with '/'")
+	switch p.Type {
+	case PathExact, PathPrefix, PathPrefixPriority:
+		if !strings.HasPrefix(p.Value, "/") {
+			es.add("spec.match.path.value", "must start with '/'")
+		}
+	case PathRegex, PathRegexCI:
+		// PCRE2 grammar is checked by the proxy when it loads the snapshot.
+		if p.Value == "" {
+			es.add("spec.match.path.value", "must not be empty")
+		}
+	default:
+		es.add("spec.match.path.type", "must be one of %q, %q, %q, %q, %q",
+			PathExact, PathPrefix, PathPrefixPriority, PathRegex, PathRegexCI)
 	}
 
 	a := s.Action
@@ -180,4 +200,22 @@ func checkHostPort(addr string) string {
 		return "port must be 1-65535"
 	}
 	return ""
+}
+
+func isHostname(s string) bool {
+	return s != "" && s == strings.ToLower(s) && !strings.ContainsAny(s, " \t/:*")
+}
+
+// isWildcard accepts the nginx server_name wildcard forms: one "*" as the
+// whole first or last label, or a leading dot.
+func isWildcard(s string) bool {
+	switch {
+	case strings.HasPrefix(s, "*."):
+		return isHostname(s[2:])
+	case strings.HasSuffix(s, ".*"):
+		return isHostname(s[:len(s)-2])
+	case strings.HasPrefix(s, "."):
+		return isHostname(s[1:])
+	}
+	return false
 }

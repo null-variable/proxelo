@@ -67,6 +67,32 @@ func TestCompileResolvesReferences(t *testing.T) {
 	}
 }
 
+func TestCompileMatchKinds(t *testing.T) {
+	c := validConfig()
+	c.Sites[0].Spec.Hostnames = []model.HostMatch{
+		{Type: model.HostExact, Value: "example.com"},
+		{Type: model.HostWildcard, Value: "*.example.com"},
+		{Type: model.HostRegex, Value: `^(www\.)?example\.net$`},
+	}
+	c.Routes[0].Spec.Match.Path = model.PathMatch{Type: model.PathPrefixPriority, Value: "/static/"}
+	c.Routes[1].Spec.Match.Path = model.PathMatch{Type: model.PathRegexCI, Value: `\.(png|jpg)$`}
+	snap, err := Compile(c, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hosts := snap.GetSites()[0].GetHostnames()
+	wantHosts := []snapshotv1.HostMatch_Kind{snapshotv1.HostMatch_KIND_EXACT, snapshotv1.HostMatch_KIND_WILDCARD, snapshotv1.HostMatch_KIND_REGEX}
+	for i, k := range wantHosts {
+		if hosts[i].GetKind() != k || hosts[i].GetValue() != c.Sites[0].Spec.Hostnames[i].Value {
+			t.Fatalf("hostnames[%d] = %v", i, hosts[i])
+		}
+	}
+	r := snap.GetSites()[0].GetRoutes()
+	if r[0].GetPath().GetKind() != snapshotv1.PathMatch_KIND_PREFIX_PRIORITY || r[1].GetPath().GetKind() != snapshotv1.PathMatch_KIND_REGEX_CI {
+		t.Fatalf("routes = %v", r)
+	}
+}
+
 func TestHashCoversSnapshotWithoutHash(t *testing.T) {
 	snap, err := Compile(validConfig(), 1)
 	if err != nil {
@@ -135,7 +161,20 @@ func TestCompileErrors(t *testing.T) {
 		{"unknown listener", func(c *model.Config) { c.Sites[0].Spec.Listeners = []string{"nope"} }, []string{"sites[site_web].spec.listeners[0]"}},
 		{"unknown route", func(c *model.Config) { c.Sites[0].Spec.Routes[1] = "nope" }, []string{"sites[site_web].spec.routes[1]"}},
 		{"unknown upstream", func(c *model.Config) { c.Routes[0].Spec.Action.Proxy.Upstream = "nope" }, []string{"routes[rt_api].spec.action.proxy.upstream"}},
-		{"bad path type", func(c *model.Config) { c.Routes[0].Spec.Match.Path.Type = "regex" }, []string{"routes[rt_api].spec.match.path.type"}},
+		{"bad path type", func(c *model.Config) { c.Routes[0].Spec.Match.Path.Type = "glob" }, []string{"routes[rt_api].spec.match.path.type"}},
+		{"empty regex", func(c *model.Config) {
+			c.Routes[0].Spec.Match.Path = model.PathMatch{Type: model.PathRegex}
+		}, []string{"routes[rt_api].spec.match.path.value"}},
+		{"prefix priority duplicates prefix", func(c *model.Config) {
+			c.Routes[1].Spec.Match.Path = c.Routes[0].Spec.Match.Path
+			c.Routes[1].Spec.Match.Path.Type = model.PathPrefixPriority
+		}, []string{"sites[site_web].spec.routes[1]"}},
+		{"bad wildcard", func(c *model.Config) {
+			c.Sites[0].Spec.Hostnames = []model.HostMatch{{Type: model.HostWildcard, Value: "a.*.com"}}
+		}, []string{"sites[site_web].spec.hostnames[0].value"}},
+		{"bad host type", func(c *model.Config) {
+			c.Sites[0].Spec.Hostnames = []model.HostMatch{{Type: "glob", Value: "a.com"}}
+		}, []string{"sites[site_web].spec.hostnames[0].type"}},
 		{"action type mismatch", func(c *model.Config) { c.Routes[1].Spec.Action.Type = model.ActionProxy }, []string{"routes[rt_root].spec.action.static", "routes[rt_root].spec.action.proxy"}},
 		{"empty upstream", func(c *model.Config) { c.Upstreams[0].Spec.Targets = nil }, []string{"upstreams[up_api].spec.targets"}},
 		{"duplicate id", func(c *model.Config) { c.Sites = append(c.Sites, c.Sites[0]) }, []string{"sites[site_web]"}},

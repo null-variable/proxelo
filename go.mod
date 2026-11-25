@@ -3,7 +3,7 @@ module github.com/null-variable/proxelo
 go 1.26.0
 
 require (
-	github.com/null-variable/proxelo-api v0.0.1
+	github.com/null-variable/proxelo-api v0.1.0
 	github.com/oklog/ulid/v2 v2.1.2
 	google.golang.org/protobuf v1.36.12
 	modernc.org/sqlite v1.63.0

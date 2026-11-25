@@ -97,7 +97,15 @@ type SiteSpec struct {
 
 type HostMatchType string
 
-const HostExact HostMatchType = "exact"
+// Host match types, in nginx server_name order.
+const (
+	HostExact HostMatchType = "exact"
+	// "*.example.com", "mail.*", or ".example.com" for example.com and every
+	// name under it.
+	HostWildcard HostMatchType = "wildcard"
+	// PCRE2 pattern matched against the lowercase host, without nginx's "~".
+	HostRegex HostMatchType = "regex"
+)
 
 type HostMatch struct {
 	Type  HostMatchType `json:"type"`
@@ -122,8 +130,16 @@ type Match struct {
 type PathMatchType string
 
 const (
-	PathExact  PathMatchType = "exact"
+	// location = /path
+	PathExact PathMatchType = "exact"
+	// location /path
 	PathPrefix PathMatchType = "prefix"
+	// location ^~ /path
+	PathPrefixPriority PathMatchType = "prefixPriority"
+	// location ~ pattern (PCRE2)
+	PathRegex PathMatchType = "regex"
+	// location ~* pattern (PCRE2, caseless)
+	PathRegexCI PathMatchType = "regexCI"
 )
 
 type PathMatch struct {
