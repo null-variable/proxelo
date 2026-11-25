@@ -52,6 +52,7 @@ proxelo-proxy check snapshot.bin
 | `internal/store` | SQLite storage for resources and revisions |
 | `internal/api` | REST API |
 | `examples` | Sample resource files |
+| `test/bench` | Benchmark harness: nginx vs `proxelo-proxy` (S1, S3), see its README |
 
 ## Development
 
