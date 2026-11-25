@@ -1,10 +1,11 @@
 {
   "revision": "1",
-  "hash": "ThBOyL/xm+ybJEhbIa4u7Dhhx7fdzygK7pJStI36rVQ=",
+  "hash": "HUPOifbitI2SSNFBnXq7DBzB7ArwVX82t/BZ4JYbm4A=",
   "listeners": [
     {
       "address": "0.0.0.0:8080",
-      "defaultSite": 0
+      "defaultSite": 0,
+      "id": "lst_http"
     }
   ],
   "sites": [
@@ -26,7 +27,8 @@
           },
           "action": {
             "proxy": {}
-          }
+          },
+          "id": "rt_api"
         },
         {
           "path": {
@@ -40,9 +42,11 @@
                 "index.html"
               ]
             }
-          }
+          },
+          "id": "rt_root"
         }
-      ]
+      ],
+      "id": "site_web"
     }
   ],
   "upstreams": [
@@ -54,7 +58,8 @@
         }
       ],
       "balancing": "BALANCING_ROUND_ROBIN",
-      "keepaliveIdle": 32
+      "keepaliveIdle": 32,
+      "id": "up_api"
     }
   ]
 }

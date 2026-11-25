@@ -21,7 +21,12 @@ resources in SQLite, serves them over a REST API, compiles them into snapshots
 and pushes every applied snapshot to connected proxies. Routes cover the nginx
 location kinds (exact, prefix, `^~`, `~`, `~*`) and nesting, rewrite, return,
 error_page and try_files; error pages and try_files can hand off to another
-route like an nginx named location.
+route like an nginx named location. Routes can also match on methods, headers,
+query arguments and a CEL expression; expressions are type-checked when saved.
+
+Applies are dry-loaded by the proxy engine (`proxelo-proxy sim`, a resident
+helper) before a revision is stored, so a snapshot the proxy would reject never
+becomes a revision. The same helper answers `POST /api/v1/simulate`.
 
 Run both processes together (development, home lab):
 
@@ -54,6 +59,7 @@ control plane is down and reconnects when it is back.
 | `GET /api/v1/revisions[/{rev}]` | Revision history, or one revision with its resources |
 | `GET /api/v1/revisions/{rev}/snapshot` | Compiled snapshot (protobuf) |
 | `GET /api/v1/nodes` | Connected proxies: active, last sent and last rejected revision |
+| `POST /api/v1/simulate` | Run requests (`{"requests":[{"method","target","headers","remoteAddr","listener"}]}`) against the latest or a given `revision`, and with `"draft": true` against the unapplied resources; returns site, route, rewritten URI, upstream or file, status and a trace |
 
 Validation errors return `422` with field paths such as
 `routes[rt_...].spec.action.proxy.upstream`.

@@ -213,6 +213,7 @@ func (s *RouteSpec) validate(es *FieldErrors) {
 			PathExact, PathPrefix, PathPrefixPriority, PathRegex, PathRegexCI)
 	}
 
+	s.Match.validateConditions(es)
 	checkRewrites(es, "spec.rewrite", s.Rewrite)
 	checkIDs(es, "spec.children", s.Children)
 	if len(s.Children) > 0 && p.Type != PathPrefix && p.Type != PathPrefixPriority {
@@ -332,4 +333,44 @@ func isWildcard(s string) bool {
 		return isHostname(s[1:])
 	}
 	return false
+}
+
+var methodRE = regexp.MustCompile(`^[A-Z]+$`)
+
+func (m *Match) validateConditions(es *FieldErrors) {
+	for i, method := range m.Methods {
+		if !methodRE.MatchString(method) {
+			es.add(fmt.Sprintf("spec.match.methods[%d]", i), "must be an uppercase method name")
+		}
+	}
+	checkValueMatches(es, "spec.match.headers", m.Headers)
+	checkValueMatches(es, "spec.match.query", m.Query)
+	if m.Expr != "" {
+		if err := CheckExpr(m.Expr); err != nil {
+			es.add("spec.match.expr", "%v", err)
+		}
+	}
+}
+
+func checkValueMatches(es *FieldErrors, path string, ms []ValueMatch) {
+	for i, v := range ms {
+		p := fmt.Sprintf("%s[%d]", path, i)
+		if v.Name == "" {
+			es.add(p+".name", "is required")
+		}
+		switch v.Op {
+		case OpPresent, OpAbsent:
+			if v.Value != "" {
+				es.add(p+".value", "must be empty for op %q", v.Op)
+			}
+		case OpEquals, OpPrefix, OpSuffix, OpContains:
+		case OpRegex:
+			if v.Value == "" {
+				es.add(p+".value", "must not be empty")
+			}
+		default:
+			es.add(p+".op", "must be one of %q, %q, %q, %q, %q, %q, %q",
+				OpPresent, OpAbsent, OpEquals, OpPrefix, OpSuffix, OpContains, OpRegex)
+		}
+	}
 }

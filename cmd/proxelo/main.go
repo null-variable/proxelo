@@ -21,6 +21,7 @@ import (
 	"github.com/null-variable/proxelo/internal/compile"
 	"github.com/null-variable/proxelo/internal/distrib"
 	"github.com/null-variable/proxelo/internal/model"
+	"github.com/null-variable/proxelo/internal/simulate"
 	"github.com/null-variable/proxelo/internal/store"
 )
 
@@ -29,7 +30,7 @@ var version = "dev"
 const usage = `usage: proxelo <command>
 
 commands:
-  control [-data dir] [-listen addr] [-socket path]
+  control [-data dir] [-listen addr] [-socket path] [-proxy path]
                                        run the control plane API and snapshot distribution
   up [-data dir] [-listen addr] [-socket path] [-proxy path] [-- proxy options]
                                        run the control plane and proxelo-proxy together
@@ -75,6 +76,7 @@ func control(args []string) error {
 	dataDir := fs.String("data", envOr("PROXELO_DATA", "/var/lib/proxelo"), "data directory (env PROXELO_DATA)")
 	listen := fs.String("listen", envOr("PROXELO_ADMIN_LISTEN", "127.0.0.1:9443"), "admin API address (env PROXELO_ADMIN_LISTEN)")
 	socket := fs.String("socket", envOr("PROXELO_CONTROL_SOCKET", "/run/proxelo/control.sock"), "Unix socket proxies connect to (env PROXELO_CONTROL_SOCKET)")
+	proxyBin := fs.String("proxy", envOr("PROXELO_PROXY", ""), "proxelo-proxy binary for dry-loads and simulation (env PROXELO_PROXY; default: next to this binary, then $PATH)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -83,6 +85,15 @@ func control(args []string) error {
 	}
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	// Without the proxy binary, applies skip the engine dry-load and the
+	// simulator is off; proxies still reject what they cannot load.
+	bin, err := findProxy(*proxyBin)
+	if err != nil {
+		log.Warn("simulator disabled", "err", err)
+		bin = ""
+	}
+	sim := simulate.New(bin, log)
+	defer sim.Close()
 	dir := filepath.Join(*dataDir, "control")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
@@ -111,7 +122,7 @@ func control(args []string) error {
 	grpcSrv := distrib.NewServer(dist)
 	srv := &http.Server{
 		Addr:              *listen,
-		Handler:           api.Handler(st, dist, log),
+		Handler:           api.Handler(st, dist, sim, log),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

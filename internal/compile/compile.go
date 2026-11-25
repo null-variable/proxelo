@@ -101,7 +101,7 @@ func (c *compiler) compile(cfg model.Config, revision uint64) *snapshotv1.Snapsh
 	snap := &snapshotv1.Snapshot{Revision: revision}
 
 	for _, l := range listeners.items {
-		out := &snapshotv1.Listener{Address: l.Spec.Address, ReusePort: l.Spec.ReusePort, Backlog: l.Spec.Backlog}
+		out := &snapshotv1.Listener{Id: l.ID, Address: l.Spec.Address, ReusePort: l.Spec.ReusePort, Backlog: l.Spec.Backlog}
 		if id := l.Spec.DefaultSite; id != "" {
 			if i, ok := sites.resolve(c, fmt.Sprintf("listeners[%s].spec.defaultSite", l.ID), "site", id); ok {
 				out.DefaultSite = proto.Uint32(i)
@@ -121,7 +121,7 @@ func (c *compiler) compile(cfg model.Config, revision uint64) *snapshotv1.Snapsh
 
 	for _, s := range sites.items {
 		base := fmt.Sprintf("sites[%s].spec", s.ID)
-		out := &snapshotv1.Site{}
+		out := &snapshotv1.Site{Id: s.ID}
 		for i, id := range s.Spec.Listeners {
 			// A disabled listener drops out of the site like a commented-out listen.
 			if listeners.disabled[id] {
@@ -159,6 +159,7 @@ func (c *compiler) compile(cfg model.Config, revision uint64) *snapshotv1.Snapsh
 
 	for _, u := range upstreams.items {
 		out := &snapshotv1.Upstream{
+			Id:            u.ID,
 			Balancing:     snapshotv1.Upstream_BALANCING_ROUND_ROBIN,
 			KeepaliveIdle: u.Spec.Keepalive.Idle,
 		}
@@ -239,10 +240,14 @@ func (st *site) level(path, parent string, ids []string, inherited []*snapshotv1
 		if k.kind == model.PathPrefixPriority {
 			k.kind = model.PathPrefix
 		}
-		if other, dup := paths[k]; dup {
-			c.add(ref, "route %q has the same path match as route %q", id, other)
+		// Routes sharing a path are told apart by their conditions; only
+		// one of them may have none.
+		if !r.Spec.Match.HasConditions() {
+			if other, dup := paths[k]; dup {
+				c.add(ref, "route %q has the same path match as route %q and neither has conditions", id, other)
+			}
+			paths[k] = id
 		}
-		paths[k] = id
 		// nginx: "location X is outside location Y".
 		switch m.Type {
 		case model.PathExact, model.PathPrefix, model.PathPrefixPriority:
@@ -332,8 +337,16 @@ func (st *site) errorPages(path string, eps []model.ErrorPage) []*snapshotv1.Err
 // route compiles r without its children.
 func (st *site) route(r *model.Route) *snapshotv1.Route {
 	c := st.c
-	out := &snapshotv1.Route{Path: &snapshotv1.PathMatch{Value: r.Spec.Match.Path.Value}}
-	kind, ok := pathKinds[r.Spec.Match.Path.Type]
+	m := r.Spec.Match
+	out := &snapshotv1.Route{
+		Id:      r.ID,
+		Path:    &snapshotv1.PathMatch{Value: m.Path.Value},
+		Methods: m.Methods,
+		Headers: valueMatches(m.Headers),
+		Query:   valueMatches(m.Query),
+		Expr:    m.Expr,
+	}
+	kind, ok := pathKinds[m.Path.Type]
 	if !ok {
 		return nil // reported by model.Validate
 	}
@@ -375,6 +388,24 @@ func (st *site) route(r *model.Route) *snapshotv1.Route {
 		out.Action = &snapshotv1.Action{Kind: &snapshotv1.Action_Proxy{Proxy: &snapshotv1.ProxyAction{Upstream: ui}}}
 	default:
 		return nil // reported by model.Validate
+	}
+	return out
+}
+
+var matchOps = map[model.MatchOp]snapshotv1.ValueMatch_Op{
+	model.OpPresent:  snapshotv1.ValueMatch_OP_PRESENT,
+	model.OpAbsent:   snapshotv1.ValueMatch_OP_ABSENT,
+	model.OpEquals:   snapshotv1.ValueMatch_OP_EQUALS,
+	model.OpPrefix:   snapshotv1.ValueMatch_OP_PREFIX,
+	model.OpSuffix:   snapshotv1.ValueMatch_OP_SUFFIX,
+	model.OpContains: snapshotv1.ValueMatch_OP_CONTAINS,
+	model.OpRegex:    snapshotv1.ValueMatch_OP_REGEX,
+}
+
+func valueMatches(ms []model.ValueMatch) []*snapshotv1.ValueMatch {
+	var out []*snapshotv1.ValueMatch
+	for _, m := range ms {
+		out = append(out, &snapshotv1.ValueMatch{Name: m.Name, Op: matchOps[m.Op], Value: m.Value})
 	}
 	return out
 }

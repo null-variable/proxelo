@@ -1,15 +1,17 @@
 {
   "revision": "1",
-  "hash": "pzjh0SI8zM7FOWy3XogC6nM4LufJZfBPvVq56DjXYsA=",
+  "hash": "vyUmkCZvYmCRfzDLzzCJ8o7Ndr0YT/TRXA78Cc9QJUY=",
   "listeners": [
     {
       "address": "0.0.0.0:8080",
-      "defaultSite": 1
+      "defaultSite": 1,
+      "id": "lst_a"
     },
     {
       "address": "0.0.0.0:8443",
       "reusePort": true,
-      "backlog": 4096
+      "backlog": 4096,
+      "id": "lst_b"
     }
   ],
   "sites": [
@@ -31,9 +33,11 @@
           },
           "action": {
             "proxy": {}
-          }
+          },
+          "id": "rt_a"
         }
-      ]
+      ],
+      "id": "site_a"
     },
     {
       "listeners": [
@@ -56,9 +60,11 @@
             "proxy": {
               "upstream": 1
             }
-          }
+          },
+          "id": "rt_b"
         }
-      ]
+      ],
+      "id": "site_b"
     }
   ],
   "upstreams": [
@@ -69,7 +75,8 @@
           "weight": 1
         }
       ],
-      "balancing": "BALANCING_ROUND_ROBIN"
+      "balancing": "BALANCING_ROUND_ROBIN",
+      "id": "up_x"
     },
     {
       "targets": [
@@ -82,7 +89,8 @@
           "weight": 1
         }
       ],
-      "balancing": "BALANCING_ROUND_ROBIN"
+      "balancing": "BALANCING_ROUND_ROBIN",
+      "id": "up_y"
     }
   ]
 }

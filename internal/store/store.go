@@ -189,36 +189,48 @@ type Revision struct {
 	Snapshot  []byte       `json:"-"`
 }
 
+// Draft returns the current resources, applied or not.
+func (s *Store) Draft(ctx context.Context) (model.Config, error) {
+	return loadConfig(ctx, s.db)
+}
+
+type rowsQuerier interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
+func loadConfig(ctx context.Context, q rowsQuerier) (model.Config, error) {
+	var cfg model.Config
+	rows, err := q.QueryContext(ctx, `SELECT kind, body FROM resources ORDER BY id`)
+	if err != nil {
+		return cfg, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var plural, body string
+		if err := rows.Scan(&plural, &body); err != nil {
+			return cfg, err
+		}
+		kind, ok := model.KindByPlural(plural)
+		if !ok {
+			return cfg, fmt.Errorf("stored resource of unknown kind %q", plural)
+		}
+		r := kind.New()
+		if err := json.Unmarshal([]byte(body), r); err != nil {
+			return cfg, err
+		}
+		cfg.Add(r)
+	}
+	return cfg, rows.Err()
+}
+
 // Apply compiles the current resources into the next revision and stores it.
-// A compile failure returns model.FieldErrors and stores nothing.
-func (s *Store) Apply(ctx context.Context, message string) (*Revision, error) {
+// A compile failure returns model.FieldErrors and stores nothing. verify, when
+// set, sees the serialized snapshot before it is stored and can reject it.
+func (s *Store) Apply(ctx context.Context, message string, verify func(snapshot []byte) error) (*Revision, error) {
 	var rev *Revision
 	err := s.tx(ctx, func(tx *sql.Tx) error {
-		var cfg model.Config
-		rows, err := tx.QueryContext(ctx, `SELECT kind, body FROM resources ORDER BY id`)
+		cfg, err := loadConfig(ctx, tx)
 		if err != nil {
-			return err
-		}
-		for rows.Next() {
-			var plural, body string
-			if err := rows.Scan(&plural, &body); err != nil {
-				rows.Close()
-				return err
-			}
-			kind, ok := model.KindByPlural(plural)
-			if !ok {
-				rows.Close()
-				return fmt.Errorf("stored resource of unknown kind %q", plural)
-			}
-			r := kind.New()
-			if err := json.Unmarshal([]byte(body), r); err != nil {
-				rows.Close()
-				return err
-			}
-			cfg.Add(r)
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
 			return err
 		}
 
@@ -233,6 +245,11 @@ func (s *Store) Apply(ctx context.Context, message string) (*Revision, error) {
 		snapBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(snap)
 		if err != nil {
 			return err
+		}
+		if verify != nil {
+			if err := verify(snapBytes); err != nil {
+				return err
+			}
 		}
 		cfgJSON, err := json.Marshal(cfg)
 		if err != nil {

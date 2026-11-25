@@ -12,6 +12,11 @@ import (
 	"strconv"
 	"strings"
 
+	simv1 "github.com/null-variable/proxelo-api/gen/go/proxelo/sim/v1"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
+
+	"github.com/null-variable/proxelo/internal/compile"
 	"github.com/null-variable/proxelo/internal/distrib"
 	"github.com/null-variable/proxelo/internal/model"
 	"github.com/null-variable/proxelo/internal/store"
@@ -25,9 +30,15 @@ type Distributor interface {
 	Nodes() []distrib.NodeStatus
 }
 
-// Handler returns the API handler.
-func Handler(st *store.Store, d Distributor, log *slog.Logger) http.Handler {
-	a := &api{st: st, d: d, log: log}
+// Simulator loads snapshots and runs requests with the proxy engine.
+type Simulator interface {
+	Run(snapshot []byte, requests []*simv1.HttpRequest) (*simv1.SimResponse, error)
+}
+
+// Handler returns the API handler. sim may be nil: apply then skips the
+// engine dry-load and /simulate answers 503.
+func Handler(st *store.Store, d Distributor, sim Simulator, log *slog.Logger) http.Handler {
+	a := &api{st: st, d: d, sim: sim, log: log}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/{kind}", a.list)
 	mux.HandleFunc("POST /api/v1/{kind}", a.create)
@@ -39,12 +50,14 @@ func Handler(st *store.Store, d Distributor, log *slog.Logger) http.Handler {
 	mux.HandleFunc("GET /api/v1/revisions/{rev}", a.revision)
 	mux.HandleFunc("GET /api/v1/revisions/{rev}/snapshot", a.snapshot)
 	mux.HandleFunc("GET /api/v1/nodes", a.nodes)
+	mux.HandleFunc("POST /api/v1/simulate", a.simulate)
 	return mux
 }
 
 type api struct {
 	st  *store.Store
 	d   Distributor
+	sim Simulator
 	log *slog.Logger
 }
 
@@ -320,7 +333,7 @@ func (a *api) apply(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	rev, err := a.st.Apply(r.Context(), req.Message)
+	rev, err := a.st.Apply(r.Context(), req.Message, a.dryLoad)
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -378,4 +391,129 @@ func (a *api) snapshot(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/x-protobuf")
 	w.Write(rev.Snapshot)
+}
+
+// dryLoad loads a snapshot in the proxy engine before it is stored, so what
+// only the engine checks (PCRE2 grammar, template variables, CEL) fails the
+// apply instead of the proxies.
+func (a *api) dryLoad(snapshot []byte) error {
+	if a.sim == nil {
+		return nil
+	}
+	resp, err := a.sim.Run(snapshot, nil)
+	if err != nil {
+		return httpError{http.StatusServiceUnavailable, err.Error()}
+	}
+	if resp.Error != "" {
+		return model.FieldErrors{{Path: "snapshot", Message: resp.Error}}
+	}
+	return nil
+}
+
+// simulateRequest is the body of POST /api/v1/simulate. Requests run against
+// an applied revision, the current draft, or both to compare them.
+type simulateRequest struct {
+	// Applied revision; 0 means the latest.
+	Revision uint64 `json:"revision"`
+	// Also run against the resources as they are now, applied or not.
+	Draft    bool              `json:"draft"`
+	Requests []json.RawMessage `json:"requests"`
+}
+
+type simulateResult struct {
+	Revision uint64            `json:"revision,omitempty"`
+	Draft    bool              `json:"draft,omitempty"`
+	Error    string            `json:"error,omitempty"`
+	Results  []json.RawMessage `json:"results"`
+}
+
+func (a *api) simulate(w http.ResponseWriter, r *http.Request) {
+	if a.sim == nil {
+		a.fail(w, httpError{http.StatusServiceUnavailable, "simulator unavailable"})
+		return
+	}
+	b, err := readBody(r)
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	var req simulateRequest
+	if err := decodeStrict(b, &req); err != nil {
+		a.fail(w, err)
+		return
+	}
+	if len(req.Requests) == 0 {
+		a.fail(w, badRequest("requests: at least one is required"))
+		return
+	}
+	reqs := make([]*simv1.HttpRequest, len(req.Requests))
+	for i, raw := range req.Requests {
+		reqs[i] = &simv1.HttpRequest{}
+		if err := (protojson.UnmarshalOptions{}).Unmarshal(raw, reqs[i]); err != nil {
+			a.fail(w, badRequest("requests[%d]: %v", i, err))
+			return
+		}
+	}
+
+	var out []simulateResult
+	rev, err := a.st.Latest(r.Context())
+	if req.Revision != 0 {
+		rev, err = a.st.Revision(r.Context(), req.Revision)
+	}
+	switch {
+	case errors.Is(err, store.ErrNotFound) && req.Revision == 0 && req.Draft:
+		// Nothing applied yet: only the draft.
+	case err != nil:
+		a.fail(w, err)
+		return
+	default:
+		res, err := a.runSim(rev.Snapshot, reqs)
+		if err != nil {
+			a.fail(w, err)
+			return
+		}
+		res.Revision = rev.Revision
+		out = append(out, res)
+	}
+	if req.Draft {
+		cfg, err := a.st.Draft(r.Context())
+		if err != nil {
+			a.fail(w, err)
+			return
+		}
+		snap, err := compile.Compile(cfg, 0)
+		if err != nil {
+			a.fail(w, err)
+			return
+		}
+		sb, err := proto.MarshalOptions{Deterministic: true}.Marshal(snap)
+		if err != nil {
+			a.fail(w, err)
+			return
+		}
+		res, err := a.runSim(sb, reqs)
+		if err != nil {
+			a.fail(w, err)
+			return
+		}
+		res.Draft = true
+		out = append(out, res)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": out})
+}
+
+func (a *api) runSim(snapshot []byte, reqs []*simv1.HttpRequest) (simulateResult, error) {
+	resp, err := a.sim.Run(snapshot, reqs)
+	if err != nil {
+		return simulateResult{}, httpError{http.StatusServiceUnavailable, err.Error()}
+	}
+	res := simulateResult{Error: resp.Error, Results: []json.RawMessage{}}
+	for _, x := range resp.Results {
+		j, err := protojson.MarshalOptions{UseEnumNumbers: false}.Marshal(x)
+		if err != nil {
+			return res, err
+		}
+		res.Results = append(res.Results, j)
+	}
+	return res, nil
 }

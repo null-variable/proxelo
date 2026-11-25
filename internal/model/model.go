@@ -172,8 +172,46 @@ type RouteSpec struct {
 	ErrorPages []ErrorPage `json:"errorPages,omitempty"`
 }
 
+// Match selects requests by path (nginx location) and, optionally, by
+// conditions checked after the path. Routes with the same path in one block
+// are tried in order with their conditions, then the one without.
 type Match struct {
 	Path PathMatch `json:"path"`
+	// Uppercase methods; empty allows any.
+	Methods []string `json:"methods,omitempty"`
+	// Header conditions; names are case-insensitive.
+	Headers []ValueMatch `json:"headers,omitempty"`
+	// Query argument conditions; names are case-sensitive.
+	Query []ValueMatch `json:"query,omitempty"`
+	// CEL expression over `request` (see proxelo.expr.v1.Request) that must
+	// be a bool, with the standard library and the network extension.
+	Expr string `json:"expr,omitempty"`
+}
+
+// HasConditions reports whether anything beyond the path is matched.
+func (m *Match) HasConditions() bool {
+	return len(m.Methods) > 0 || len(m.Headers) > 0 || len(m.Query) > 0 || m.Expr != ""
+}
+
+type MatchOp string
+
+const (
+	OpPresent  MatchOp = "present"
+	OpAbsent   MatchOp = "absent"
+	OpEquals   MatchOp = "equals"
+	OpPrefix   MatchOp = "prefix"
+	OpSuffix   MatchOp = "suffix"
+	OpContains MatchOp = "contains"
+	// PCRE2, checked by the proxy when it loads the snapshot.
+	OpRegex MatchOp = "regex"
+)
+
+// ValueMatch is one condition on a header or query argument, compared with
+// the raw value as sent.
+type ValueMatch struct {
+	Name  string  `json:"name"`
+	Op    MatchOp `json:"op"`
+	Value string  `json:"value,omitempty"`
 }
 
 type PathMatchType string

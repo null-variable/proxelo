@@ -47,7 +47,7 @@ func up(args []string) error {
 	defer stop()
 
 	children := []child{
-		{name: "control", path: self, args: []string{"control", "-data", *dataDir, "-listen", *listen, "-socket", *socket}},
+		{name: "control", path: self, args: []string{"control", "-data", *dataDir, "-listen", *listen, "-socket", *socket, "-proxy", bin}},
 		{name: "proxy", path: bin, args: append([]string{"run", "--data", *dataDir, "--socket", *socket}, proxyArgs...)},
 	}
 	var wg sync.WaitGroup
