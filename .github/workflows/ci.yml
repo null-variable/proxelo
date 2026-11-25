@@ -1,0 +1,39 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        run: test -z "$(gofmt -l .)"
+      - run: go vet ./...
+      - run: go test -race ./...
+
+  snapshot-compat:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: null-variable/proxelo-proxy
+          path: proxy
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --manifest-path proxy/Cargo.toml
+      - name: Compiled examples load in the proxy
+        run: |
+          for f in examples/*.json; do
+            go run ./cmd/proxelo compile "$f" /tmp/snapshot.bin
+            proxy/target/debug/proxelo-proxy check /tmp/snapshot.bin
+          done

@@ -1,0 +1,13 @@
+{
+  "listeners": [{"id": "http", "address": "0.0.0.0:8080", "defaultSite": "web"}],
+  "sites": [{
+    "id": "web",
+    "listeners": ["http"],
+    "hostnames": ["example.com"],
+    "routes": [
+      {"path": {"kind": "prefix", "value": "/api/"}, "action": {"proxy": {"upstream": "api"}}},
+      {"path": {"kind": "prefix", "value": "/"}, "action": {"static": {"root": "/srv/www", "index": ["index.html"]}}}
+    ]
+  }],
+  "upstreams": [{"id": "api", "targets": [{"address": "127.0.0.1:9000"}]}]
+}
