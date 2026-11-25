@@ -16,13 +16,27 @@ serving its last good snapshot when the control plane is unavailable.
 
 ## Status
 
-Early development. The control plane stores Listener, Site, Route and Upstream
-resources in SQLite, serves them over a REST API, compiles them into snapshots
+Early development. The control plane stores Listener, Site, Route, Upstream,
+Certificate and Policy resources in SQLite, serves them over a REST API, compiles them into snapshots
 and pushes every applied snapshot to connected proxies. Routes cover the nginx
 location kinds (exact, prefix, `^~`, `~`, `~*`) and nesting, rewrite, return,
 error_page and try_files; error pages and try_files can hand off to another
 route like an nginx named location. Routes can also match on methods, headers,
 query arguments and a CEL expression; expressions are type-checked when saved.
+
+Listeners can terminate TLS and offer HTTP/2; sites pick certificates by SNI
+and can redirect plain requests to https. Certificates are uploaded as PEM
+(the key is never returned by the API) or issued and renewed by the control
+plane over ACME (HTTP-01 and TLS-ALPN-01, Let's Encrypt by default, 30 days
+before expiry); a renewal makes a revision that changes only that
+certificate. Upstreams balance by round robin or least_conn with backup
+targets and passive health, and proxy routes set timeouts and retries.
+
+Policies attach to sites and routes and are inherited down the route tree:
+`headers` sets, adds or removes response headers and headers
+sent upstream, merged by name with the closest policy winning; `accessLog`
+picks the log for its routes (`combined`, `main`, `json` or a template). A
+route with `"inheritPolicies": false` starts over.
 
 Applies are dry-loaded by the proxy engine (`proxelo-proxy sim`, a resident
 helper) before a revision is stored, so a snapshot the proxy would reject never
@@ -34,6 +48,9 @@ Run both processes together (development, home lab):
 go build -o proxelo ./cmd/proxelo
 ./proxelo up -data ./data -listen 127.0.0.1:9443 -proxy ../proxelo-proxy/target/release/proxelo-proxy
 ```
+
+Proxies expose Prometheus metrics on `127.0.0.1:9145/metrics` by default
+(`-- --metrics <addr|off>`). ACME uses `-acme-directory` and `-acme-email`.
 
 `up` starts `proxelo control` and `proxelo-proxy run` as children, restarts
 either one if it exits and stops both on SIGTERM. Arguments after `--` go to
@@ -53,7 +70,7 @@ control plane is down and reconnects when it is back.
 
 | Endpoint | Purpose |
 |---|---|
-| `GET/POST /api/v1/{kind}` | List or create `listeners`, `sites`, `routes`, `upstreams` |
+| `GET/POST /api/v1/{kind}` | List or create `listeners`, `sites`, `routes`, `upstreams`, `certificates`, `policies` |
 | `GET/PATCH/DELETE /api/v1/{kind}/{id}` | Read, merge-patch (RFC 7396) or delete; `If-Match: "<resourceVersion>"` guards writes |
 | `POST /api/v1/apply` | Compile all resources into the next revision (`{"message": "..."}`) |
 | `GET /api/v1/revisions[/{rev}]` | Revision history, or one revision with its resources |
@@ -80,7 +97,9 @@ proxelo-proxy check snapshot.bin
 | `internal/compile` | Resource to snapshot compiler, golden tests in `testdata/` |
 | `internal/store` | SQLite storage for resources and revisions |
 | `internal/api` | REST API |
-| `internal/distrib` | Snapshot distribution to proxies over the control socket |
+| `internal/distrib` | Snapshot and ACME challenge distribution to proxies over the control socket |
+| `internal/acme` | ACME issuance and renewal |
+| `internal/simulate` | Resident `proxelo-proxy sim` helper for dry-loads and simulation |
 | `examples` | Sample resource files |
 | `test/bench` | Benchmark harness: nginx vs `proxelo-proxy` (S1, S3), see its README |
 
