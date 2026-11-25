@@ -17,12 +17,31 @@ serving its last good snapshot when the control plane is unavailable.
 ## Status
 
 Early development. The control plane stores Listener, Site, Route and Upstream
-resources in SQLite, serves them over a REST API and compiles them into
-snapshots that `proxelo-proxy check` accepts.
+resources in SQLite, serves them over a REST API, compiles them into snapshots
+and pushes every applied snapshot to connected proxies.
+
+Run both processes together (development, home lab):
 
 ```sh
-go run ./cmd/proxelo control -data ./data -listen 127.0.0.1:9443
+go build -o proxelo ./cmd/proxelo
+./proxelo up -data ./data -listen 127.0.0.1:9443 -proxy ../proxelo-proxy/target/release/proxelo-proxy
 ```
+
+`up` starts `proxelo control` and `proxelo-proxy run` as children, restarts
+either one if it exits and stops both on SIGTERM. Arguments after `--` go to
+the proxy (`-- --workers 4 --runtime per-core`). In production run them as two
+services instead:
+
+```sh
+proxelo control -data /var/lib/proxelo -listen 127.0.0.1:9443 -socket /run/proxelo/control.sock
+proxelo-proxy run --data /var/lib/proxelo --socket /run/proxelo/control.sock
+```
+
+The proxy dials the control socket (gRPC `DistributionService.Sync` from
+`proxelo-api`), receives the newest snapshot on connect and on every apply,
+and answers each with an ack. It keeps the last snapshot it applied in
+`<data>/proxy/lkg.snap` and starts from it, so it serves traffic while the
+control plane is down and reconnects when it is back.
 
 | Endpoint | Purpose |
 |---|---|
@@ -31,6 +50,7 @@ go run ./cmd/proxelo control -data ./data -listen 127.0.0.1:9443
 | `POST /api/v1/apply` | Compile all resources into the next revision (`{"message": "..."}`) |
 | `GET /api/v1/revisions[/{rev}]` | Revision history, or one revision with its resources |
 | `GET /api/v1/revisions/{rev}/snapshot` | Compiled snapshot (protobuf) |
+| `GET /api/v1/nodes` | Connected proxies: active, last sent and last rejected revision |
 
 Validation errors return `422` with field paths such as
 `routes[rt_...].spec.action.proxy.upstream`.
@@ -51,6 +71,7 @@ proxelo-proxy check snapshot.bin
 | `internal/compile` | Resource to snapshot compiler, golden tests in `testdata/` |
 | `internal/store` | SQLite storage for resources and revisions |
 | `internal/api` | REST API |
+| `internal/distrib` | Snapshot distribution to proxies over the control socket |
 | `examples` | Sample resource files |
 | `test/bench` | Benchmark harness: nginx vs `proxelo-proxy` (S1, S3), see its README |
 

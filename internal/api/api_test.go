@@ -13,12 +13,28 @@ import (
 	snapshotv1 "github.com/null-variable/proxelo-api/gen/go/proxelo/snapshot/v1"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/null-variable/proxelo/internal/distrib"
 	"github.com/null-variable/proxelo/internal/store"
 )
 
 type client struct {
 	t   *testing.T
 	srv *httptest.Server
+	d   *fakeDistributor
+}
+
+// fakeDistributor records published snapshots.
+type fakeDistributor struct {
+	published [][]byte
+}
+
+func (f *fakeDistributor) Publish(b []byte) error {
+	f.published = append(f.published, b)
+	return nil
+}
+
+func (f *fakeDistributor) Nodes() []distrib.NodeStatus {
+	return []distrib.NodeStatus{{NodeID: "node-a", ActiveRevision: uint64(len(f.published))}}
 }
 
 func newClient(t *testing.T) *client {
@@ -28,9 +44,10 @@ func newClient(t *testing.T) *client {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
-	srv := httptest.NewServer(Handler(st, slog.New(slog.DiscardHandler)))
+	d := &fakeDistributor{}
+	srv := httptest.NewServer(Handler(st, d, slog.New(slog.DiscardHandler)))
 	t.Cleanup(srv.Close)
-	return &client{t: t, srv: srv}
+	return &client{t: t, srv: srv, d: d}
 }
 
 // do sends body (marshalled unless it is a string) and decodes a JSON reply into out.
@@ -155,6 +172,16 @@ func TestCRUDAndApply(t *testing.T) {
 		snap.GetSites()[0].GetRoutes()[0].GetAction().GetProxy() == nil || !bytes.Equal(snap.GetHash(), rev.Hash) {
 		t.Fatalf("snapshot = %v", &snap)
 	}
+	if len(c.d.published) != 1 || !bytes.Equal(c.d.published[0], raw) {
+		t.Fatal("apply did not publish the stored snapshot")
+	}
+	var nodes struct {
+		Items []distrib.NodeStatus `json:"items"`
+	}
+	wantStatus(t, c.do("GET", "/api/v1/nodes", nil, nil, &nodes), http.StatusOK)
+	if len(nodes.Items) != 1 || nodes.Items[0].NodeID != "node-a" || nodes.Items[0].ActiveRevision != 1 {
+		t.Fatalf("nodes = %+v", nodes.Items)
+	}
 
 	// The upstream is still referenced; deleting it makes the next apply fail
 	// at the referencing field and leaves the revision history unchanged.
@@ -170,6 +197,9 @@ func TestCRUDAndApply(t *testing.T) {
 	wantStatus(t, c.do("GET", "/api/v1/revisions", nil, nil, &revs), http.StatusOK)
 	if len(revs.Items) != 1 {
 		t.Fatalf("revisions = %d", len(revs.Items))
+	}
+	if len(c.d.published) != 1 {
+		t.Fatal("failed apply published a snapshot")
 	}
 
 	var full struct {

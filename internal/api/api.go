@@ -12,15 +12,22 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/null-variable/proxelo/internal/distrib"
 	"github.com/null-variable/proxelo/internal/model"
 	"github.com/null-variable/proxelo/internal/store"
 )
 
 const maxBody = 1 << 20
 
+// Distributor delivers applied snapshots to proxies.
+type Distributor interface {
+	Publish(snapshot []byte) error
+	Nodes() []distrib.NodeStatus
+}
+
 // Handler returns the API handler.
-func Handler(st *store.Store, log *slog.Logger) http.Handler {
-	a := &api{st: st, log: log}
+func Handler(st *store.Store, d Distributor, log *slog.Logger) http.Handler {
+	a := &api{st: st, d: d, log: log}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/{kind}", a.list)
 	mux.HandleFunc("POST /api/v1/{kind}", a.create)
@@ -31,11 +38,13 @@ func Handler(st *store.Store, log *slog.Logger) http.Handler {
 	mux.HandleFunc("GET /api/v1/revisions", a.revisions)
 	mux.HandleFunc("GET /api/v1/revisions/{rev}", a.revision)
 	mux.HandleFunc("GET /api/v1/revisions/{rev}/snapshot", a.snapshot)
+	mux.HandleFunc("GET /api/v1/nodes", a.nodes)
 	return mux
 }
 
 type api struct {
 	st  *store.Store
+	d   Distributor
 	log *slog.Logger
 }
 
@@ -317,7 +326,16 @@ func (a *api) apply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.log.Info("applied", "revision", rev.Revision, "hash", fmt.Sprintf("%x", rev.Hash))
+	// The revision is stored; proxies that miss this push get it when they
+	// reconnect, so a publish failure is logged rather than undoing the apply.
+	if err := a.d.Publish(rev.Snapshot); err != nil {
+		a.log.Error("publishing snapshot", "revision", rev.Revision, "err", err)
+	}
 	writeJSON(w, http.StatusCreated, rev)
+}
+
+func (a *api) nodes(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"items": a.d.Nodes()})
 }
 
 func (a *api) revisions(w http.ResponseWriter, r *http.Request) {

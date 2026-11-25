@@ -267,6 +267,18 @@ func (s *Store) Revisions(ctx context.Context) ([]*Revision, error) {
 	return out, rows.Err()
 }
 
+// Latest returns the newest revision, or ErrNotFound if none was applied.
+func (s *Store) Latest(ctx context.Context) (*Revision, error) {
+	var n uint64
+	if err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(revision), 0) FROM revisions`).Scan(&n); err != nil {
+		return nil, err
+	}
+	if n == 0 {
+		return nil, ErrNotFound
+	}
+	return s.Revision(ctx, n)
+}
+
 // Revision returns one revision with its config and snapshot.
 func (s *Store) Revision(ctx context.Context, n uint64) (*Revision, error) {
 	row := s.db.QueryRowContext(ctx, `SELECT revision, created_at, message, hash, config, snapshot FROM revisions WHERE revision = ?`, n)

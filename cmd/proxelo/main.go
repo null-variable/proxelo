@@ -19,6 +19,7 @@ import (
 
 	"github.com/null-variable/proxelo/internal/api"
 	"github.com/null-variable/proxelo/internal/compile"
+	"github.com/null-variable/proxelo/internal/distrib"
 	"github.com/null-variable/proxelo/internal/model"
 	"github.com/null-variable/proxelo/internal/store"
 )
@@ -28,7 +29,10 @@ var version = "dev"
 const usage = `usage: proxelo <command>
 
 commands:
-  control [-data dir] [-listen addr]   run the control plane API
+  control [-data dir] [-listen addr] [-socket path]
+                                       run the control plane API and snapshot distribution
+  up [-data dir] [-listen addr] [-socket path] [-proxy path] [-- proxy options]
+                                       run the control plane and proxelo-proxy together
   compile <config.json> <out.bin>      compile resources into a snapshot
   version                              print the version`
 
@@ -50,6 +54,8 @@ func run(args []string) int {
 		err = compileFile(args[1], args[2])
 	case args[0] == "control":
 		err = control(args[1:])
+	case args[0] == "up":
+		err = up(args[1:])
 	default:
 		fmt.Fprintln(os.Stderr, usage)
 		return 2
@@ -68,6 +74,7 @@ func control(args []string) error {
 	fs := flag.NewFlagSet("control", flag.ContinueOnError)
 	dataDir := fs.String("data", envOr("PROXELO_DATA", "/var/lib/proxelo"), "data directory (env PROXELO_DATA)")
 	listen := fs.String("listen", envOr("PROXELO_ADMIN_LISTEN", "127.0.0.1:9443"), "admin API address (env PROXELO_ADMIN_LISTEN)")
+	socket := fs.String("socket", envOr("PROXELO_CONTROL_SOCKET", "/run/proxelo/control.sock"), "Unix socket proxies connect to (env PROXELO_CONTROL_SOCKET)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -86,25 +93,47 @@ func control(args []string) error {
 	}
 	defer st.Close()
 
+	dist := distrib.New(log)
+	switch rev, err := st.Latest(context.Background()); {
+	case errors.Is(err, store.ErrNotFound):
+	case err != nil:
+		return err
+	default:
+		if err := dist.Publish(rev.Snapshot); err != nil {
+			return err
+		}
+	}
+
+	ln, err := distrib.Listen(*socket)
+	if err != nil {
+		return fmt.Errorf("control socket: %w", err)
+	}
+	grpcSrv := distrib.NewServer(dist)
 	srv := &http.Server{
 		Addr:              *listen,
-		Handler:           api.Handler(st, log),
+		Handler:           api.Handler(st, dist, log),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	errc := make(chan error, 1)
+	errc := make(chan error, 2)
+	go func() { errc <- fmt.Errorf("control socket: %w", grpcSrv.Serve(ln)) }()
 	go func() { errc <- srv.ListenAndServe() }()
-	log.Info("control plane listening", "addr", *listen, "data", *dataDir)
+	log.Info("control plane listening", "addr", *listen, "socket", *socket, "data", *dataDir)
 
+	var runErr error
 	select {
-	case err := <-errc:
-		return err
+	case runErr = <-errc:
 	case <-ctx.Done():
 	}
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	return srv.Shutdown(shutdownCtx)
+	// Proxy streams never end on their own; Stop closes them.
+	grpcSrv.Stop()
+	if err := srv.Shutdown(shutdownCtx); err != nil && runErr == nil {
+		runErr = err
+	}
+	return runErr
 }
 
 func envOr(key, def string) string {
