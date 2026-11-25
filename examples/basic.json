@@ -1,13 +1,25 @@
 {
-  "listeners": [{"id": "http", "address": "0.0.0.0:8080", "defaultSite": "web"}],
-  "sites": [{
-    "id": "web",
-    "listeners": ["http"],
-    "hostnames": ["example.com"],
-    "routes": [
-      {"path": {"kind": "prefix", "value": "/api/"}, "action": {"proxy": {"upstream": "api"}}},
-      {"path": {"kind": "prefix", "value": "/"}, "action": {"static": {"root": "/srv/www", "index": ["index.html"]}}}
-    ]
-  }],
-  "upstreams": [{"id": "api", "targets": [{"address": "127.0.0.1:9000"}]}]
+  "listeners": [
+    {"id": "lst_http", "name": "http", "spec": {"address": "0.0.0.0:8080", "defaultSite": "site_web"}}
+  ],
+  "sites": [
+    {"id": "site_web", "name": "web", "spec": {
+      "listeners": ["lst_http"],
+      "hostnames": [{"type": "exact", "value": "example.com"}],
+      "routes": ["rt_api", "rt_root"]
+    }}
+  ],
+  "routes": [
+    {"id": "rt_api", "name": "api", "spec": {
+      "match": {"path": {"type": "prefix", "value": "/api/"}},
+      "action": {"type": "proxy", "proxy": {"upstream": "up_api"}}
+    }},
+    {"id": "rt_root", "name": "root", "spec": {
+      "match": {"path": {"type": "prefix", "value": "/"}},
+      "action": {"type": "static", "static": {"root": "/srv/www", "index": ["index.html"]}}
+    }}
+  ],
+  "upstreams": [
+    {"id": "up_api", "name": "api", "spec": {"targets": [{"address": "127.0.0.1:9000"}], "keepalive": {"idle": 32}}}
+  ]
 }

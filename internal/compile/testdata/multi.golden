@@ -1,0 +1,88 @@
+{
+  "revision": "1",
+  "hash": "pzjh0SI8zM7FOWy3XogC6nM4LufJZfBPvVq56DjXYsA=",
+  "listeners": [
+    {
+      "address": "0.0.0.0:8080",
+      "defaultSite": 1
+    },
+    {
+      "address": "0.0.0.0:8443",
+      "reusePort": true,
+      "backlog": 4096
+    }
+  ],
+  "sites": [
+    {
+      "listeners": [
+        0
+      ],
+      "hostnames": [
+        {
+          "kind": "KIND_EXACT",
+          "value": "a.example.com"
+        }
+      ],
+      "routes": [
+        {
+          "path": {
+            "kind": "KIND_PREFIX",
+            "value": "/"
+          },
+          "action": {
+            "proxy": {}
+          }
+        }
+      ]
+    },
+    {
+      "listeners": [
+        0,
+        1
+      ],
+      "hostnames": [
+        {
+          "kind": "KIND_EXACT",
+          "value": "b.example.com"
+        }
+      ],
+      "routes": [
+        {
+          "path": {
+            "kind": "KIND_EXACT",
+            "value": "/"
+          },
+          "action": {
+            "proxy": {
+              "upstream": 1
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "upstreams": [
+    {
+      "targets": [
+        {
+          "address": "10.0.0.1:80",
+          "weight": 1
+        }
+      ],
+      "balancing": "BALANCING_ROUND_ROBIN"
+    },
+    {
+      "targets": [
+        {
+          "address": "10.0.0.3:80",
+          "weight": 3
+        },
+        {
+          "address": "10.0.0.4:80",
+          "weight": 1
+        }
+      ],
+      "balancing": "BALANCING_ROUND_ROBIN"
+    }
+  ]
+}

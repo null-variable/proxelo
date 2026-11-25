@@ -1,0 +1,60 @@
+{
+  "revision": "1",
+  "hash": "ThBOyL/xm+ybJEhbIa4u7Dhhx7fdzygK7pJStI36rVQ=",
+  "listeners": [
+    {
+      "address": "0.0.0.0:8080",
+      "defaultSite": 0
+    }
+  ],
+  "sites": [
+    {
+      "listeners": [
+        0
+      ],
+      "hostnames": [
+        {
+          "kind": "KIND_EXACT",
+          "value": "example.com"
+        }
+      ],
+      "routes": [
+        {
+          "path": {
+            "kind": "KIND_PREFIX",
+            "value": "/api/"
+          },
+          "action": {
+            "proxy": {}
+          }
+        },
+        {
+          "path": {
+            "kind": "KIND_PREFIX",
+            "value": "/"
+          },
+          "action": {
+            "static": {
+              "root": "/srv/www",
+              "index": [
+                "index.html"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "upstreams": [
+    {
+      "targets": [
+        {
+          "address": "127.0.0.1:9000",
+          "weight": 1
+        }
+      ],
+      "balancing": "BALANCING_ROUND_ROBIN",
+      "keepaliveIdle": 32
+    }
+  ]
+}

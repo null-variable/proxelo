@@ -1,0 +1,19 @@
+{
+  "listeners": [
+    {"id": "lst_b", "name": "https", "spec": {"address": "0.0.0.0:8443", "reusePort": true, "backlog": 4096}},
+    {"id": "lst_a", "name": "http", "spec": {"address": "0.0.0.0:8080", "defaultSite": "site_b"}}
+  ],
+  "sites": [
+    {"id": "site_b", "name": "b", "spec": {"listeners": ["lst_a", "lst_b"], "hostnames": [{"type": "exact", "value": "b.example.com"}], "routes": ["rt_b"]}},
+    {"id": "site_a", "name": "a", "spec": {"listeners": ["lst_a"], "hostnames": [{"type": "exact", "value": "a.example.com"}], "routes": ["rt_a", "rt_off"]}}
+  ],
+  "routes": [
+    {"id": "rt_off", "name": "off", "enabled": false, "spec": {"match": {"path": {"type": "exact", "value": "/old"}}, "action": {"type": "proxy", "proxy": {"upstream": "up_y"}}}},
+    {"id": "rt_b", "name": "b", "spec": {"match": {"path": {"type": "exact", "value": "/"}}, "action": {"type": "proxy", "proxy": {"upstream": "up_y"}}}},
+    {"id": "rt_a", "name": "a", "spec": {"match": {"path": {"type": "prefix", "value": "/"}}, "action": {"type": "proxy", "proxy": {"upstream": "up_x"}}}}
+  ],
+  "upstreams": [
+    {"id": "up_y", "name": "y", "spec": {"targets": [{"address": "10.0.0.3:80", "weight": 3}, {"address": "10.0.0.4:80"}]}},
+    {"id": "up_x", "name": "x", "spec": {"targets": [{"address": "10.0.0.1:80"}]}}
+  ]
+}

@@ -16,8 +16,26 @@ serving its last good snapshot when the control plane is unavailable.
 
 ## Status
 
-Early development. `proxelo compile` turns a JSON resource file into a
-snapshot that `proxelo-proxy check` accepts:
+Early development. The control plane stores Listener, Site, Route and Upstream
+resources in SQLite, serves them over a REST API and compiles them into
+snapshots that `proxelo-proxy check` accepts.
+
+```sh
+go run ./cmd/proxelo control -data ./data -listen 127.0.0.1:9443
+```
+
+| Endpoint | Purpose |
+|---|---|
+| `GET/POST /api/v1/{kind}` | List or create `listeners`, `sites`, `routes`, `upstreams` |
+| `GET/PATCH/DELETE /api/v1/{kind}/{id}` | Read, merge-patch (RFC 7396) or delete; `If-Match: "<resourceVersion>"` guards writes |
+| `POST /api/v1/apply` | Compile all resources into the next revision (`{"message": "..."}`) |
+| `GET /api/v1/revisions[/{rev}]` | Revision history, or one revision with its resources |
+| `GET /api/v1/revisions/{rev}/snapshot` | Compiled snapshot (protobuf) |
+
+Validation errors return `422` with field paths such as
+`routes[rt_...].spec.action.proxy.upstream`.
+
+A resource file can also be compiled offline:
 
 ```sh
 go run ./cmd/proxelo compile examples/basic.json snapshot.bin
@@ -29,8 +47,10 @@ proxelo-proxy check snapshot.bin
 | Path | Contents |
 |---|---|
 | `cmd/proxelo` | Control plane binary |
-| `internal/model` | Resources edited through the API |
-| `internal/compile` | Resource to snapshot compiler |
+| `internal/model` | Resources edited through the API and their field validation |
+| `internal/compile` | Resource to snapshot compiler, golden tests in `testdata/` |
+| `internal/store` | SQLite storage for resources and revisions |
+| `internal/api` | REST API |
 | `examples` | Sample resource files |
 
 ## Development
@@ -38,6 +58,7 @@ proxelo-proxy check snapshot.bin
 ```sh
 go vet ./...
 go test ./...
+go test ./internal/compile -update   # rewrite golden snapshots
 ```
 
 ## License

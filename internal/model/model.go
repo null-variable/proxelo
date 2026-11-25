@@ -1,72 +1,204 @@
 // Package model defines the resources users edit through the API and UI.
+//
+// Resources reference each other by ID. The compile package resolves those
+// references into the snapshot served by proxies.
 package model
 
-// Listener is a socket the proxy accepts connections on.
+import (
+	"time"
+
+	"github.com/oklog/ulid/v2"
+)
+
+// Meta holds the fields every resource has.
+type Meta struct {
+	ID          string            `json:"id"`
+	Name        string            `json:"name"`
+	Labels      map[string]string `json:"labels,omitempty"`
+	Description string            `json:"description,omitempty"`
+	// Enabled false keeps the resource stored but leaves it out of snapshots.
+	// Nil means enabled.
+	Enabled         *bool     `json:"enabled,omitempty"`
+	ResourceVersion int64     `json:"resourceVersion"`
+	CreatedAt       time.Time `json:"createdAt"`
+	UpdatedAt       time.Time `json:"updatedAt"`
+}
+
+// Common returns the shared fields. It lets every resource satisfy Resource.
+func (m *Meta) Common() *Meta { return m }
+
+// IsEnabled reports whether the resource takes part in compilation.
+func (m *Meta) IsEnabled() bool { return m.Enabled == nil || *m.Enabled }
+
+// Resource is implemented by pointers to every resource type.
+type Resource interface {
+	Common() *Meta
+}
+
+// Kind describes one resource type as it appears in the API.
+type Kind struct {
+	// Plural is the collection name used in URLs, for example "routes".
+	Plural   string
+	IDPrefix string
+	New      func() Resource
+}
+
+// NewID returns a new immutable resource ID such as "rt_01JD8X...".
+func (k Kind) NewID() string { return k.IDPrefix + "_" + ulid.Make().String() }
+
+var (
+	ListenerKind = Kind{Plural: "listeners", IDPrefix: "lst", New: func() Resource { return &Listener{} }}
+	SiteKind     = Kind{Plural: "sites", IDPrefix: "site", New: func() Resource { return &Site{} }}
+	RouteKind    = Kind{Plural: "routes", IDPrefix: "rt", New: func() Resource { return &Route{} }}
+	UpstreamKind = Kind{Plural: "upstreams", IDPrefix: "up", New: func() Resource { return &Upstream{} }}
+)
+
+// Kinds lists every resource kind in a fixed order.
+var Kinds = []Kind{ListenerKind, SiteKind, RouteKind, UpstreamKind}
+
+// KindByPlural finds a kind by its collection name.
+func KindByPlural(plural string) (Kind, bool) {
+	for _, k := range Kinds {
+		if k.Plural == plural {
+			return k, true
+		}
+	}
+	return Kind{}, false
+}
+
+// Listener is a socket the proxy accepts connections on (nginx listen).
 type Listener struct {
-	ID          string `json:"id"`
-	Address     string `json:"address"`
-	ReusePort   bool   `json:"reusePort"`
-	Backlog     uint32 `json:"backlog"`
+	Meta
+	Spec ListenerSpec `json:"spec"`
+}
+
+type ListenerSpec struct {
+	// host:port, for example "0.0.0.0:443".
+	Address   string `json:"address"`
+	ReusePort bool   `json:"reusePort,omitempty"`
+	Backlog   uint32 `json:"backlog,omitempty"`
+	// Site ID served when no hostname matches (nginx default_server).
 	DefaultSite string `json:"defaultSite,omitempty"`
 }
 
-// Site groups routes served for a set of hostnames.
+// Site groups routes served for a set of hostnames (nginx server).
 type Site struct {
-	ID        string   `json:"id"`
-	Listeners []string `json:"listeners"`
-	Hostnames []string `json:"hostnames"`
-	Routes    []Route  `json:"routes"`
+	Meta
+	Spec SiteSpec `json:"spec"`
 }
 
-// PathKind selects how a route path is compared with the request path.
-type PathKind string
+type SiteSpec struct {
+	// Listener IDs.
+	Listeners []string    `json:"listeners"`
+	Hostnames []HostMatch `json:"hostnames,omitempty"`
+	// Route IDs in display order. Matching priority does not depend on it.
+	Routes []string `json:"routes,omitempty"`
+}
 
-const (
-	PathExact  PathKind = "exact"
-	PathPrefix PathKind = "prefix"
-)
+type HostMatchType string
 
-// Route maps a request path to an action.
+const HostExact HostMatchType = "exact"
+
+type HostMatch struct {
+	Type  HostMatchType `json:"type"`
+	Value string        `json:"value"`
+}
+
+// Route maps matching requests to an action (nginx location).
 type Route struct {
-	Path   Path   `json:"path"`
+	Meta
+	Spec RouteSpec `json:"spec"`
+}
+
+type RouteSpec struct {
+	Match  Match  `json:"match"`
 	Action Action `json:"action"`
 }
 
-type Path struct {
-	Kind  PathKind `json:"kind"`
-	Value string   `json:"value"`
+type Match struct {
+	Path PathMatch `json:"path"`
 }
 
-// Action is exactly one of Static or Proxy.
+type PathMatchType string
+
+const (
+	PathExact  PathMatchType = "exact"
+	PathPrefix PathMatchType = "prefix"
+)
+
+type PathMatch struct {
+	Type  PathMatchType `json:"type"`
+	Value string        `json:"value"`
+}
+
+type ActionType string
+
+const (
+	ActionStatic ActionType = "static"
+	ActionProxy  ActionType = "proxy"
+)
+
+// Action carries the settings for Type and nothing else.
 type Action struct {
+	Type   ActionType    `json:"type"`
 	Static *StaticAction `json:"static,omitempty"`
 	Proxy  *ProxyAction  `json:"proxy,omitempty"`
 }
 
 type StaticAction struct {
+	// Absolute directory path.
 	Root  string   `json:"root"`
 	Index []string `json:"index,omitempty"`
 }
 
 type ProxyAction struct {
+	// Upstream ID.
 	Upstream string `json:"upstream"`
 }
 
-// Upstream is a pool of backend targets.
+// Upstream is a pool of backend targets (nginx upstream).
 type Upstream struct {
-	ID            string   `json:"id"`
-	Targets       []Target `json:"targets"`
-	KeepaliveIdle uint32   `json:"keepaliveIdle"`
+	Meta
+	Spec UpstreamSpec `json:"spec"`
+}
+
+type UpstreamSpec struct {
+	Targets   []Target  `json:"targets"`
+	Keepalive Keepalive `json:"keepalive"`
 }
 
 type Target struct {
+	// host:port
 	Address string `json:"address"`
-	Weight  uint32 `json:"weight"`
+	// Zero means 1.
+	Weight uint32 `json:"weight,omitempty"`
+}
+
+type Keepalive struct {
+	// Idle connections kept per worker (nginx keepalive).
+	Idle uint32 `json:"idle,omitempty"`
 }
 
 // Config is the full set of resources compiled into one snapshot.
 type Config struct {
-	Listeners []Listener `json:"listeners"`
-	Sites     []Site     `json:"sites"`
-	Upstreams []Upstream `json:"upstreams"`
+	Listeners []*Listener `json:"listeners,omitempty"`
+	Sites     []*Site     `json:"sites,omitempty"`
+	Routes    []*Route    `json:"routes,omitempty"`
+	Upstreams []*Upstream `json:"upstreams,omitempty"`
+}
+
+// Add appends r to the list for its type.
+func (c *Config) Add(r Resource) {
+	switch r := r.(type) {
+	case *Listener:
+		c.Listeners = append(c.Listeners, r)
+	case *Site:
+		c.Sites = append(c.Sites, r)
+	case *Route:
+		c.Routes = append(c.Routes, r)
+	case *Upstream:
+		c.Upstreams = append(c.Upstreams, r)
+	default:
+		panic("model: unknown resource type")
+	}
 }

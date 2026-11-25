@@ -1,9 +1,15 @@
 // Package compile turns user resources into the snapshot served by proxies.
+//
+// The compiler is where references between resources are resolved and
+// checked. It skips disabled resources and orders everything by ID so the
+// same resources always produce the same snapshot bytes and hash.
 package compile
 
 import (
+	"cmp"
 	"crypto/sha256"
 	"fmt"
+	"slices"
 
 	snapshotv1 "github.com/null-variable/proxelo-api/gen/go/proxelo/snapshot/v1"
 	"google.golang.org/protobuf/proto"
@@ -11,100 +17,15 @@ import (
 	"github.com/null-variable/proxelo/internal/model"
 )
 
-// Error points at the resource field that failed to compile.
-type Error struct {
-	Path string
-	Msg  string
-}
-
-func (e *Error) Error() string { return e.Path + ": " + e.Msg }
-
-func errf(path, format string, args ...any) error {
-	return &Error{Path: path, Msg: fmt.Sprintf(format, args...)}
-}
-
 // Compile resolves IDs to indexes and returns a snapshot with its hash set.
+// All errors found are returned together, with paths such as
+// "routes[rt_x].spec.action.proxy.upstream".
 func Compile(cfg model.Config, revision uint64) (*snapshotv1.Snapshot, error) {
-	listenerIdx := make(map[string]uint32, len(cfg.Listeners))
-	for i, l := range cfg.Listeners {
-		if _, dup := listenerIdx[l.ID]; dup {
-			return nil, errf(fmt.Sprintf("listeners[%s]", l.ID), "duplicate id")
-		}
-		listenerIdx[l.ID] = uint32(i)
+	c := compiler{}
+	snap := c.compile(cfg, revision)
+	if err := c.errs.Err(); err != nil {
+		return nil, err
 	}
-	siteIdx := make(map[string]uint32, len(cfg.Sites))
-	for i, s := range cfg.Sites {
-		if _, dup := siteIdx[s.ID]; dup {
-			return nil, errf(fmt.Sprintf("sites[%s]", s.ID), "duplicate id")
-		}
-		siteIdx[s.ID] = uint32(i)
-	}
-	upstreamIdx := make(map[string]uint32, len(cfg.Upstreams))
-	for i, u := range cfg.Upstreams {
-		if _, dup := upstreamIdx[u.ID]; dup {
-			return nil, errf(fmt.Sprintf("upstreams[%s]", u.ID), "duplicate id")
-		}
-		upstreamIdx[u.ID] = uint32(i)
-	}
-
-	snap := &snapshotv1.Snapshot{Revision: revision}
-
-	for _, l := range cfg.Listeners {
-		out := &snapshotv1.Listener{Address: l.Address, ReusePort: l.ReusePort, Backlog: l.Backlog}
-		if l.DefaultSite != "" {
-			idx, ok := siteIdx[l.DefaultSite]
-			if !ok {
-				return nil, errf(fmt.Sprintf("listeners[%s].defaultSite", l.ID), "unknown site %q", l.DefaultSite)
-			}
-			out.DefaultSite = proto.Uint32(idx)
-		}
-		snap.Listeners = append(snap.Listeners, out)
-	}
-
-	for _, s := range cfg.Sites {
-		base := fmt.Sprintf("sites[%s]", s.ID)
-		out := &snapshotv1.Site{}
-		for _, lid := range s.Listeners {
-			idx, ok := listenerIdx[lid]
-			if !ok {
-				return nil, errf(base+".listeners", "unknown listener %q", lid)
-			}
-			out.Listeners = append(out.Listeners, idx)
-		}
-		for _, h := range s.Hostnames {
-			out.Hostnames = append(out.Hostnames, &snapshotv1.HostMatch{
-				Kind:  snapshotv1.HostMatch_KIND_EXACT,
-				Value: h,
-			})
-		}
-		for i, r := range s.Routes {
-			route, err := compileRoute(fmt.Sprintf("%s.routes[%d]", base, i), r, upstreamIdx)
-			if err != nil {
-				return nil, err
-			}
-			out.Routes = append(out.Routes, route)
-		}
-		snap.Sites = append(snap.Sites, out)
-	}
-
-	for _, u := range cfg.Upstreams {
-		if len(u.Targets) == 0 {
-			return nil, errf(fmt.Sprintf("upstreams[%s].targets", u.ID), "at least one target is required")
-		}
-		out := &snapshotv1.Upstream{
-			Balancing:     snapshotv1.Upstream_BALANCING_ROUND_ROBIN,
-			KeepaliveIdle: u.KeepaliveIdle,
-		}
-		for _, t := range u.Targets {
-			w := t.Weight
-			if w == 0 {
-				w = 1
-			}
-			out.Targets = append(out.Targets, &snapshotv1.Target{Address: t.Address, Weight: w})
-		}
-		snap.Upstreams = append(snap.Upstreams, out)
-	}
-
 	b, err := proto.MarshalOptions{Deterministic: true}.Marshal(snap)
 	if err != nil {
 		return nil, err
@@ -114,33 +35,182 @@ func Compile(cfg model.Config, revision uint64) (*snapshotv1.Snapshot, error) {
 	return snap, nil
 }
 
-func compileRoute(path string, r model.Route, upstreams map[string]uint32) (*snapshotv1.Route, error) {
-	out := &snapshotv1.Route{Path: &snapshotv1.PathMatch{Value: r.Path.Value}}
-	switch r.Path.Kind {
+type compiler struct {
+	errs model.FieldErrors
+}
+
+func (c *compiler) add(path, format string, args ...any) {
+	c.errs = append(c.errs, model.FieldError{Path: path, Message: fmt.Sprintf(format, args...)})
+}
+
+// index holds the enabled resources of one kind in snapshot order and
+// remembers which IDs exist but are disabled.
+type index[T model.Resource] struct {
+	items    []T
+	pos      map[string]uint32
+	disabled map[string]bool
+}
+
+func newIndex[T model.Resource](c *compiler, kind string, all []T) index[T] {
+	ix := index[T]{pos: map[string]uint32{}, disabled: map[string]bool{}}
+	seen := map[string]bool{}
+	for _, r := range all {
+		m := r.Common()
+		if seen[m.ID] {
+			c.add(fmt.Sprintf("%s[%s]", kind, m.ID), "duplicate id")
+			continue
+		}
+		seen[m.ID] = true
+		if errs := model.Validate(r); len(errs) > 0 {
+			c.errs = append(c.errs, errs.Prefixed(fmt.Sprintf("%s[%s]", kind, m.ID))...)
+		}
+		if !m.IsEnabled() {
+			ix.disabled[m.ID] = true
+			continue
+		}
+		ix.items = append(ix.items, r)
+	}
+	slices.SortFunc(ix.items, func(a, b T) int { return cmp.Compare(a.Common().ID, b.Common().ID) })
+	for i, r := range ix.items {
+		ix.pos[r.Common().ID] = uint32(i)
+	}
+	return ix
+}
+
+// resolve returns the index of id. A reference to a missing or disabled
+// resource is an error.
+func (ix index[T]) resolve(c *compiler, path, kind, id string) (uint32, bool) {
+	if i, ok := ix.pos[id]; ok {
+		return i, true
+	}
+	if ix.disabled[id] {
+		c.add(path, "%s %q is disabled", kind, id)
+	} else {
+		c.add(path, "unknown %s %q", kind, id)
+	}
+	return 0, false
+}
+
+func (c *compiler) compile(cfg model.Config, revision uint64) *snapshotv1.Snapshot {
+	listeners := newIndex(c, "listeners", cfg.Listeners)
+	sites := newIndex(c, "sites", cfg.Sites)
+	routes := newIndex(c, "routes", cfg.Routes)
+	upstreams := newIndex(c, "upstreams", cfg.Upstreams)
+
+	snap := &snapshotv1.Snapshot{Revision: revision}
+
+	for _, l := range listeners.items {
+		out := &snapshotv1.Listener{Address: l.Spec.Address, ReusePort: l.Spec.ReusePort, Backlog: l.Spec.Backlog}
+		if id := l.Spec.DefaultSite; id != "" {
+			if i, ok := sites.resolve(c, fmt.Sprintf("listeners[%s].spec.defaultSite", l.ID), "site", id); ok {
+				out.DefaultSite = proto.Uint32(i)
+			}
+		}
+		snap.Listeners = append(snap.Listeners, out)
+	}
+
+	// Hostnames must be unique per listener, as nginx server_name selection
+	// would otherwise depend on declaration order.
+	type hostKey struct {
+		listener uint32
+		host     string
+	}
+	hostOwner := map[hostKey]string{}
+
+	for _, s := range sites.items {
+		base := fmt.Sprintf("sites[%s].spec", s.ID)
+		out := &snapshotv1.Site{}
+		for i, id := range s.Spec.Listeners {
+			// A disabled listener drops out of the site like a commented-out listen.
+			if listeners.disabled[id] {
+				continue
+			}
+			if li, ok := listeners.resolve(c, fmt.Sprintf("%s.listeners[%d]", base, i), "listener", id); ok {
+				out.Listeners = append(out.Listeners, li)
+			}
+		}
+		for i, h := range s.Spec.Hostnames {
+			for _, li := range out.Listeners {
+				k := hostKey{li, h.Value}
+				if other, dup := hostOwner[k]; dup && other != s.ID {
+					c.add(fmt.Sprintf("%s.hostnames[%d]", base, i), "%q is already served by site %q on listener %q",
+						h.Value, other, listeners.items[li].ID)
+				}
+				hostOwner[k] = s.ID
+			}
+			out.Hostnames = append(out.Hostnames, &snapshotv1.HostMatch{Kind: snapshotv1.HostMatch_KIND_EXACT, Value: h.Value})
+		}
+		paths := map[pathKey]string{}
+		for i, id := range s.Spec.Routes {
+			if routes.disabled[id] {
+				continue
+			}
+			ri, ok := routes.resolve(c, fmt.Sprintf("%s.routes[%d]", base, i), "route", id)
+			if !ok {
+				continue
+			}
+			r := routes.items[ri]
+			k := pathKey{r.Spec.Match.Path.Type, r.Spec.Match.Path.Value}
+			if other, dup := paths[k]; dup {
+				c.add(fmt.Sprintf("%s.routes[%d]", base, i), "route %q has the same path match as route %q", id, other)
+			}
+			paths[k] = id
+			if route := c.route(r, upstreams); route != nil {
+				out.Routes = append(out.Routes, route)
+			}
+		}
+		snap.Sites = append(snap.Sites, out)
+	}
+
+	for _, u := range upstreams.items {
+		out := &snapshotv1.Upstream{
+			Balancing:     snapshotv1.Upstream_BALANCING_ROUND_ROBIN,
+			KeepaliveIdle: u.Spec.Keepalive.Idle,
+		}
+		for _, t := range u.Spec.Targets {
+			w := t.Weight
+			if w == 0 {
+				w = 1
+			}
+			out.Targets = append(out.Targets, &snapshotv1.Target{Address: t.Address, Weight: w})
+		}
+		snap.Upstreams = append(snap.Upstreams, out)
+	}
+	return snap
+}
+
+type pathKey struct {
+	kind  model.PathMatchType
+	value string
+}
+
+func (c *compiler) route(r *model.Route, upstreams index[*model.Upstream]) *snapshotv1.Route {
+	out := &snapshotv1.Route{Path: &snapshotv1.PathMatch{Value: r.Spec.Match.Path.Value}}
+	switch r.Spec.Match.Path.Type {
 	case model.PathExact:
 		out.Path.Kind = snapshotv1.PathMatch_KIND_EXACT
 	case model.PathPrefix:
 		out.Path.Kind = snapshotv1.PathMatch_KIND_PREFIX
 	default:
-		return nil, errf(path+".path.kind", "must be %q or %q", model.PathExact, model.PathPrefix)
+		return nil // reported by model.Validate
 	}
 
+	a := r.Spec.Action
 	switch {
-	case r.Action.Static != nil && r.Action.Proxy != nil:
-		return nil, errf(path+".action", "set exactly one of static or proxy")
-	case r.Action.Static != nil:
+	case a.Type == model.ActionStatic && a.Static != nil:
 		out.Action = &snapshotv1.Action{Kind: &snapshotv1.Action_Static{Static: &snapshotv1.StaticAction{
-			Root:  r.Action.Static.Root,
-			Index: r.Action.Static.Index,
+			Root:  a.Static.Root,
+			Index: a.Static.Index,
 		}}}
-	case r.Action.Proxy != nil:
-		idx, ok := upstreams[r.Action.Proxy.Upstream]
+	case a.Type == model.ActionProxy && a.Proxy != nil:
+		path := fmt.Sprintf("routes[%s].spec.action.proxy.upstream", r.ID)
+		ui, ok := upstreams.resolve(c, path, "upstream", a.Proxy.Upstream)
 		if !ok {
-			return nil, errf(path+".action.proxy.upstream", "unknown upstream %q", r.Action.Proxy.Upstream)
+			return nil
 		}
-		out.Action = &snapshotv1.Action{Kind: &snapshotv1.Action_Proxy{Proxy: &snapshotv1.ProxyAction{Upstream: idx}}}
+		out.Action = &snapshotv1.Action{Kind: &snapshotv1.Action_Proxy{Proxy: &snapshotv1.ProxyAction{Upstream: ui}}}
 	default:
-		return nil, errf(path+".action", "set exactly one of static or proxy")
+		return nil // reported by model.Validate
 	}
-	return out, nil
+	return out
 }
