@@ -1,0 +1,31 @@
+{
+  "listeners": [
+    {"id": "lst_main", "name": "main", "spec": {"address": "127.0.0.1:18480", "defaultSite": "site_main"}}
+  ],
+  "sites": [
+    {"id": "site_main", "name": "main", "spec": {"listeners": ["lst_main"],
+      "hostnames": [{"type": "exact", "value": "example.com"}],
+      "routes": ["rt_rr", "rt_hash", "rt_ring", "rt_ip"]}}
+  ],
+  "routes": [
+    {"id": "rt_rr", "name": "rr", "spec": {"match": {"path": {"type": "prefix", "value": "/rr/"}},
+      "action": {"type": "proxy", "proxy": {"upstream": "up_rr"}}}},
+    {"id": "rt_hash", "name": "hash", "spec": {"match": {"path": {"type": "prefix", "value": "/hash/"}},
+      "action": {"type": "proxy", "proxy": {"upstream": "up_byuri"}}}},
+    {"id": "rt_ring", "name": "ring", "spec": {"match": {"path": {"type": "prefix", "value": "/ring/"}},
+      "action": {"type": "proxy", "proxy": {"upstream": "up_ring"}}}},
+    {"id": "rt_ip", "name": "ip", "spec": {"match": {"path": {"type": "prefix", "value": "/ip/"}},
+      "action": {"type": "proxy", "proxy": {"upstream": "up_client"}}}}
+  ],
+  "upstreams": [
+    {"id": "up_rr", "name": "rr", "spec": {"targets": [
+      {"address": "127.0.0.1:18481", "weight": 3}, {"address": "127.0.0.1:18482"},
+      {"address": "127.0.0.1:18483", "down": true}, {"address": "127.0.0.1:18484", "backup": true}]}},
+    {"id": "up_byuri", "name": "byuri", "spec": {"balancing": {"algorithm": "hash", "key": "$request_uri"},
+      "targets": [{"address": "127.0.0.1:18481"}, {"address": "127.0.0.1:18482", "weight": 2}, {"address": "127.0.0.1:18483"}]}},
+    {"id": "up_ring", "name": "ring", "spec": {"balancing": {"algorithm": "hash_consistent", "key": "$arg_k"},
+      "targets": [{"address": "127.0.0.1:18481"}, {"address": "127.0.0.1:18482"}, {"address": "127.0.0.1:18483"}, {"address": "127.0.0.1:18484"}]}},
+    {"id": "up_client", "name": "client", "spec": {"balancing": {"algorithm": "ip_hash"},
+      "targets": [{"address": "127.0.0.1:18481"}, {"address": "127.0.0.1:18482"}, {"address": "127.0.0.1:18483"}]}}
+  ]
+}

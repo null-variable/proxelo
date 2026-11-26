@@ -345,7 +345,13 @@ type UpstreamSpec struct {
 	Targets       []Target      `json:"targets"`
 	Balancing     Balancing     `json:"balancing,omitzero"`
 	PassiveHealth PassiveHealth `json:"passiveHealth,omitzero"`
-	Keepalive     Keepalive     `json:"keepalive"`
+	// Active health checks (probes from every node). Nil: none.
+	HealthCheck *HealthCheck `json:"healthCheck,omitempty"`
+	// Session affinity (nginx sticky). Nil: none.
+	Sticky *Sticky `json:"sticky,omitempty"`
+	// Requests waiting when every target is at maxConns (nginx queue).
+	Queue     Queue     `json:"queue,omitzero"`
+	Keepalive Keepalive `json:"keepalive"`
 }
 
 type Target struct {
@@ -355,18 +361,105 @@ type Target struct {
 	Weight uint32 `json:"weight,omitempty"`
 	// Used only when no other target is available.
 	Backup bool `json:"backup,omitempty"`
+	// Takes no requests (nginx down).
+	Down bool `json:"down,omitempty"`
+	// Requests in progress at most; zero: no limit (nginx max_conns).
+	MaxConns uint32 `json:"maxConns,omitempty"`
+	// After recovering, the weight grows from 1 over this time, e.g. "30s"
+	// (nginx slow_start).
+	SlowStart string `json:"slowStart,omitempty"`
+	// Re-resolve the host name while running (nginx resolve).
+	Resolve bool `json:"resolve,omitempty"`
+	// How often a resolve target is looked up again. Empty: "30s".
+	ResolveInterval string `json:"resolveInterval,omitempty"`
+	// Sticky route value naming this target (nginx server route=).
+	Route string `json:"route,omitempty"`
+}
+
+type HealthCheckType string
+
+const (
+	HealthHTTP HealthCheckType = "http"
+	HealthTCP  HealthCheckType = "tcp"
+)
+
+// HealthCheck probes every target; a target failing `fails` probes in a row
+// takes no requests until it passes `passes` in a row.
+type HealthCheck struct {
+	// Empty: http.
+	Type HealthCheckType `json:"type,omitempty"`
+	// Empty: "5s".
+	Interval string `json:"interval,omitempty"`
+	// Per probe. Empty: "1s".
+	Timeout string `json:"timeout,omitempty"`
+	// Zero: 1.
+	Fails uint32 `json:"fails,omitempty"`
+	// Zero: 1.
+	Passes uint32 `json:"passes,omitempty"`
+	// HTTP request path. Empty: "/".
+	Path string `json:"path,omitempty"`
+	// HTTP Host header. Empty: the upstream's name.
+	Host string `json:"host,omitempty"`
+	// Passing statuses such as "200-399" or "204". Empty: 200-399.
+	Statuses []string `json:"statuses,omitempty"`
+	// PCRE2 pattern the response body must match.
+	Body string `json:"body,omitempty"`
+	// Probe this port instead of the target's.
+	Port uint32 `json:"port,omitempty"`
+}
+
+type StickyType string
+
+const (
+	StickyCookie StickyType = "cookie"
+	StickyRoute  StickyType = "route"
+)
+
+// Sticky keeps a client on one target.
+type Sticky struct {
+	Type StickyType `json:"type"`
+	// cookie: cookie name. Empty: "route".
+	Cookie string `json:"cookie,omitempty"`
+	// cookie: lifetime such as "1h". Empty: a session cookie.
+	MaxAge string `json:"maxAge,omitempty"`
+	// cookie: Path attribute. Empty: "/".
+	Path string `json:"path,omitempty"`
+	// cookie: Domain attribute.
+	Domain   string `json:"domain,omitempty"`
+	HTTPOnly bool   `json:"httpOnly,omitempty"`
+	Secure   bool   `json:"secure,omitempty"`
+	// cookie: "strict", "lax" or "none".
+	SameSite string `json:"sameSite,omitempty"`
+	// route: variables tried in order, such as "$cookie_jsessionid"; the
+	// first non-empty one is matched against target routes.
+	Route []string `json:"route,omitempty"`
+}
+
+type Queue struct {
+	// Zero: no queue; a request finding every target full fails with 502.
+	Size uint32 `json:"size,omitempty"`
+	// Empty: "60s".
+	Timeout string `json:"timeout,omitempty"`
 }
 
 type Algorithm string
 
 const (
-	RoundRobin Algorithm = "round_robin"
-	LeastConn  Algorithm = "least_conn"
+	RoundRobin     Algorithm = "round_robin"
+	LeastConn      Algorithm = "least_conn"
+	IPHash         Algorithm = "ip_hash"
+	Hash           Algorithm = "hash"
+	HashConsistent Algorithm = "hash_consistent"
+	Random         Algorithm = "random"
+	RandomTwo      Algorithm = "random_two"
 )
 
 type Balancing struct {
 	// Empty: round_robin.
 	Algorithm Algorithm `json:"algorithm,omitempty"`
+	// hash and hash_consistent: the key, with variables, such as
+	// "$request_uri".
+	Key string `json:"key,omitempty"`
 }
 
 // PassiveHealth is nginx max_fails and fail_timeout.
@@ -384,6 +477,9 @@ type Keepalive struct {
 	Timeout string `json:"timeout,omitempty"`
 	// Zero: 1000.
 	MaxRequests uint32 `json:"maxRequests,omitempty"`
+	// A connection closes after being open this long (nginx keepalive_time).
+	// Empty: "1h".
+	MaxAge string `json:"maxAge,omitempty"`
 }
 
 // Certificate is a TLS certificate chain and its private key (nginx

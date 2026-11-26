@@ -1,0 +1,27 @@
+directives: [ngx_http_upstream_module/server, ngx_http_upstream_hash_module/hash, ip_hash]
+requests:
+  - {target: /rr/0, headers: {Host: example.com}}
+  - {target: /rr/1, headers: {Host: example.com}}
+  - {target: /rr/2, headers: {Host: example.com}}
+  - {target: /rr/3, headers: {Host: example.com}}
+  - {target: /rr/4, headers: {Host: example.com}}
+  - {target: /rr/5, headers: {Host: example.com}}
+  - {target: /rr/6, headers: {Host: example.com}}
+  - {target: /rr/7, headers: {Host: example.com}}
+  - {target: "/hash/a", headers: {Host: example.com}}
+  - {target: "/hash/b", headers: {Host: example.com}}
+  - {target: "/hash/c?x=1", headers: {Host: example.com}}
+  - {target: "/hash/user/42", headers: {Host: example.com}}
+  - {target: "/hash/user/43", headers: {Host: example.com}}
+  - {target: "/hash/zz", headers: {Host: example.com}}
+  - {target: "/hash/a", headers: {Host: example.com}}
+  - {target: "/ring/?k=alpha", headers: {Host: example.com}}
+  - {target: "/ring/?k=beta", headers: {Host: example.com}}
+  - {target: "/ring/?k=gamma", headers: {Host: example.com}}
+  - {target: "/ring/?k=delta", headers: {Host: example.com}}
+  - {target: "/ring/?k=epsilon", headers: {Host: example.com}}
+  - {target: "/ring/?k=42", headers: {Host: example.com}}
+  - {target: "/ring/?k=x", headers: {Host: example.com}}
+  - {target: /ip/0, headers: {Host: example.com}}
+  - {target: /ip/1, headers: {Host: example.com}}
+  - {target: /ip/2, headers: {Host: example.com}}

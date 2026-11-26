@@ -19,6 +19,10 @@ type Node struct {
 	// One line describing it: an address, hostnames, a path match.
 	Detail   string `json:"detail,omitempty"`
 	Disabled bool   `json:"disabled,omitempty"`
+	// Targets: taking no requests, marked down or reported unhealthy by a
+	// proxy; Health says why.
+	Down   bool   `json:"down,omitempty"`
+	Health string `json:"health,omitempty"`
 	// Requests over the traffic window, when asked for: for sites and
 	// routes the requests they answered, for upstreams and targets the
 	// attempts made to them.
@@ -82,7 +86,7 @@ func Build(cfg model.Config, keep func(kind string, r model.Resource) bool) Grap
 		if u, ok := r.(*model.Upstream); ok {
 			for i, t := range u.Spec.Targets {
 				id := fmt.Sprintf("%s/%d", from, i)
-				g.Nodes = append(g.Nodes, Node{ID: id, Kind: "targets", Name: t.Address, Group: u.Group, Detail: targetDetail(t)})
+				g.Nodes = append(g.Nodes, Node{ID: id, Kind: "targets", Name: t.Address, Group: u.Group, Detail: targetDetail(t), Down: t.Down})
 				g.Edges = append(g.Edges, Edge{From: from, To: id, Field: "spec.targets"})
 			}
 		}
@@ -135,7 +139,29 @@ func targetDetail(t model.Target) string {
 	if t.Backup {
 		parts = append(parts, "backup")
 	}
+	if t.Down {
+		parts = append(parts, "down")
+	}
+	if t.MaxConns > 0 {
+		parts = append(parts, fmt.Sprintf("max %d", t.MaxConns))
+	}
 	return strings.Join(parts, " ")
+}
+
+// MarkUnhealthy marks the targets for which down(upstream ID, address)
+// returns a reason.
+func MarkUnhealthy(g *Graph, down func(upstream, address string) (string, bool)) {
+	for i := range g.Nodes {
+		n := &g.Nodes[i]
+		if n.Kind != "targets" {
+			continue
+		}
+		up := n.ID[:strings.LastIndexByte(n.ID, '/')]
+		if why, ok := down(up, n.Name); ok {
+			n.Down = true
+			n.Health = why
+		}
+	}
 }
 
 // Mermaid renders g as a left-to-right flowchart, one subgraph per kind.

@@ -121,6 +121,14 @@
       }
     }
 
+    &--down {
+      --accent: var(--px-danger);
+
+      .topo__box {
+        stroke: var(--px-danger);
+      }
+    }
+
     &:hover .topo__box,
     &:focus-visible .topo__box {
       stroke: var(--px-interact);

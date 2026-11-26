@@ -47,10 +47,13 @@ import (
 const nginxImage = "nginx:1.31.10"
 
 // Ports on 127.0.0.1. nginx and the proxy listen on the same port in turn,
-// so the Host header and absolute redirects are identical.
+// so the Host header and absolute redirects are identical. The echo upstream
+// listens on upstreamPorts consecutive ports from upstreamPort, so cases
+// with several targets show which one took a request.
 const (
-	listenPort   = 18480
-	upstreamPort = 18481
+	listenPort    = 18480
+	upstreamPort  = 18481
+	upstreamPorts = 4
 )
 
 type config struct {
@@ -120,7 +123,11 @@ func run(ctx context.Context, c config) (bool, error) {
 		defer os.RemoveAll(work)
 	}
 
-	up, err := startEcho(fmt.Sprintf("127.0.0.1:%d", upstreamPort))
+	var addrs []string
+	for i := range upstreamPorts {
+		addrs = append(addrs, fmt.Sprintf("127.0.0.1:%d", upstreamPort+i))
+	}
+	up, err := startEcho(addrs...)
 	if err != nil {
 		return false, err
 	}

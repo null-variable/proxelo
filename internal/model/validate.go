@@ -453,23 +453,125 @@ func (s *UpstreamSpec) validate(es *FieldErrors) {
 	}
 	primary := 0
 	for i, t := range s.Targets {
+		p := fmt.Sprintf("spec.targets[%d]", i)
 		if err := checkHostPort(t.Address); err != "" {
-			es.add(fmt.Sprintf("spec.targets[%d].address", i), "%s", err)
+			es.add(p+".address", "%s", err)
 		}
 		if !t.Backup {
 			primary++
+		}
+		if t.Backup && hashing(s.Balancing.Algorithm) {
+			// nginx: hash, ip_hash and random do not take backup servers.
+			es.add(p+".backup", "is not supported with %s balancing", s.Balancing.Algorithm)
+		}
+		checkDuration(es, p+".slowStart", t.SlowStart)
+		checkDuration(es, p+".resolveInterval", t.ResolveInterval)
+		if t.ResolveInterval != "" && !t.Resolve {
+			es.add(p+".resolveInterval", "requires resolve")
+		}
+		if t.Route != "" && (s.Sticky == nil || s.Sticky.Type != StickyRoute) {
+			es.add(p+".route", "requires route sticky sessions")
 		}
 	}
 	if len(s.Targets) > 0 && primary == 0 {
 		es.add("spec.targets", "at least one target must not be a backup")
 	}
 	switch s.Balancing.Algorithm {
-	case "", RoundRobin, LeastConn:
+	case "", RoundRobin, LeastConn, IPHash, Random, RandomTwo:
+		if s.Balancing.Key != "" {
+			es.add("spec.balancing.key", "is only used by hash and hash_consistent")
+		}
+	case Hash, HashConsistent:
+		if s.Balancing.Key == "" {
+			es.add("spec.balancing.key", "is required for %s", s.Balancing.Algorithm)
+		}
 	default:
-		es.add("spec.balancing.algorithm", "must be %q or %q", RoundRobin, LeastConn)
+		es.add("spec.balancing.algorithm", "must be one of %s", strings.Join([]string{
+			string(RoundRobin), string(LeastConn), string(IPHash), string(Hash),
+			string(HashConsistent), string(Random), string(RandomTwo)}, ", "))
 	}
 	checkDuration(es, "spec.passiveHealth.failTimeout", s.PassiveHealth.FailTimeout)
 	checkDuration(es, "spec.keepalive.timeout", s.Keepalive.Timeout)
+	checkDuration(es, "spec.keepalive.maxAge", s.Keepalive.MaxAge)
+	checkDuration(es, "spec.queue.timeout", s.Queue.Timeout)
+	if s.Queue.Timeout != "" && s.Queue.Size == 0 {
+		es.add("spec.queue.timeout", "requires size")
+	}
+	if s.Queue.Size > 0 && !slices.ContainsFunc(s.Targets, func(t Target) bool { return t.MaxConns > 0 }) {
+		es.add("spec.queue.size", "requires a target with maxConns")
+	}
+	if h := s.HealthCheck; h != nil {
+		switch h.Type {
+		case "", HealthHTTP:
+		case HealthTCP:
+			if h.Path != "" || h.Host != "" || len(h.Statuses) > 0 || h.Body != "" {
+				es.add("spec.healthCheck", "path, host, statuses and body apply to http checks")
+			}
+		default:
+			es.add("spec.healthCheck.type", "must be %q or %q", HealthHTTP, HealthTCP)
+		}
+		checkDuration(es, "spec.healthCheck.interval", h.Interval)
+		checkDuration(es, "spec.healthCheck.timeout", h.Timeout)
+		if h.Path != "" && !strings.HasPrefix(h.Path, "/") {
+			es.add("spec.healthCheck.path", "must start with /")
+		}
+		for i, st := range h.Statuses {
+			if _, _, ok := ParseStatusRange(st); !ok {
+				es.add(fmt.Sprintf("spec.healthCheck.statuses[%d]", i), "must be a status such as 200 or a range such as 200-399")
+			}
+		}
+		if h.Port > 65535 {
+			es.add("spec.healthCheck.port", "must be 1-65535")
+		}
+	}
+	if st := s.Sticky; st != nil {
+		switch st.Type {
+		case StickyCookie:
+			if st.Cookie != "" && !headerNameRE.MatchString(st.Cookie) {
+				es.add("spec.sticky.cookie", "must be a cookie name")
+			}
+			checkDuration(es, "spec.sticky.maxAge", st.MaxAge)
+			switch st.SameSite {
+			case "", "strict", "lax", "none":
+			default:
+				es.add("spec.sticky.sameSite", "must be strict, lax or none")
+			}
+			if len(st.Route) > 0 {
+				es.add("spec.sticky.route", "applies to route sticky sessions")
+			}
+		case StickyRoute:
+			if len(st.Route) == 0 {
+				es.add("spec.sticky.route", "at least one variable is required")
+			}
+			if !slices.ContainsFunc(s.Targets, func(t Target) bool { return t.Route != "" }) {
+				es.add("spec.targets", "route sticky sessions need a target with a route")
+			}
+		default:
+			es.add("spec.sticky.type", "must be %q or %q", StickyCookie, StickyRoute)
+		}
+	}
+}
+
+func hashing(a Algorithm) bool {
+	switch a {
+	case IPHash, Hash, HashConsistent, Random, RandomTwo:
+		return true
+	}
+	return false
+}
+
+// ParseStatusRange parses "200" or "200-399".
+func ParseStatusRange(s string) (from, to uint32, ok bool) {
+	a, b, isRange := strings.Cut(s, "-")
+	if !isRange {
+		b = a
+	}
+	x, err1 := strconv.ParseUint(a, 10, 32)
+	y, err2 := strconv.ParseUint(b, 10, 32)
+	if err1 != nil || err2 != nil || x < 100 || y > 999 || x > y {
+		return 0, 0, false
+	}
+	return uint32(x), uint32(y), true
 }
 
 // checkHostPort returns a message if addr is not host:port with a numeric port.

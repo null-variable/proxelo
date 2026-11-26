@@ -1,6 +1,7 @@
 package api
 
 import (
+	"cmp"
 	"errors"
 	"net/http"
 	"time"
@@ -248,6 +249,7 @@ func (a *api) directory(w http.ResponseWriter, r *http.Request, ac *access) {
 // ?changeset as it would apply, with the resources the caller can read.
 // ?format=mermaid or dot returns a diagram source instead of JSON;
 // ?traffic=<window> (up to 15m) adds what proxies handled per node and edge.
+// Targets a proxy reports down are marked.
 func (a *api) topology(w http.ResponseWriter, r *http.Request, ac *access) {
 	cfg, err := a.st.View(r.Context(), changeSetParam(r))
 	if err != nil {
@@ -255,6 +257,23 @@ func (a *api) topology(w http.ResponseWriter, r *http.Request, ac *access) {
 		return
 	}
 	g := topology.Build(cfg, ac.canRead)
+	// Health is that of the running configuration.
+	if changeSetParam(r) == "" {
+		reports := map[[2]string]string{}
+		for _, n := range a.d.Nodes() {
+			for _, u := range n.Unhealthy {
+				why := n.NodeID + ": " + cmp.Or(u.Error, "down")
+				if prev, ok := reports[[2]string{u.UpstreamID, u.Address}]; ok {
+					why = prev + "; " + why
+				}
+				reports[[2]string{u.UpstreamID, u.Address}] = why
+			}
+		}
+		topology.MarkUnhealthy(&g, func(up, addr string) (string, bool) {
+			why, ok := reports[[2]string{up, addr}]
+			return why, ok
+		})
+	}
 	if v := r.URL.Query().Get("traffic"); v != "" {
 		window, err := time.ParseDuration(v)
 		if err != nil || window <= 0 || window > 15*time.Minute {

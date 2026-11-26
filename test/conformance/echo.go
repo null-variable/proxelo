@@ -66,28 +66,35 @@ func (r *EchoRecord) headerSet() []string {
 }
 
 // echo is the upstream of every case: it records each request and answers
-// 200 with a fixed body that names the request, so a wrong URI also shows in
-// the response.
+// 200 with a fixed body that names the request and the port that took it,
+// so a wrong URI or a different target choice also shows in the response.
 type echo struct {
-	ln   net.Listener
+	lns  []net.Listener
 	mu   sync.Mutex
 	rec  *EchoRecord
 	done sync.WaitGroup
 }
 
-func startEcho(addr string) (*echo, error) {
-	ln, err := net.Listen("tcp", addr)
-	if err != nil {
-		return nil, err
+// startEcho listens on every address in addrs.
+func startEcho(addrs ...string) (*echo, error) {
+	e := &echo{}
+	for _, addr := range addrs {
+		ln, err := net.Listen("tcp", addr)
+		if err != nil {
+			e.Close()
+			return nil, err
+		}
+		e.lns = append(e.lns, ln)
+		e.done.Add(1)
+		go e.serve(ln)
 	}
-	e := &echo{ln: ln}
-	e.done.Add(1)
-	go e.serve()
 	return e, nil
 }
 
 func (e *echo) Close() {
-	e.ln.Close()
+	for _, ln := range e.lns {
+		ln.Close()
+	}
 	e.done.Wait()
 }
 
@@ -105,10 +112,10 @@ func (e *echo) last() *EchoRecord {
 	return e.rec
 }
 
-func (e *echo) serve() {
+func (e *echo) serve(ln net.Listener) {
 	defer e.done.Done()
 	for {
-		c, err := e.ln.Accept()
+		c, err := ln.Accept()
 		if err != nil {
 			return
 		}
@@ -164,7 +171,8 @@ func (e *echo) conn(c net.Conn) {
 		e.rec = rec
 		e.mu.Unlock()
 
-		resp := "upstream saw " + rec.Method + " " + rec.URI + "\n"
+		_, port, _ := net.SplitHostPort(c.LocalAddr().String())
+		resp := "upstream " + port + " saw " + rec.Method + " " + rec.URI + "\n"
 		conn := "keep-alive"
 		if closeConn {
 			conn = "close"

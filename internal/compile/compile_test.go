@@ -280,3 +280,65 @@ func goldenText(t *testing.T, snap *snapshotv1.Snapshot) []byte {
 	buf.WriteByte('\n')
 	return buf.Bytes()
 }
+
+func TestCompileUpstreamFeatures(t *testing.T) {
+	cfg := validConfig()
+	cfg.Upstreams[0].Spec = model.UpstreamSpec{
+		Targets: []model.Target{
+			{Address: "10.0.0.1:8080", MaxConns: 10, SlowStart: "30s", Route: "a"},
+			{Address: "api.internal:8080", Resolve: true, ResolveInterval: "10s", Down: true},
+		},
+		Balancing:   model.Balancing{Algorithm: model.HashConsistent, Key: "$request_uri"},
+		HealthCheck: &model.HealthCheck{Path: "/healthz", Statuses: []string{"200", "300-399"}, Fails: 3},
+		Sticky:      &model.Sticky{Type: model.StickyRoute, Route: []string{"$cookie_route"}},
+		Queue:       model.Queue{Size: 50, Timeout: "5s"},
+		Keepalive:   model.Keepalive{MaxAge: "10m"},
+	}
+	if es := model.Validate(cfg.Upstreams[0]); len(es) > 0 {
+		t.Fatal(es)
+	}
+	snap, err := Compile(cfg, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	u := snap.GetUpstreams()[0]
+	if u.GetBalancing() != snapshotv1.Upstream_BALANCING_HASH_CONSISTENT || u.GetHashKey() != "$request_uri" {
+		t.Fatalf("balancing = %v %q", u.GetBalancing(), u.GetHashKey())
+	}
+	if u.GetQueueSize() != 50 || u.GetQueueTimeoutMs() != 5000 || u.GetKeepaliveTimeMs() != 600_000 {
+		t.Fatalf("queue/keepalive = %v", u)
+	}
+	h := u.GetHealthCheck()
+	if h.GetKind() != snapshotv1.HealthCheck_KIND_HTTP || h.GetPath() != "/healthz" || h.GetHost() != "api" || h.GetFails() != 3 ||
+		len(h.GetStatuses()) != 2 || h.GetStatuses()[1].GetFrom() != 300 || h.GetStatuses()[1].GetTo() != 399 {
+		t.Fatalf("health check = %v", h)
+	}
+	if s := u.GetSticky(); s.GetKind() != snapshotv1.Sticky_KIND_ROUTE || s.GetRoute()[0] != "$cookie_route" {
+		t.Fatalf("sticky = %v", s)
+	}
+	t0, t1 := u.GetTargets()[0], u.GetTargets()[1]
+	if t0.GetMaxConns() != 10 || t0.GetSlowStartMs() != 30_000 || t0.GetRoute() != "a" {
+		t.Fatalf("target 0 = %v", t0)
+	}
+	if !t1.GetResolve() || t1.GetResolveIntervalMs() != 10_000 || !t1.GetDown() {
+		t.Fatalf("target 1 = %v", t1)
+	}
+}
+
+func TestValidateUpstreamFeatures(t *testing.T) {
+	bad := []model.UpstreamSpec{
+		{Targets: []model.Target{{Address: "a:1"}}, Balancing: model.Balancing{Algorithm: model.Hash}},
+		{Targets: []model.Target{{Address: "a:1"}, {Address: "b:1", Backup: true}}, Balancing: model.Balancing{Algorithm: model.IPHash}},
+		{Targets: []model.Target{{Address: "a:1"}}, Queue: model.Queue{Size: 5}},
+		{Targets: []model.Target{{Address: "a:1", Route: "x"}}},
+		{Targets: []model.Target{{Address: "a:1"}}, Sticky: &model.Sticky{Type: model.StickyRoute, Route: []string{"$cookie_r"}}},
+		{Targets: []model.Target{{Address: "a:1"}}, HealthCheck: &model.HealthCheck{Statuses: []string{"399-200"}}},
+		{Targets: []model.Target{{Address: "a:1"}}, HealthCheck: &model.HealthCheck{Type: model.HealthTCP, Path: "/"}},
+	}
+	for i, sp := range bad {
+		u := &model.Upstream{Meta: model.Meta{ID: "up_x", Name: "x"}, Spec: sp}
+		if es := model.Validate(u); len(es) == 0 {
+			t.Errorf("case %d: no error", i)
+		}
+	}
+}

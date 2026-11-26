@@ -42,6 +42,18 @@ type NodeStatus struct {
 	// Set when the proxy rejected a snapshot; cleared by the next applied Ack.
 	FailedRevision uint64 `json:"failedRevision,omitempty"`
 	Error          string `json:"error,omitempty"`
+	// Upstream targets this proxy does not send requests to, from its last
+	// stats report: down by passive or active health checks.
+	Unhealthy []UnhealthyTarget `json:"unhealthy,omitempty"`
+}
+
+// UnhealthyTarget is a target one proxy considers down.
+type UnhealthyTarget struct {
+	UpstreamID string `json:"upstreamId"`
+	Address    string `json:"address"`
+	// Why the active health check fails it; empty when passive health or
+	// the target's down flag took it out.
+	Error string `json:"error,omitempty"`
 }
 
 // statsWindow is how long traffic samples are kept.
@@ -334,8 +346,12 @@ func (d *Distributor) record(n *node, st *distribv1.Stats) {
 	for _, r := range st.GetRoutes() {
 		res[ResourceKey{"routes", r.GetSiteId() + "/" + r.GetId()}] = Count{r.GetRequests(), r.GetServerErrors()}
 	}
+	n.status.Unhealthy = nil
 	for _, t := range st.GetTargets() {
 		res[ResourceKey{"targets", t.GetUpstreamId() + "/" + t.GetAddress()}] = Count{t.GetAttempts(), t.GetFailures()}
+		if !t.GetHealthy() {
+			n.status.Unhealthy = append(n.status.Unhealthy, UnhealthyTarget{t.GetUpstreamId(), t.GetAddress(), t.GetCheckError()})
+		}
 	}
 	n.samples = append(n.samples[drop:], Sample{
 		At: now, Revision: st.GetRevision(), Requests: st.GetRequests(), ServerErrors: st.GetServerErrors(),

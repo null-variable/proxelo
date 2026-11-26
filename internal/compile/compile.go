@@ -215,8 +215,52 @@ func (c *compiler) compile(cfg model.Config, revision uint64) *snapshotv1.Snapsh
 			MaxFails:      1,
 			FailTimeoutMs: 10_000,
 		}
-		if sp.Balancing.Algorithm == model.LeastConn {
-			out.Balancing = snapshotv1.Upstream_BALANCING_LEAST_CONN
+		if b, ok := balancing[sp.Balancing.Algorithm]; ok {
+			out.Balancing = b
+		}
+		out.HashKey = sp.Balancing.Key
+		out.KeepaliveTimeMs = millis(sp.Keepalive.MaxAge)
+		out.QueueSize = sp.Queue.Size
+		out.QueueTimeoutMs = millis(sp.Queue.Timeout)
+		if h := sp.HealthCheck; h != nil {
+			hc := &snapshotv1.HealthCheck{
+				Kind:       snapshotv1.HealthCheck_KIND_HTTP,
+				IntervalMs: millis(h.Interval),
+				TimeoutMs:  millis(h.Timeout),
+				Fails:      h.Fails,
+				Passes:     h.Passes,
+				Path:       h.Path,
+				Host:       h.Host,
+				Body:       h.Body,
+				Port:       h.Port,
+			}
+			if h.Type == model.HealthTCP {
+				hc.Kind = snapshotv1.HealthCheck_KIND_TCP
+			}
+			if hc.Host == "" {
+				hc.Host = u.Name
+			}
+			for _, st := range h.Statuses {
+				from, to, _ := model.ParseStatusRange(st)
+				hc.Statuses = append(hc.Statuses, &snapshotv1.StatusRange{From: from, To: to})
+			}
+			out.HealthCheck = hc
+		}
+		if st := sp.Sticky; st != nil {
+			out.Sticky = &snapshotv1.Sticky{
+				Kind:     snapshotv1.Sticky_KIND_COOKIE,
+				Cookie:   st.Cookie,
+				MaxAgeS:  millis(st.MaxAge) / 1000,
+				Path:     st.Path,
+				Domain:   st.Domain,
+				HttpOnly: st.HTTPOnly,
+				Secure:   st.Secure,
+				SameSite: st.SameSite,
+				Route:    st.Route,
+			}
+			if st.Type == model.StickyRoute {
+				out.Sticky.Kind = snapshotv1.Sticky_KIND_ROUTE
+			}
 		}
 		if m := sp.PassiveHealth.MaxFails; m != nil {
 			out.MaxFails = *m
@@ -229,7 +273,11 @@ func (c *compiler) compile(cfg model.Config, revision uint64) *snapshotv1.Snapsh
 			if w == 0 {
 				w = 1
 			}
-			out.Targets = append(out.Targets, &snapshotv1.Target{Address: t.Address, Weight: w, Backup: t.Backup})
+			out.Targets = append(out.Targets, &snapshotv1.Target{
+				Address: t.Address, Weight: w, Backup: t.Backup, Down: t.Down, MaxConns: t.MaxConns,
+				SlowStartMs: millis(t.SlowStart), Resolve: t.Resolve,
+				ResolveIntervalMs: millis(t.ResolveInterval), Route: t.Route,
+			})
 		}
 		snap.Upstreams = append(snap.Upstreams, out)
 	}
@@ -245,6 +293,16 @@ var tlsVersions = map[string]snapshotv1.ListenerTls_Version{
 }
 
 // millis converts a validated duration; empty is 0.
+var balancing = map[model.Algorithm]snapshotv1.Upstream_Balancing{
+	model.RoundRobin:     snapshotv1.Upstream_BALANCING_ROUND_ROBIN,
+	model.LeastConn:      snapshotv1.Upstream_BALANCING_LEAST_CONN,
+	model.IPHash:         snapshotv1.Upstream_BALANCING_IP_HASH,
+	model.Hash:           snapshotv1.Upstream_BALANCING_HASH,
+	model.HashConsistent: snapshotv1.Upstream_BALANCING_HASH_CONSISTENT,
+	model.Random:         snapshotv1.Upstream_BALANCING_RANDOM,
+	model.RandomTwo:      snapshotv1.Upstream_BALANCING_RANDOM_TWO,
+}
+
 func millis(d string) uint32 {
 	if d == "" {
 		return 0

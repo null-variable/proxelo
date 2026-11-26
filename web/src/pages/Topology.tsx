@@ -479,7 +479,7 @@ export function Topology() {
               {[...view.boxes.values()].map(({ node: n, x, y }) => (
                 <g
                   key={n.id}
-                  className={`topo__node topo__node--${n.kind}` + (near(n.id) ? " topo__node--sel" : "") + (n.disabled ? " topo__node--off" : "") +
+                  className={`topo__node topo__node--${n.kind}` + (near(n.id) ? " topo__node--sel" : "") + (n.disabled ? " topo__node--off" : "") + (n.down ? " topo__node--down" : "") +
                     (canStart(n) ? " topo__node--grab" : "") +
                     (dragFrom ? (linkable(dragFrom, n) ? " topo__node--target" : n.id === dragFrom.id ? "" : " topo__node--dim") : "") +
                     (dropOK && dropOn!.node.id === n.id ? " topo__node--drop" : "")}
@@ -490,7 +490,7 @@ export function Topology() {
                   onPointerDown={(ev) => press(n, ev)}
                   onKeyDown={(e) => e.key === "Enter" && setSel({ node: n.id })}
                 >
-                  <title>{`${n.name}${n.detail ? "\n" + n.detail : ""}${n.group ? "\ngroup " + groupName(n.group) : ""}`}</title>
+                  <title>{`${n.name}${n.detail ? "\n" + n.detail : ""}${n.group ? "\ngroup " + groupName(n.group) : ""}${n.health ? "\ndown: " + n.health : ""}`}</title>
                   <rect className="topo__box" width={NODE_W} height={NODE_H} rx={8} />
                   <rect className="topo__accent" width={4} height={NODE_H - 16} x={0} y={8} rx={2} />
                   <text className="topo__name" x={14} y={21}>{clip(n.name, 24)}</text>
@@ -518,7 +518,7 @@ export function Topology() {
             ) : (
               <Card title="Diagram">
                 <p className="muted small">Click a node or connection to select it. Drag a node onto another to connect them: listener → site, site → route, route → child route or upstream. Certificates and policies are attached from a site's or route's panel. Valid targets light up while dragging; Esc cancels.</p>
-                <p className="muted small mt">Dashed nodes are disabled. Details are edited in each resource's form.</p>
+                <p className="muted small mt">Dashed nodes are disabled; red targets are down. Details are edited in each resource's form.</p>
                 {win && <p className="muted small mt">Line width follows requests in the last {win}; amber lines answer 1% or more 5xx, red 5% or more.</p>}
               </Card>
             )}
@@ -570,7 +570,8 @@ function NodePanel({ node, view, refs, groupName, editable, ownerEditable, busy,
       ? <Link className="btn btn--sm" to="/$kind/$id" params={{ kind: node.kind, id: node.id }}>Open form</Link>
       : <Link className="btn btn--sm" to="/$kind/$id" params={{ kind: "upstreams", id: upstreamID }}>Open upstream</Link>}>
       <div className="stack">
-        <div className="muted small">{KINDS[node.kind as Kind]?.one ?? "target"}{node.group ? ` · group ${groupName(node.group)}` : ""}{node.disabled ? " · disabled" : ""}</div>
+        <div className="muted small">{KINDS[node.kind as Kind]?.one ?? "target"}{node.group ? ` · group ${groupName(node.group)}` : ""}{node.disabled ? " · disabled" : ""}{node.down ? " · down" : ""}</div>
+        {node.health && <div className="banner banner--danger small">{node.health}</div>}
         {node.detail && <div className="mono small">{node.detail}</div>}
         {attached.length > 0 && (
           <ul className="topo__links">

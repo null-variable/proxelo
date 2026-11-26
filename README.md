@@ -37,8 +37,15 @@ and can redirect plain requests to https. Certificates are uploaded as PEM
 (the key is never returned by the API) or issued and renewed by the control
 plane over ACME (HTTP-01 and TLS-ALPN-01, Let's Encrypt by default, 30 days
 before expiry); an issued certificate goes out as the next revision on its own,
-leaving open change sets unapplied. Upstreams balance by round robin or least_conn with backup
-targets and passive health, and proxy routes set timeouts and retries.
+leaving open change sets unapplied. Upstreams balance by round robin,
+least_conn, ip_hash, hash or hash_consistent (picking the same targets as
+nginx), random or random_two. Targets can be backups, marked down, limited
+with maxConns (with a request queue when all are full), ramped up with slow
+start and re-resolved through DNS while running. Passive health and active
+HTTP or TCP health checks take failing targets out; each proxy reports the
+targets it has taken out to the control plane. Sticky sessions pin a client
+by a cookie the proxy sets or by a route value from a variable. Proxy routes
+set timeouts and retries.
 
 Policies attach to sites and routes and are inherited down the route tree:
 `headers` sets, adds or removes response headers and headers
@@ -190,10 +197,10 @@ PROXELO_API=127.0.0.1:9443 bun run dev   # dev server proxying /api to a running
 |---|---|
 | Dashboard | 5-minute traffic, 5xx and upstream failure rates, node sync, certificates expiring within 30 days, recent revisions, pending-confirmation banner |
 | Sites, Routes, Upstreams, Certificates, Policies, Listeners | Lists with search; editors generated from `/api/v1/schema` (reference fields become pickers) with a Raw JSON tab; server field errors shown at the field; site route tree with nginx match badges |
-| Topology | The configuration as a request-flow diagram, filterable by group; drag a node onto another (valid targets light up) or use the side panel to connect listener → site, site → route, route → child route or upstream, remove connections, attach or detach certificates and policies, add resources and upstream targets, all into the active change set; a traffic overlay sizes edges by recent requests and colors them by 5xx share; export as SVG, PNG, Mermaid, Graphviz DOT or JSON |
+| Topology | The configuration as a request-flow diagram, filterable by group; drag a node onto another (valid targets light up) or use the side panel to connect listener → site, site → route, route → child route or upstream, remove connections, attach or detach certificates and policies, add resources and upstream targets, all into the active change set; a traffic overlay sizes edges by recent requests and colors them by 5xx share; targets a proxy reports down are red; export as SVG, PNG, Mermaid, Graphviz DOT or JSON |
 | Changes | Change sets (the active one is the draft every edit goes to), resource and effective diff, validate with safety findings, apply with commit-confirm, import, export, discard; revisions with confirm and rollback |
 | Simulator | One request against the latest revision, side by side with the active change set |
-| Nodes, Settings | Proxy sync state; password, TOTP, API tokens, groups with members and domains, users and the audit log |
+| Nodes, Settings | Proxy sync state and the targets each proxy has taken out; password, TOTP, API tokens, groups with members and domains, users and the audit log |
 
 Light and dark modes follow the system and can be switched. Pages are laid
 out for 390px phones and up. The editors render from `GET /api/v1/schema`, so

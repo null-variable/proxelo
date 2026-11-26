@@ -75,7 +75,9 @@ go run ./test/conformance -proxy ../proxelo-proxy/target/release/proxelo-proxy
 go run ./test/conformance -proxy ... -case static-root -keep   # one case, keep the work directory
 ```
 
-Requests listen on 127.0.0.1:18480 and the upstream on 127.0.0.1:18481. The
+Requests listen on 127.0.0.1:18480 and the upstream on 127.0.0.1:18481 to
+18484; its answer names the port, so cases with several targets compare
+which target took each request. The
 report (stdout, and `-report file`) lists every differing request and the
 directive coverage.
 

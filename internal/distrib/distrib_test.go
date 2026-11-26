@@ -167,6 +167,19 @@ func TestPushOnConnectAndOnPublish(t *testing.T) {
 		t.Fatalf("applied ack did not clear the failure: %+v", nodes[0])
 	}
 
+	// Stats report the targets the proxy takes out of rotation.
+	p.send(&distribv1.SyncRequest{Kind: &distribv1.SyncRequest_Stats{Stats: &distribv1.Stats{
+		Revision: 3,
+		Targets: []*distribv1.TargetStats{
+			{UpstreamId: "up_a", Address: "10.0.0.1:80", Healthy: true},
+			{UpstreamId: "up_a", Address: "10.0.0.2:80", CheckError: "status 503"},
+		},
+	}}})
+	nodes = waitFor(t, d, func(n []NodeStatus) bool { return len(n) == 1 && len(n[0].Unhealthy) == 1 })
+	if u := nodes[0].Unhealthy[0]; u != (UnhealthyTarget{"up_a", "10.0.0.2:80", "status 503"}) {
+		t.Fatalf("unhealthy = %+v", u)
+	}
+
 	p.cancel()
 	waitFor(t, d, func(n []NodeStatus) bool { return len(n) == 0 })
 }

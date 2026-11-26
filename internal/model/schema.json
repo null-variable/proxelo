@@ -76,12 +76,22 @@
           "description": "Empty: round_robin.",
           "enum": [
             "round_robin",
-            "least_conn"
+            "least_conn",
+            "ip_hash",
+            "hash",
+            "hash_consistent",
+            "random",
+            "random_two"
           ]
+        },
+        "key": {
+          "type": "string",
+          "description": "hash and hash_consistent: the key, with variables, such as \"$request_uri\"."
         }
       },
       "x-order": [
-        "algorithm"
+        "algorithm",
+        "key"
       ]
     },
     "CertStatus": {
@@ -261,6 +271,74 @@
         "request"
       ]
     },
+    "HealthCheck": {
+      "type": "object",
+      "description": "HealthCheck probes every target; a target failing `fails` probes in a row takes no requests until it passes `passes` in a row.",
+      "properties": {
+        "body": {
+          "type": "string",
+          "description": "PCRE2 pattern the response body must match."
+        },
+        "fails": {
+          "type": "integer",
+          "description": "Zero: 1.",
+          "minimum": 0
+        },
+        "host": {
+          "type": "string",
+          "description": "HTTP Host header. Empty: the upstream's name."
+        },
+        "interval": {
+          "type": "string",
+          "description": "Empty: \"5s\"."
+        },
+        "passes": {
+          "type": "integer",
+          "description": "Zero: 1.",
+          "minimum": 0
+        },
+        "path": {
+          "type": "string",
+          "description": "HTTP request path. Empty: \"/\"."
+        },
+        "port": {
+          "type": "integer",
+          "description": "Probe this port instead of the target's.",
+          "minimum": 0
+        },
+        "statuses": {
+          "type": "array",
+          "description": "Passing statuses such as \"200-399\" or \"204\". Empty: 200-399.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "timeout": {
+          "type": "string",
+          "description": "Per probe. Empty: \"1s\"."
+        },
+        "type": {
+          "type": "string",
+          "description": "Empty: http.",
+          "enum": [
+            "http",
+            "tcp"
+          ]
+        }
+      },
+      "x-order": [
+        "type",
+        "interval",
+        "timeout",
+        "fails",
+        "passes",
+        "path",
+        "host",
+        "statuses",
+        "body",
+        "port"
+      ]
+    },
     "HostMatch": {
       "type": "object",
       "properties": {
@@ -293,6 +371,10 @@
           "description": "Idle connections kept per worker (nginx keepalive).",
           "minimum": 0
         },
+        "maxAge": {
+          "type": "string",
+          "description": "A connection closes after being open this long (nginx keepalive_time). Empty: \"1h\"."
+        },
         "maxRequests": {
           "type": "integer",
           "description": "Zero: 1000.",
@@ -306,7 +388,8 @@
       "x-order": [
         "idle",
         "timeout",
-        "maxRequests"
+        "maxRequests",
+        "maxAge"
       ]
     },
     "ListenerSpec": {
@@ -535,6 +618,24 @@
         "connect",
         "send",
         "read"
+      ]
+    },
+    "Queue": {
+      "type": "object",
+      "properties": {
+        "size": {
+          "type": "integer",
+          "description": "Zero: no queue; a request finding every target full fails with 502.",
+          "minimum": 0
+        },
+        "timeout": {
+          "type": "string",
+          "description": "Empty: \"60s\"."
+        }
+      },
+      "x-order": [
+        "size",
+        "timeout"
       ]
     },
     "Retry": {
@@ -781,6 +882,66 @@
         "root"
       ]
     },
+    "Sticky": {
+      "type": "object",
+      "description": "Sticky keeps a client on one target.",
+      "properties": {
+        "cookie": {
+          "type": "string",
+          "description": "cookie: cookie name. Empty: \"route\"."
+        },
+        "domain": {
+          "type": "string",
+          "description": "cookie: Domain attribute."
+        },
+        "httpOnly": {
+          "type": "boolean"
+        },
+        "maxAge": {
+          "type": "string",
+          "description": "cookie: lifetime such as \"1h\". Empty: a session cookie."
+        },
+        "path": {
+          "type": "string",
+          "description": "cookie: Path attribute. Empty: \"/\"."
+        },
+        "route": {
+          "type": "array",
+          "description": "route: variables tried in order, such as \"$cookie_jsessionid\"; the first non-empty one is matched against target routes.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "sameSite": {
+          "type": "string",
+          "description": "cookie: \"strict\", \"lax\" or \"none\"."
+        },
+        "secure": {
+          "type": "boolean"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "cookie",
+            "route"
+          ]
+        }
+      },
+      "x-order": [
+        "type",
+        "cookie",
+        "maxAge",
+        "path",
+        "domain",
+        "httpOnly",
+        "secure",
+        "sameSite",
+        "route"
+      ],
+      "required": [
+        "type"
+      ]
+    },
     "Target": {
       "type": "object",
       "properties": {
@@ -792,6 +953,31 @@
           "type": "boolean",
           "description": "Used only when no other target is available."
         },
+        "down": {
+          "type": "boolean",
+          "description": "Takes no requests (nginx down)."
+        },
+        "maxConns": {
+          "type": "integer",
+          "description": "Requests in progress at most; zero: no limit (nginx max_conns).",
+          "minimum": 0
+        },
+        "resolve": {
+          "type": "boolean",
+          "description": "Re-resolve the host name while running (nginx resolve)."
+        },
+        "resolveInterval": {
+          "type": "string",
+          "description": "How often a resolve target is looked up again. Empty: \"30s\"."
+        },
+        "route": {
+          "type": "string",
+          "description": "Sticky route value naming this target (nginx server route=)."
+        },
+        "slowStart": {
+          "type": "string",
+          "description": "After recovering, the weight grows from 1 over this time, e.g. \"30s\" (nginx slow_start)."
+        },
         "weight": {
           "type": "integer",
           "description": "Zero means 1.",
@@ -801,7 +987,13 @@
       "x-order": [
         "address",
         "weight",
-        "backup"
+        "backup",
+        "down",
+        "maxConns",
+        "slowStart",
+        "resolve",
+        "resolveInterval",
+        "route"
       ],
       "required": [
         "address"
@@ -849,11 +1041,25 @@
         "balancing": {
           "$ref": "#/$defs/Balancing"
         },
+        "healthCheck": {
+          "$ref": "#/$defs/HealthCheck",
+          "description": "Active health checks (probes from every node). Nil: none.",
+          "x-nullable": true
+        },
         "keepalive": {
           "$ref": "#/$defs/Keepalive"
         },
         "passiveHealth": {
           "$ref": "#/$defs/PassiveHealth"
+        },
+        "queue": {
+          "$ref": "#/$defs/Queue",
+          "description": "Requests waiting when every target is at maxConns (nginx queue)."
+        },
+        "sticky": {
+          "$ref": "#/$defs/Sticky",
+          "description": "Session affinity (nginx sticky). Nil: none.",
+          "x-nullable": true
         },
         "targets": {
           "type": "array",
@@ -866,6 +1072,9 @@
         "targets",
         "balancing",
         "passiveHealth",
+        "healthCheck",
+        "sticky",
+        "queue",
         "keepalive"
       ],
       "required": [

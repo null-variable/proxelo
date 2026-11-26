@@ -13,7 +13,7 @@ export function Nodes() {
       {nodes.isPending ? <Loading /> : items.length === 0 ? <Empty title="No proxy connected" /> : (
         <div className="data-table-wrap">
           <table className="data-table">
-            <thead><tr><th>Node</th><th>Version</th><th>Active</th><th>Sent</th><th>Status</th><th>Connected</th></tr></thead>
+            <thead><tr><th>Node</th><th>Version</th><th>Active</th><th>Sent</th><th>Status</th><th>Targets down</th><th>Connected</th></tr></thead>
             <tbody>
               {items.map((n) => (
                 <tr key={n.nodeId}>
@@ -24,6 +24,18 @@ export function Nodes() {
                   <td>
                     {n.error ? <><Status tone="danger">Failed r{n.failedRevision}</Status> <span className="small">{n.error}</span></>
                       : n.activeRevision === n.sentRevision ? <Status tone="success">In sync</Status> : <Status tone="warning">Loading</Status>}
+                  </td>
+                  <td>
+                    {(n.unhealthy ?? []).length === 0 ? <span className="muted">None</span> : (
+                      <ul className="stack">
+                        {n.unhealthy!.map((u) => (
+                          <li key={u.upstreamId + u.address}>
+                            <span className="mono">{u.address}</span> <span className="muted small">{u.upstreamId}</span>
+                            {u.error && <span className="small"> · {u.error}</span>}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </td>
                   <td className="muted nowrap">{timeAgo(n.connectedAt)}</td>
                 </tr>

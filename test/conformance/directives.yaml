@@ -2041,11 +2041,14 @@ directives:
   - name: hash
     module: ngx_http_upstream_hash_module
     contexts: [upstream]
-    status: missing
+    status: implemented
+    field: Upstream.spec.balancing.key
+    note: algorithm hash or hash_consistent (ketama-compatible ring)
   - name: ip_hash
     module: ngx_http_upstream_ip_hash_module
     contexts: [upstream]
-    status: missing
+    status: implemented
+    field: Upstream.spec.balancing.algorithm
   - name: keepalive
     module: ngx_http_upstream_keepalive_module
     contexts: [upstream]
@@ -2054,7 +2057,8 @@ directives:
   - name: keepalive_time
     module: ngx_http_upstream_keepalive_module
     contexts: [upstream]
-    status: missing
+    status: implemented
+    field: Upstream.spec.keepalive.maxAge
   - name: keepalive_timeout
     module: ngx_http_upstream_keepalive_module
     contexts: [upstream]
@@ -2082,13 +2086,15 @@ directives:
   - name: server
     module: ngx_http_upstream_module
     contexts: [upstream]
-    status: partial
+    status: implemented
     field: Upstream.spec.targets
-    note: address, weight, backup, max_fails, fail_timeout; no down, max_conns, resolve, slow_start
+    note: address, weight, backup, down, max_conns, max_fails, fail_timeout, resolve, slow_start, route
   - name: resolver
     module: ngx_http_upstream_module
     contexts: [upstream]
-    status: missing
+    status: partial
+    field: Upstream.spec.targets[].resolveInterval
+    note: system resolver, re-resolved on an interval
   - name: resolver_timeout
     module: ngx_http_upstream_module
     contexts: [upstream]
@@ -2096,15 +2102,21 @@ directives:
   - name: random
     module: ngx_http_upstream_random_module
     contexts: [upstream]
-    status: missing
+    status: implemented
+    field: Upstream.spec.balancing.algorithm
+    note: random and random_two (two least_conn)
   - name: sticky
     module: ngx_http_upstream_sticky_module
     contexts: [upstream]
-    status: missing
+    status: partial
+    field: Upstream.spec.sticky
+    note: cookie and route; no learn
   - name: zone
     module: ngx_http_upstream_zone_module
     contexts: [upstream]
-    status: missing
+    status: implemented
+    field: built in
+    note: target state is shared by all workers
   - name: userid
     module: ngx_http_userid_module
     contexts: [http, server, location]

@@ -52,6 +52,8 @@ export interface GraphNode {
   group?: string;
   detail?: string;
   disabled?: boolean;
+  down?: boolean;
+  health?: string;
   traffic?: TrafficCount;
 }
 
@@ -204,6 +206,13 @@ export interface NodeStatus {
   activeRevision: number;
   sentRevision: number;
   failedRevision?: number;
+  error?: string;
+  unhealthy?: UnhealthyTarget[];
+}
+
+export interface UnhealthyTarget {
+  upstreamId: string;
+  address: string;
   error?: string;
 }
 
