@@ -1,4 +1,6 @@
-// Package store keeps resources and revisions in SQLite.
+// Package store keeps the control plane state in SQLite: the resources of
+// the current revision (the head), change sets edited on top of it, applied
+// revisions, admin accounts and the audit log.
 package store
 
 import (
@@ -7,13 +9,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
-	"google.golang.org/protobuf/proto"
 	_ "modernc.org/sqlite"
 
-	"github.com/null-variable/proxelo/internal/compile"
 	"github.com/null-variable/proxelo/internal/model"
 )
 
@@ -23,7 +24,16 @@ var (
 	ErrConflict = errors.New("resource version mismatch")
 	// ErrNameTaken means another resource of the same kind has the name.
 	ErrNameTaken = errors.New("name already in use")
+	// ErrPending means a revision awaits confirmation; it must be confirmed
+	// or rolled back before another is applied.
+	ErrPending = errors.New("a revision is pending confirmation")
+	// ErrNotPending means the revision is not awaiting confirmation.
+	ErrNotPending = errors.New("revision is not pending confirmation")
 )
+
+// schemaVersion is stored in PRAGMA user_version. Databases of another
+// version are refused rather than migrated.
+const schemaVersion = 2
 
 const schema = `
 CREATE TABLE IF NOT EXISTS resources (
@@ -37,14 +47,75 @@ CREATE TABLE IF NOT EXISTS resources (
 CREATE TABLE IF NOT EXISTS revisions (
 	revision   INTEGER NOT NULL PRIMARY KEY,
 	created_at TEXT    NOT NULL,
+	author     TEXT    NOT NULL,
 	message    TEXT    NOT NULL,
 	hash       BLOB    NOT NULL,
 	config     TEXT    NOT NULL,
-	snapshot   BLOB    NOT NULL
+	snapshot   BLOB    NOT NULL,
+	status     TEXT    NOT NULL,
+	confirm_by TEXT,
+	tag        TEXT    UNIQUE,
+	guard      TEXT    NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS state (
 	key   TEXT NOT NULL PRIMARY KEY,
 	value BLOB NOT NULL
+);
+CREATE TABLE IF NOT EXISTS changesets (
+	id            TEXT    NOT NULL PRIMARY KEY,
+	author        TEXT    NOT NULL,
+	message       TEXT    NOT NULL,
+	base_revision INTEGER NOT NULL,
+	created_at    TEXT    NOT NULL,
+	updated_at    TEXT    NOT NULL
+);
+CREATE TABLE IF NOT EXISTS changeset_items (
+	changeset TEXT NOT NULL REFERENCES changesets (id) ON DELETE CASCADE,
+	kind      TEXT NOT NULL,
+	id        TEXT NOT NULL,
+	base      TEXT,
+	body      TEXT,
+	PRIMARY KEY (changeset, id)
+);
+CREATE TABLE IF NOT EXISTS users (
+	id           TEXT    NOT NULL PRIMARY KEY,
+	name         TEXT    NOT NULL UNIQUE,
+	role         TEXT    NOT NULL,
+	password     TEXT    NOT NULL,
+	totp_secret  TEXT    NOT NULL DEFAULT '',
+	totp_enabled INTEGER NOT NULL DEFAULT 0,
+	totp_last    INTEGER NOT NULL DEFAULT 0,
+	failures     INTEGER NOT NULL DEFAULT 0,
+	locked_until TEXT    NOT NULL DEFAULT '',
+	created_at   TEXT    NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sessions (
+	hash       BLOB NOT NULL PRIMARY KEY,
+	user       TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+	csrf       TEXT NOT NULL,
+	created_at TEXT NOT NULL,
+	last_seen  TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS tokens (
+	id         TEXT NOT NULL PRIMARY KEY,
+	hash       BLOB NOT NULL,
+	user       TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+	name       TEXT NOT NULL,
+	role       TEXT NOT NULL,
+	cidrs      TEXT NOT NULL,
+	expires_at TEXT NOT NULL,
+	created_at TEXT NOT NULL,
+	last_used  TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS audit (
+	seq    INTEGER NOT NULL PRIMARY KEY,
+	at     TEXT    NOT NULL,
+	actor  TEXT    NOT NULL,
+	action TEXT    NOT NULL,
+	target TEXT    NOT NULL,
+	detail TEXT    NOT NULL,
+	prev   BLOB    NOT NULL,
+	hash   BLOB    NOT NULL
 );
 `
 
@@ -52,6 +123,13 @@ CREATE TABLE IF NOT EXISTS state (
 type Store struct {
 	db  *sql.DB
 	now func() time.Time
+}
+
+// dbtx is satisfied by *sql.DB and *sql.Tx.
+type dbtx interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
 // Open opens or creates the database at path.
@@ -64,344 +142,32 @@ func Open(path string) (*Store, error) {
 	// One connection serializes writers, which SQLite requires anyway, and
 	// keeps read-modify-write transactions free of SQLITE_BUSY.
 	db.SetMaxOpenConns(1)
-	if _, err := db.Exec(schema); err != nil {
+	if err := initSchema(db); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	return &Store{db: db, now: func() time.Time { return time.Now().UTC().Truncate(time.Millisecond) }}, nil
 }
 
-func (s *Store) Close() error { return s.db.Close() }
-
-// List returns every resource of kind ordered by name.
-func (s *Store) List(ctx context.Context, kind model.Kind) ([]model.Resource, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT body FROM resources WHERE kind = ? ORDER BY name`, kind.Plural)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []model.Resource
-	for rows.Next() {
-		r, err := scan(kind, rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, r)
-	}
-	return out, rows.Err()
-}
-
-// Get returns one resource.
-func (s *Store) Get(ctx context.Context, kind model.Kind, id string) (model.Resource, error) {
-	return get(ctx, s.db, kind, id)
-}
-
-type querier interface {
-	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
-}
-
-func get(ctx context.Context, q querier, kind model.Kind, id string) (model.Resource, error) {
-	row := q.QueryRowContext(ctx, `SELECT body FROM resources WHERE kind = ? AND id = ?`, kind.Plural, id)
-	r, err := scan(kind, row)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrNotFound
-	}
-	return r, err
-}
-
-func scan(kind model.Kind, row interface{ Scan(...any) error }) (model.Resource, error) {
-	var body string
-	if err := row.Scan(&body); err != nil {
-		return nil, err
-	}
-	r := kind.New()
-	if err := json.Unmarshal([]byte(body), r); err != nil {
-		return nil, fmt.Errorf("stored %s: %w", kind.Plural, err)
-	}
-	return r, nil
-}
-
-// Create assigns the ID, version and timestamps of r and stores it.
-// r must pass model.Validate.
-func (s *Store) Create(ctx context.Context, kind model.Kind, r model.Resource) error {
-	m := r.Common()
-	m.ID = kind.NewID()
-	m.ResourceVersion = 1
-	m.CreatedAt = s.now()
-	m.UpdatedAt = m.CreatedAt
-	body, err := json.Marshal(r)
-	if err != nil {
+func initSchema(db *sql.DB) error {
+	var version, tables int
+	if err := db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO resources (kind, id, name, version, body) VALUES (?, ?, ?, ?, ?)`,
-		kind.Plural, m.ID, m.Name, m.ResourceVersion, string(body))
-	return mapErr(err)
-}
-
-// Update replaces the stored resource with r, keeping its ID and creation
-// time. If version is non-zero it must equal the stored version.
-// r must pass model.Validate.
-func (s *Store) Update(ctx context.Context, kind model.Kind, id string, version int64, r model.Resource) error {
-	return s.tx(ctx, func(tx *sql.Tx) error {
-		cur, err := get(ctx, tx, kind, id)
-		if err != nil {
-			return err
-		}
-		cm := cur.Common()
-		if version != 0 && version != cm.ResourceVersion {
-			return ErrConflict
-		}
-		m := r.Common()
-		m.ID = id
-		m.ResourceVersion = cm.ResourceVersion + 1
-		m.CreatedAt = cm.CreatedAt
-		m.UpdatedAt = s.now()
-		body, err := json.Marshal(r)
-		if err != nil {
-			return err
-		}
-		_, err = tx.ExecContext(ctx, `UPDATE resources SET name = ?, version = ?, body = ? WHERE id = ?`,
-			m.Name, m.ResourceVersion, string(body), id)
-		return mapErr(err)
-	})
-}
-
-// Delete removes a resource. If version is non-zero it must equal the stored
-// version.
-func (s *Store) Delete(ctx context.Context, kind model.Kind, id string, version int64) error {
-	return s.tx(ctx, func(tx *sql.Tx) error {
-		cur, err := get(ctx, tx, kind, id)
-		if err != nil {
-			return err
-		}
-		if version != 0 && version != cur.Common().ResourceVersion {
-			return ErrConflict
-		}
-		_, err = tx.ExecContext(ctx, `DELETE FROM resources WHERE id = ?`, id)
+	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table'`).Scan(&tables); err != nil {
 		return err
-	})
-}
-
-// Revision is an applied, immutable copy of all resources and the snapshot
-// compiled from them.
-type Revision struct {
-	Revision  uint64       `json:"revision"`
-	CreatedAt time.Time    `json:"createdAt"`
-	Message   string       `json:"message"`
-	Hash      []byte       `json:"hash"`
-	Config    model.Config `json:"-"`
-	Snapshot  []byte       `json:"-"`
-}
-
-// Draft returns the current resources, applied or not.
-func (s *Store) Draft(ctx context.Context) (model.Config, error) {
-	return loadConfig(ctx, s.db)
-}
-
-type rowsQuerier interface {
-	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
-}
-
-func loadConfig(ctx context.Context, q rowsQuerier) (model.Config, error) {
-	var cfg model.Config
-	rows, err := q.QueryContext(ctx, `SELECT kind, body FROM resources ORDER BY id`)
-	if err != nil {
-		return cfg, err
 	}
-	defer rows.Close()
-	for rows.Next() {
-		var plural, body string
-		if err := rows.Scan(&plural, &body); err != nil {
-			return cfg, err
-		}
-		kind, ok := model.KindByPlural(plural)
-		if !ok {
-			return cfg, fmt.Errorf("stored resource of unknown kind %q", plural)
-		}
-		r := kind.New()
-		if err := json.Unmarshal([]byte(body), r); err != nil {
-			return cfg, err
-		}
-		cfg.Add(r)
+	if tables > 0 && version != schemaVersion {
+		return fmt.Errorf("database schema version %d, want %d: it was made by another proxelo version", version, schemaVersion)
 	}
-	return cfg, rows.Err()
-}
-
-// Apply compiles the current resources into the next revision and stores it.
-// A compile failure returns model.FieldErrors and stores nothing. verify, when
-// set, sees the serialized snapshot before it is stored and can reject it.
-func (s *Store) Apply(ctx context.Context, message string, verify func(snapshot []byte) error) (*Revision, error) {
-	return s.applyWith(ctx, message, verify, func(tx *sql.Tx) (model.Config, error) {
-		return loadConfig(ctx, tx)
-	})
-}
-
-// ApplyChange stores the next revision made from the latest one with change
-// applied to its config, leaving other unapplied edits out. Used for
-// changes the control plane makes itself, such as a renewed certificate.
-func (s *Store) ApplyChange(ctx context.Context, message string, verify func(snapshot []byte) error, change func(*model.Config)) (*Revision, error) {
-	return s.applyWith(ctx, message, verify, func(tx *sql.Tx) (model.Config, error) {
-		var cfgJSON string
-		err := tx.QueryRowContext(ctx, `SELECT config FROM revisions ORDER BY revision DESC LIMIT 1`).Scan(&cfgJSON)
-		if errors.Is(err, sql.ErrNoRows) {
-			return model.Config{}, ErrNotFound
-		}
-		if err != nil {
-			return model.Config{}, err
-		}
-		var cfg model.Config
-		if err := json.Unmarshal([]byte(cfgJSON), &cfg); err != nil {
-			return cfg, err
-		}
-		change(&cfg)
-		return cfg, nil
-	})
-}
-
-func (s *Store) applyWith(ctx context.Context, message string, verify func(snapshot []byte) error, load func(*sql.Tx) (model.Config, error)) (*Revision, error) {
-	var rev *Revision
-	err := s.tx(ctx, func(tx *sql.Tx) error {
-		cfg, err := load(tx)
-		if err != nil {
-			return err
-		}
-
-		var last uint64
-		if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(revision), 0) FROM revisions`).Scan(&last); err != nil {
-			return err
-		}
-		snap, err := compile.Compile(cfg, last+1)
-		if err != nil {
-			return err
-		}
-		snapBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(snap)
-		if err != nil {
-			return err
-		}
-		if verify != nil {
-			if err := verify(snapBytes); err != nil {
-				return err
-			}
-		}
-		cfgJSON, err := json.Marshal(cfg)
-		if err != nil {
-			return err
-		}
-		rev = &Revision{Revision: last + 1, CreatedAt: s.now(), Message: message, Hash: snap.GetHash(), Config: cfg, Snapshot: snapBytes}
-		_, err = tx.ExecContext(ctx, `INSERT INTO revisions (revision, created_at, message, hash, config, snapshot) VALUES (?, ?, ?, ?, ?, ?)`,
-			rev.Revision, rev.CreatedAt.Format(time.RFC3339Nano), message, rev.Hash, string(cfgJSON), snapBytes)
+	if _, err := db.Exec(schema); err != nil {
 		return err
-	})
-	if err != nil {
-		return nil, err
 	}
-	return rev, nil
-}
-
-// Revisions returns all revisions, newest first, without config and snapshot.
-func (s *Store) Revisions(ctx context.Context) ([]*Revision, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT revision, created_at, message, hash FROM revisions ORDER BY revision DESC`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []*Revision
-	for rows.Next() {
-		rev, err := scanRevision(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, rev)
-	}
-	return out, rows.Err()
-}
-
-// Latest returns the newest revision, or ErrNotFound if none was applied.
-func (s *Store) Latest(ctx context.Context) (*Revision, error) {
-	var n uint64
-	if err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(revision), 0) FROM revisions`).Scan(&n); err != nil {
-		return nil, err
-	}
-	if n == 0 {
-		return nil, ErrNotFound
-	}
-	return s.Revision(ctx, n)
-}
-
-// Revision returns one revision with its config and snapshot.
-func (s *Store) Revision(ctx context.Context, n uint64) (*Revision, error) {
-	row := s.db.QueryRowContext(ctx, `SELECT revision, created_at, message, hash, config, snapshot FROM revisions WHERE revision = ?`, n)
-	var cfg string
-	var snap []byte
-	rev, err := scanRevision(row, &cfg, &snap)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrNotFound
-	}
-	if err != nil {
-		return nil, err
-	}
-	if err := json.Unmarshal([]byte(cfg), &rev.Config); err != nil {
-		return nil, fmt.Errorf("revision %d config: %w", n, err)
-	}
-	rev.Snapshot = snap
-	return rev, nil
-}
-
-func scanRevision(row interface{ Scan(...any) error }, extra ...any) (*Revision, error) {
-	var rev Revision
-	var created string
-	if err := row.Scan(append([]any{&rev.Revision, &created, &rev.Message, &rev.Hash}, extra...)...); err != nil {
-		return nil, err
-	}
-	t, err := time.Parse(time.RFC3339Nano, created)
-	if err != nil {
-		return nil, err
-	}
-	rev.CreatedAt = t
-	return &rev, nil
-}
-
-// Put stores a control plane value, such as the ACME account.
-func (s *Store) Put(ctx context.Context, key string, value []byte) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO state (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, key, value)
+	_, err := db.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, schemaVersion))
 	return err
 }
 
-// Value returns a value stored with Put, or ErrNotFound.
-func (s *Store) Value(ctx context.Context, key string) ([]byte, error) {
-	var v []byte
-	err := s.db.QueryRowContext(ctx, `SELECT value FROM state WHERE key = ?`, key).Scan(&v)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrNotFound
-	}
-	return v, err
-}
-
-// SetCertificate stores an issued chain and key, or only a status, on
-// certificate id, keeping the rest of the resource, and returns it.
-func (s *Store) SetCertificate(ctx context.Context, id string, chainPEM, keyPEM string, status model.CertStatus) (*model.Certificate, error) {
-	var out *model.Certificate
-	err := s.tx(ctx, func(tx *sql.Tx) error {
-		cur, err := get(ctx, tx, model.CertificateKind, id)
-		if err != nil {
-			return err
-		}
-		c := cur.(*model.Certificate)
-		c.Spec.ChainPEM, c.Spec.KeyPEM, c.Spec.Status = chainPEM, keyPEM, status
-		c.ResourceVersion++
-		c.UpdatedAt = s.now()
-		body, err := json.Marshal(c)
-		if err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, `UPDATE resources SET version = ?, body = ? WHERE id = ?`, c.ResourceVersion, string(body), id); err != nil {
-			return err
-		}
-		out = c
-		return nil
-	})
-	return out, err
-}
+func (s *Store) Close() error { return s.db.Close() }
 
 func (s *Store) tx(ctx context.Context, fn func(*sql.Tx) error) error {
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -420,4 +186,181 @@ func mapErr(err error) error {
 		return ErrNameTaken
 	}
 	return err
+}
+
+func errorsContains(err error, s string) bool {
+	return err != nil && strings.Contains(err.Error(), s)
+}
+
+func formatTime(t time.Time) string { return t.UTC().Format(time.RFC3339Nano) }
+
+func parseTime(s string) (time.Time, error) {
+	if s == "" {
+		return time.Time{}, nil
+	}
+	return time.Parse(time.RFC3339Nano, s)
+}
+
+func decode(kind model.Kind, body string) (model.Resource, error) {
+	r := kind.New()
+	if err := json.Unmarshal([]byte(body), r); err != nil {
+		return nil, fmt.Errorf("stored %s: %w", kind.Plural, err)
+	}
+	return r, nil
+}
+
+// headList returns the head resources of kind.
+func headList(ctx context.Context, q dbtx, kind model.Kind) ([]model.Resource, error) {
+	rows, err := q.QueryContext(ctx, `SELECT body FROM resources WHERE kind = ? ORDER BY name`, kind.Plural)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []model.Resource
+	for rows.Next() {
+		var body string
+		if err := rows.Scan(&body); err != nil {
+			return nil, err
+		}
+		r, err := decode(kind, body)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// headRow is one stored head resource.
+type headRow struct {
+	kind    string
+	version int64
+	body    string
+}
+
+func getHead(ctx context.Context, q dbtx, id string) (*headRow, error) {
+	h := &headRow{}
+	err := q.QueryRowContext(ctx, `SELECT kind, version, body FROM resources WHERE id = ?`, id).Scan(&h.kind, &h.version, &h.body)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return h, err
+}
+
+func loadConfig(ctx context.Context, q dbtx) (model.Config, error) {
+	var cfg model.Config
+	rows, err := q.QueryContext(ctx, `SELECT kind, body FROM resources ORDER BY id`)
+	if err != nil {
+		return cfg, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var plural, body string
+		if err := rows.Scan(&plural, &body); err != nil {
+			return cfg, err
+		}
+		kind, ok := model.KindByPlural(plural)
+		if !ok {
+			return cfg, fmt.Errorf("stored resource of unknown kind %q", plural)
+		}
+		r, err := decode(kind, body)
+		if err != nil {
+			return cfg, err
+		}
+		cfg.Add(r)
+	}
+	return cfg, rows.Err()
+}
+
+// Head returns the resources of the current revision, including
+// certificates the control plane issued since.
+func (s *Store) Head(ctx context.Context) (model.Config, error) {
+	return loadConfig(ctx, s.db)
+}
+
+// putHead stores r in the head as the next version of what is there.
+func (s *Store) putHead(ctx context.Context, q dbtx, kind model.Kind, r model.Resource) error {
+	m := r.Common()
+	cur, err := getHead(ctx, q, m.ID)
+	if err != nil {
+		return err
+	}
+	m.UpdatedAt = s.now()
+	if cur == nil {
+		m.ResourceVersion = 1
+		if m.CreatedAt.IsZero() {
+			m.CreatedAt = m.UpdatedAt
+		}
+	} else {
+		m.ResourceVersion = cur.version + 1
+	}
+	body, err := json.Marshal(r)
+	if err != nil {
+		return err
+	}
+	_, err = q.ExecContext(ctx, `INSERT INTO resources (kind, id, name, version, body) VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT (id) DO UPDATE SET name = excluded.name, version = excluded.version, body = excluded.body`,
+		kind.Plural, m.ID, m.Name, m.ResourceVersion, string(body))
+	return mapErr(err)
+}
+
+// Put stores a control plane value, such as the ACME account.
+func (s *Store) Put(ctx context.Context, key string, value []byte) error {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO state (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, key, value)
+	return err
+}
+
+// Value returns a value stored with Put, or ErrNotFound.
+func (s *Store) Value(ctx context.Context, key string) ([]byte, error) {
+	var v []byte
+	err := s.db.QueryRowContext(ctx, `SELECT value FROM state WHERE key = ?`, key).Scan(&v)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return v, err
+}
+
+// DeleteValue removes a value stored with Put.
+func (s *Store) DeleteValue(ctx context.Context, key string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM state WHERE key = ?`, key)
+	return err
+}
+
+// SetCertificate stores an issued chain and key, or only a status, on head
+// certificate id, keeping the rest of the resource, and returns it. Change
+// sets that edit the certificate merge onto it when applied.
+func (s *Store) SetCertificate(ctx context.Context, id string, chainPEM, keyPEM string, status model.CertStatus) (*model.Certificate, error) {
+	var out *model.Certificate
+	err := s.tx(ctx, func(tx *sql.Tx) error {
+		h, err := getHead(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		if h == nil || h.kind != model.CertificateKind.Plural {
+			return ErrNotFound
+		}
+		r, err := decode(model.CertificateKind, h.body)
+		if err != nil {
+			return err
+		}
+		c := r.(*model.Certificate)
+		issued := c.Spec.ChainPEM != chainPEM
+		c.Spec.ChainPEM, c.Spec.KeyPEM, c.Spec.Status = chainPEM, keyPEM, status
+		if err := s.putHead(ctx, tx, model.CertificateKind, c); err != nil {
+			return err
+		}
+		if issued {
+			if _, err := tx.ExecContext(ctx, `INSERT OR REPLACE INTO state (key, value) VALUES (?, x'01')`, headDirty); err != nil {
+				return err
+			}
+		}
+		out = c
+		return nil
+	})
+	return out, err
+}
+
+// sortByName orders resources as List returns them.
+func sortByName(rs []model.Resource) {
+	slices.SortFunc(rs, func(a, b model.Resource) int { return strings.Compare(a.Common().Name, b.Common().Name) })
 }

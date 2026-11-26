@@ -44,6 +44,27 @@ type NodeStatus struct {
 	Error          string `json:"error,omitempty"`
 }
 
+// statsWindow is how long traffic samples are kept.
+const statsWindow = 15 * time.Minute
+
+// Sample is one Stats report: counters cumulative since the proxy started.
+type Sample struct {
+	At               time.Time
+	Revision         uint64
+	Requests         uint64
+	ServerErrors     uint64
+	UpstreamAttempts uint64
+	UpstreamFailures uint64
+}
+
+// Traffic is what proxies handled over a window.
+type Traffic struct {
+	Requests         uint64 `json:"requests"`
+	ServerErrors     uint64 `json:"serverErrors"`
+	UpstreamAttempts uint64 `json:"upstreamAttempts"`
+	UpstreamFailures uint64 `json:"upstreamFailures"`
+}
+
 // Distributor implements DistributionService. It is safe for concurrent use.
 type Distributor struct {
 	distribv1.UnimplementedDistributionServiceServer
@@ -66,6 +87,8 @@ type published struct {
 
 type node struct {
 	status NodeStatus
+	// Traffic counters received in the last statsWindow, oldest first.
+	samples []Sample
 	// wake has room for one signal: a newer snapshot may be available.
 	wake chan struct{}
 	// Challenge set version last sent on this connection.
@@ -255,9 +278,13 @@ func (d *Distributor) recvLoop(stream distribv1.DistributionService_SyncServer, 
 		if err != nil {
 			return err
 		}
+		if st := req.GetStats(); st != nil {
+			d.record(n, st)
+			continue
+		}
 		ack := req.GetAck()
 		if ack == nil {
-			return status.Error(codes.InvalidArgument, "expected ack")
+			return status.Error(codes.InvalidArgument, "expected ack or stats")
 		}
 		d.mu.Lock()
 		if ack.GetApplied() {
@@ -273,6 +300,57 @@ func (d *Distributor) recvLoop(stream distribv1.DistributionService_SyncServer, 
 			d.log.Warn("snapshot rejected", "node", n.status.NodeID, "revision", ack.GetRevision(), "error", ack.GetError())
 		}
 	}
+}
+
+func (d *Distributor) record(n *node, st *distribv1.Stats) {
+	now := time.Now()
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	drop := 0
+	for drop < len(n.samples) && now.Sub(n.samples[drop].At) > statsWindow {
+		drop++
+	}
+	n.samples = append(n.samples[drop:], Sample{
+		At: now, Revision: st.GetRevision(), Requests: st.GetRequests(), ServerErrors: st.GetServerErrors(),
+		UpstreamAttempts: st.GetUpstreamAttempts(), UpstreamFailures: st.GetUpstreamFailures(),
+	})
+}
+
+// Traffic sums, over connected proxies, what they handled between from and
+// to while serving revision (0: any revision). Each proxy contributes the
+// growth of its counters between its first and last sample in the window;
+// a proxy restart, which resets them, counts from zero.
+func (d *Distributor) Traffic(from, to time.Time, revision uint64) Traffic {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	var t Traffic
+	for _, n := range d.nodes {
+		var first, last *Sample
+		for i := range n.samples {
+			s := &n.samples[i]
+			if s.At.Before(from) || s.At.After(to) || (revision != 0 && s.Revision != revision) {
+				continue
+			}
+			if first == nil {
+				first = s
+			}
+			last = s
+		}
+		if first == nil {
+			continue
+		}
+		delta := func(a, b uint64) uint64 {
+			if b < a {
+				return b
+			}
+			return b - a
+		}
+		t.Requests += delta(first.Requests, last.Requests)
+		t.ServerErrors += delta(first.ServerErrors, last.ServerErrors)
+		t.UpstreamAttempts += delta(first.UpstreamAttempts, last.UpstreamAttempts)
+		t.UpstreamFailures += delta(first.UpstreamFailures, last.UpstreamFailures)
+	}
+	return t
 }
 
 // Listen opens the Unix socket proxies dial. Access is controlled by file

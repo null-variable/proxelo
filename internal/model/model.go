@@ -487,6 +487,31 @@ type Config struct {
 	Policies     []*Policy      `json:"policies,omitempty"`
 }
 
+// Of returns the resources of kind.
+func (c *Config) Of(kind Kind) []Resource {
+	var out []Resource
+	add := func(n int, at func(int) Resource) {
+		for i := range n {
+			out = append(out, at(i))
+		}
+	}
+	switch kind.Plural {
+	case ListenerKind.Plural:
+		add(len(c.Listeners), func(i int) Resource { return c.Listeners[i] })
+	case SiteKind.Plural:
+		add(len(c.Sites), func(i int) Resource { return c.Sites[i] })
+	case RouteKind.Plural:
+		add(len(c.Routes), func(i int) Resource { return c.Routes[i] })
+	case UpstreamKind.Plural:
+		add(len(c.Upstreams), func(i int) Resource { return c.Upstreams[i] })
+	case CertificateKind.Plural:
+		add(len(c.Certificates), func(i int) Resource { return c.Certificates[i] })
+	case PolicyKind.Plural:
+		add(len(c.Policies), func(i int) Resource { return c.Policies[i] })
+	}
+	return out
+}
+
 // Add appends r to the list for its type.
 func (c *Config) Add(r Resource) {
 	switch r := r.(type) {

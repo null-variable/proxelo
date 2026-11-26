@@ -131,7 +131,7 @@ func due(c *model.Certificate, now time.Time) bool {
 }
 
 func (m *Manager) check(ctx context.Context) {
-	all, err := m.st.List(ctx, model.CertificateKind)
+	all, err := m.st.List(ctx, "", model.CertificateKind)
 	if err != nil {
 		m.log.Error("acme: listing certificates", "err", err)
 		return

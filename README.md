@@ -28,8 +28,8 @@ Listeners can terminate TLS and offer HTTP/2; sites pick certificates by SNI
 and can redirect plain requests to https. Certificates are uploaded as PEM
 (the key is never returned by the API) or issued and renewed by the control
 plane over ACME (HTTP-01 and TLS-ALPN-01, Let's Encrypt by default, 30 days
-before expiry); a renewal makes a revision that changes only that
-certificate. Upstreams balance by round robin or least_conn with backup
+before expiry); an issued certificate goes out as the next revision on its own,
+leaving open change sets unapplied. Upstreams balance by round robin or least_conn with backup
 targets and passive health, and proxy routes set timeouts and retries.
 
 Policies attach to sites and routes and are inherited down the route tree:
@@ -38,9 +38,55 @@ sent upstream, merged by name with the closest policy winning; `accessLog`
 picks the log for its routes (`combined`, `main`, `json` or a template). A
 route with `"inheritPolicies": false` starts over.
 
-Applies are dry-loaded by the proxy engine (`proxelo-proxy sim`, a resident
-helper) before a revision is stored, so a snapshot the proxy would reject never
-becomes a revision. The same helper answers `POST /api/v1/simulate`.
+### Changes
+
+Every edit happens in a change set: `POST /api/v1/changesets`, then resource
+writes with `?changeset=<id>`. Reads without `?changeset` show the current
+revision; with it they show the change set's view. Several change sets can be
+open; applying one merges it field by field onto edits applied since it
+started, and a field changed on both sides is a conflict (`422`, with the
+field path).
+
+Validate runs field checks, reference resolution, compilation, a dry-load in
+the proxy engine (`proxelo-proxy sim`, a resident helper, so Go and Rust never
+disagree) and warnings: shadowed or unused routes, HTTPS without HSTS,
+hostnames a certificate does not cover, a listener on the admin port. Diff
+shows field-level resource changes and the effective change per compiled
+listener, site, route and upstream, with inherited policies resolved.
+
+Apply defaults to commit-confirm: the revision is `pending` and rolls back to
+the last confirmed one unless `POST /revisions/{rev}/confirm` arrives within
+`confirmTimeout` (120 s). While pending, proxies report traffic counters every
+5 s and a guard compares the 5xx and upstream failure rates with the 5 minutes
+before; a rise is recorded on the revision, and with `-guard-rollback` it rolls
+back. `"mode": "direct"` skips the window, except for changes that touch the
+admin port. Rollback to any revision is a new revision, so history is linear;
+the newest 500 and every tagged revision are kept. `GET /api/v1/export` writes
+a YAML bundle (keys left out) that `POST /changesets/{id}/import` loads back.
+
+### Admin access
+
+On first start, with no account, the control plane prints a one-time setup
+token; `POST /api/v1/auth/setup` with it creates the owner. Passwords are
+Argon2id; TOTP second factors are optional per account; five failed logins
+lock an account for 15 minutes. Sessions are HttpOnly, SameSite=Strict
+cookies with a CSRF token (`X-CSRF-Token` on every write), 30 min idle and 24 h
+absolute expiry. API tokens (`Authorization: Bearer <token>`) carry a role up
+to their creator's, an expiry and optional client networks, and are stored
+hashed. Roles: owner, admin, operator (apply, confirm, rollback), editor
+(change sets), viewer. The admin API stays on loopback unless `-admin-allow`
+lists client networks.
+
+Every change, login, failure and recovery is written to an append-only audit
+log whose entries are hash-chained (`GET /api/v1/audit`, `/audit/verify`).
+
+Break-glass works only on the local socket `<data>/run/admin.sock` (0660):
+
+```sh
+proxelo admin reset-password --user owner   # new password, 2FA and sessions cleared
+proxelo admin rollback --to last-confirmed
+proxelo admin bind 127.0.0.1:9443          # move the admin API back
+```
 
 Run both processes together (development, home lab):
 
@@ -70,13 +116,20 @@ control plane is down and reconnects when it is back.
 
 | Endpoint | Purpose |
 |---|---|
-| `GET/POST /api/v1/{kind}` | List or create `listeners`, `sites`, `routes`, `upstreams`, `certificates`, `policies` |
-| `GET/PATCH/DELETE /api/v1/{kind}/{id}` | Read, merge-patch (RFC 7396) or delete; `If-Match: "<resourceVersion>"` guards writes |
-| `POST /api/v1/apply` | Compile all resources into the next revision (`{"message": "..."}`) |
-| `GET /api/v1/revisions[/{rev}]` | Revision history, or one revision with its resources |
-| `GET /api/v1/revisions/{rev}/snapshot` | Compiled snapshot (protobuf) |
+| `GET /api/v1/{kind}[/{id}][?changeset=]` | List or read `listeners`, `sites`, `routes`, `upstreams`, `certificates`, `policies` |
+| `POST/PUT/PATCH/DELETE /api/v1/{kind}[/{id}]?changeset=` | Create, replace, merge-patch (RFC 7396) or delete in a change set; `If-Match: "<resourceVersion>"` guards writes |
+| `GET/POST /api/v1/changesets`, `GET/DELETE /changesets/{id}` | Change sets and what they touch |
+| `GET /api/v1/changesets/{id}/diff` | Resource diff and effective diff |
+| `POST /api/v1/changesets/{id}/validate` | Errors and warnings |
+| `POST /api/v1/changesets/{id}/apply` | `{"mode": "confirm"\|"direct", "confirmTimeout": 120}` |
+| `POST /api/v1/changesets/{id}/import`, `GET /api/v1/export` | YAML or JSON bundle |
+| `GET /api/v1/revisions[/{rev}]` | Revision history (status, author, guard), or one revision with its resources |
+| `POST /api/v1/revisions/{rev}/confirm`, `/rollback`, `PUT .../tag` | Commit-confirm, rollback (`0` empties), retention tag |
+| `GET /api/v1/revisions/{rev}/snapshot` | Compiled snapshot (protobuf, includes keys; admin) |
 | `GET /api/v1/nodes` | Connected proxies: active, last sent and last rejected revision |
-| `POST /api/v1/simulate` | Run requests (`{"requests":[{"method","target","headers","remoteAddr","listener"}]}`) against the latest or a given `revision`, and with `"draft": true` against the unapplied resources; returns site, route, rewritten URI, upstream or file, status and a trace |
+| `POST /api/v1/simulate` | Run requests (`{"requests":[{"method","target","headers","remoteAddr","listener"}]}`) against the latest or a given `revision`, and with `"changeset"` against that change set as it would apply; returns site, route, rewritten URI, upstream or file, status and a trace |
+| `/api/v1/auth/{setup,login,logout,me,password,totp/*,tokens}` | Accounts, 2FA, API tokens |
+| `/api/v1/users`, `GET /api/v1/audit[/verify]` | Account management and audit log (admin) |
 
 Validation errors return `422` with field paths such as
 `routes[rt_...].spec.action.proxy.upstream`.
@@ -95,8 +148,14 @@ proxelo-proxy check snapshot.bin
 | `cmd/proxelo` | Control plane binary |
 | `internal/model` | Resources edited through the API and their field validation |
 | `internal/compile` | Resource to snapshot compiler, golden tests in `testdata/` |
-| `internal/store` | SQLite storage for resources and revisions |
+| `internal/store` | SQLite storage: head resources, change sets, revisions, accounts, audit log |
 | `internal/api` | REST API |
+| `internal/deploy` | Apply, commit-confirm timer, guard, rollback |
+| `internal/diff` | Field diff, three-way merge, effective snapshot diff |
+| `internal/lint` | Validation warnings and admin-access safety checks |
+| `internal/auth` | Argon2id, TOTP, roles |
+| `internal/admin` | Admin listener with allowlist and rebinding |
+| `internal/breakglass` | Local recovery socket |
 | `internal/distrib` | Snapshot and ACME challenge distribution to proxies over the control socket |
 | `internal/acme` | ACME issuance and renewal |
 | `internal/simulate` | Resident `proxelo-proxy sim` helper for dry-loads and simulation |
