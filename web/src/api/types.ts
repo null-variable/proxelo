@@ -102,7 +102,7 @@ export interface Resource {
   spec: any;
 }
 
-export type Kind = "sites" | "routes" | "listeners" | "upstreams" | "certificates" | "policies" | "lookups";
+export type Kind = "sites" | "routes" | "listeners" | "upstreams" | "certificates" | "policies" | "lookups" | "streams";
 
 export const KINDS: Record<Kind, { label: string; one: string }> = {
   sites: { label: "Sites", one: "site" },
@@ -112,6 +112,7 @@ export const KINDS: Record<Kind, { label: string; one: string }> = {
   certificates: { label: "Certificates", one: "certificate" },
   policies: { label: "Policies", one: "policy" },
   lookups: { label: "Lookup tables", one: "lookup table" },
+  streams: { label: "Streams", one: "stream" },
 };
 
 export function isKind(s: string): s is Kind {
@@ -136,6 +137,7 @@ export const TEMPLATES: Record<Kind, Partial<Resource>> = {
     name: "mobile",
     spec: { type: "map", source: "$http_user_agent", map: { entries: [{ match: "regexCI", key: "mobile|android|iphone", value: "1" }], default: "0" } },
   },
+  streams: { name: "postgres", spec: { address: "0.0.0.0:5432", routes: [{ upstream: "" }] } },
 };
 
 export type ItemOp = "create" | "update" | "delete";

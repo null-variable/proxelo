@@ -157,15 +157,7 @@ func (st *site) effective(all []*model.Policy) effect {
 				e.bandwidth = &snapshotv1.Bandwidth{Rate: rate, After: after}
 			}
 		case model.PolicyIPAccess:
-			if ip := p.Spec.IPAccess; ip != nil {
-				for _, r := range ip.Rules {
-					cidr := r.From
-					if cidr == "all" {
-						cidr = ""
-					}
-					a.Rules = append(a.Rules, &snapshotv1.AccessRule{Allow: r.Action == "allow", Cidr: cidr})
-				}
-			}
+			a.Rules = append(a.Rules, accessRules(p.Spec.IPAccess)...)
 		case model.PolicyBasicAuth:
 			if b := p.Spec.BasicAuth; b != nil {
 				ba := &snapshotv1.BasicAuth{Realm: b.Realm}

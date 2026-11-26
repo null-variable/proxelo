@@ -133,20 +133,7 @@ func (c *compiler) compile(cfg model.Config, revision uint64) *snapshotv1.Snapsh
 			}
 		}
 		if t := l.Spec.TLS; t != nil {
-			out.Tls = &snapshotv1.ListenerTls{
-				MinVersion:          tlsVersions[t.MinVersion],
-				MaxVersion:          tlsVersions[t.MaxVersion],
-				Ciphers:             t.Ciphers,
-				Ciphersuites:        t.Ciphersuites,
-				PreferServerCiphers: t.PreferServerCiphers,
-				Groups:              t.Groups,
-				NoSessionTickets:    t.NoSessionTickets,
-				SessionCacheSize:    t.SessionCacheSize,
-				DhParams:            t.DHParams,
-			}
-			if a := t.ClientAuth; a != nil {
-				out.Tls.ClientAuth = &snapshotv1.ClientAuth{Mode: clientAuthModes[a.Mode], Ca: a.CA, Depth: a.Depth}
-			}
+			out.Tls = listenerTLS(t)
 			if id := t.DefaultCertificate; id != "" {
 				if i, ok := cert(base+".tls.defaultCertificate", id); ok {
 					out.Tls.DefaultCertificate = proto.Uint32(i)
@@ -316,6 +303,12 @@ func (c *compiler) compile(cfg model.Config, revision uint64) *snapshotv1.Snapsh
 		}
 		snap.Upstreams = append(snap.Upstreams, out)
 	}
+	listenerAddrs := map[string]string{}
+	for _, l := range listeners.items {
+		listenerAddrs[l.Spec.Address] = l.ID
+	}
+	(&site{c: c, upstreams: upstreams, policies: policies, snap: snap, logs: logs, zones: zs}).
+		streams(newIndex(c, "streams", cfg.Streams).items, listenerAddrs, cert)
 	return snap
 }
 
@@ -325,6 +318,24 @@ var tlsVersions = map[string]snapshotv1.ListenerTls_Version{
 	"1.1": snapshotv1.ListenerTls_VERSION_TLS1_1,
 	"1.2": snapshotv1.ListenerTls_VERSION_TLS1_2,
 	"1.3": snapshotv1.ListenerTls_VERSION_TLS1_3,
+}
+
+func listenerTLS(t *model.ListenerTLS) *snapshotv1.ListenerTls {
+	out := &snapshotv1.ListenerTls{
+		MinVersion:          tlsVersions[t.MinVersion],
+		MaxVersion:          tlsVersions[t.MaxVersion],
+		Ciphers:             t.Ciphers,
+		Ciphersuites:        t.Ciphersuites,
+		PreferServerCiphers: t.PreferServerCiphers,
+		Groups:              t.Groups,
+		NoSessionTickets:    t.NoSessionTickets,
+		SessionCacheSize:    t.SessionCacheSize,
+		DhParams:            t.DHParams,
+	}
+	if a := t.ClientAuth; a != nil {
+		out.ClientAuth = &snapshotv1.ClientAuth{Mode: clientAuthModes[a.Mode], Ca: a.CA, Depth: a.Depth}
+	}
+	return out
 }
 
 var clientAuthModes = map[model.ClientAuthMode]snapshotv1.ClientAuth_Mode{

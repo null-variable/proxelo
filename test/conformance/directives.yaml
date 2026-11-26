@@ -2881,11 +2881,13 @@ directives:
   - name: allow
     module: ngx_stream_access_module
     contexts: [stream, stream server]
-    status: missing
+    status: implemented
+    field: Policy ipAccess, Stream.spec.policies
   - name: deny
     module: ngx_stream_access_module
     contexts: [stream, stream server]
-    status: missing
+    status: implemented
+    field: Policy ipAccess, Stream.spec.policies
   - name: variables_hash_max_size
     module: ngx_stream_core_module
     contexts: [stream]
@@ -2905,15 +2907,19 @@ directives:
   - name: server
     module: ngx_stream_core_module
     contexts: [stream]
-    status: missing
+    status: implemented
+    field: Stream
   - name: listen
     module: ngx_stream_core_module
     contexts: [stream server]
-    status: missing
+    status: partial
+    field: Stream.spec.address, protocol, reusePort, backlog
+    note: no proxy_protocol receive, no so_keepalive
   - name: server_name
     module: ngx_stream_core_module
     contexts: [stream server]
-    status: missing
+    status: implemented
+    field: Stream.spec.routes[].serverNames
   - name: error_log
     module: ngx_stream_core_module
     contexts: [stream, stream server]
@@ -2933,19 +2939,23 @@ directives:
   - name: tcp_nodelay
     module: ngx_stream_core_module
     contexts: [stream, stream server]
-    status: missing
+    status: implemented
+    field: always on
   - name: preread_buffer_size
     module: ngx_stream_core_module
     contexts: [stream, stream server]
-    status: missing
+    status: implemented
+    field: fixed 16k
   - name: preread_timeout
     module: ngx_stream_core_module
     contexts: [stream, stream server]
-    status: missing
+    status: implemented
+    field: fixed 30s
   - name: geo
     module: ngx_stream_geo_module
     contexts: [stream]
-    status: missing
+    status: implemented
+    field: Lookup geo
   - name: geoip_country
     module: ngx_stream_geoip_module
     contexts: [stream]
@@ -2961,11 +2971,13 @@ directives:
   - name: limit_conn_zone
     module: ngx_stream_limit_conn_module
     contexts: [stream]
-    status: missing
+    status: implemented
+    field: Policy connLimit
   - name: limit_conn
     module: ngx_stream_limit_conn_module
     contexts: [stream, stream server]
-    status: missing
+    status: implemented
+    field: Policy connLimit, Stream.spec.policies
   - name: limit_conn_log_level
     module: ngx_stream_limit_conn_module
     contexts: [stream, stream server]
@@ -2973,15 +2985,18 @@ directives:
   - name: limit_conn_dry_run
     module: ngx_stream_limit_conn_module
     contexts: [stream, stream server]
-    status: missing
+    status: implemented
+    field: Policy connLimit.dryRun
   - name: log_format
     module: ngx_stream_log_module
     contexts: [stream]
-    status: missing
+    status: implemented
+    field: Policy accessLog.format
   - name: access_log
     module: ngx_stream_log_module
     contexts: [stream, stream server]
-    status: missing
+    status: implemented
+    field: Policy accessLog, Stream.spec.policies
   - name: open_log_file_cache
     module: ngx_stream_log_module
     contexts: [stream, stream server]
@@ -2989,7 +3004,8 @@ directives:
   - name: map
     module: ngx_stream_map_module
     contexts: [stream]
-    status: missing
+    status: implemented
+    field: Lookup map
   - name: map_hash_max_size
     module: ngx_stream_map_module
     contexts: [stream]
@@ -3001,7 +3017,8 @@ directives:
   - name: stream
     module: ngx_stream_module
     contexts: [main]
-    status: missing
+    status: implemented
+    field: Stream
   - name: pass
     module: ngx_stream_pass_module
     contexts: [stream server]
@@ -3009,7 +3026,8 @@ directives:
   - name: proxy_pass
     module: ngx_stream_proxy_module
     contexts: [stream server]
-    status: missing
+    status: implemented
+    field: Stream.spec.routes[].upstream
   - name: proxy_bind
     module: ngx_stream_proxy_module
     contexts: [stream, stream server]
@@ -3029,15 +3047,18 @@ directives:
   - name: proxy_connect_timeout
     module: ngx_stream_proxy_module
     contexts: [stream, stream server]
-    status: missing
+    status: implemented
+    field: Stream.spec.connectTimeout
   - name: proxy_timeout
     module: ngx_stream_proxy_module
     contexts: [stream, stream server]
-    status: missing
+    status: implemented
+    field: Stream.spec.timeout
   - name: proxy_buffer_size
     module: ngx_stream_proxy_module
     contexts: [stream, stream server]
-    status: missing
+    status: implemented
+    field: fixed 16k
   - name: proxy_downstream_buffer
     module: ngx_stream_proxy_module
     contexts: [stream, stream server]
@@ -3061,15 +3082,18 @@ directives:
   - name: proxy_responses
     module: ngx_stream_proxy_module
     contexts: [stream, stream server]
-    status: missing
+    status: implemented
+    field: Stream.spec.responses
   - name: proxy_next_upstream
     module: ngx_stream_proxy_module
     contexts: [stream, stream server]
-    status: missing
+    status: implemented
+    field: Stream.spec.noNextUpstream
   - name: proxy_next_upstream_tries
     module: ngx_stream_proxy_module
     contexts: [stream, stream server]
-    status: missing
+    status: implemented
+    field: Stream.spec.tries
   - name: proxy_next_upstream_timeout
     module: ngx_stream_proxy_module
     contexts: [stream, stream server]
@@ -3077,7 +3101,9 @@ directives:
   - name: proxy_protocol
     module: ngx_stream_proxy_module
     contexts: [stream, stream server]
-    status: missing
+    status: implemented
+    field: Stream.spec.proxyProtocol
+    note: v1
   - name: proxy_half_close
     module: ngx_stream_proxy_module
     contexts: [stream, stream server]
@@ -3085,7 +3111,8 @@ directives:
   - name: proxy_ssl
     module: ngx_stream_proxy_module
     contexts: [stream, stream server]
-    status: missing
+    status: implemented
+    field: Upstream.spec.tls
   - name: proxy_ssl_session_reuse
     module: ngx_stream_proxy_module
     contexts: [stream, stream server]
@@ -3093,19 +3120,23 @@ directives:
   - name: proxy_ssl_protocols
     module: ngx_stream_proxy_module
     contexts: [stream, stream server]
-    status: missing
+    status: implemented
+    field: Upstream.spec.tls.minVersion, maxVersion
   - name: proxy_ssl_ciphers
     module: ngx_stream_proxy_module
     contexts: [stream, stream server]
-    status: missing
+    status: implemented
+    field: Upstream.spec.tls.ciphers, ciphersuites
   - name: proxy_ssl_name
     module: ngx_stream_proxy_module
     contexts: [stream, stream server]
-    status: missing
+    status: implemented
+    field: Upstream.spec.tls.serverName
   - name: proxy_ssl_server_name
     module: ngx_stream_proxy_module
     contexts: [stream, stream server]
-    status: missing
+    status: implemented
+    field: Upstream.spec.tls.sni
   - name: proxy_ssl_alpn
     module: ngx_stream_proxy_module
     contexts: [stream, stream server]
@@ -3113,15 +3144,18 @@ directives:
   - name: proxy_ssl_verify
     module: ngx_stream_proxy_module
     contexts: [stream, stream server]
-    status: missing
+    status: implemented
+    field: Upstream.spec.tls.verify
   - name: proxy_ssl_verify_depth
     module: ngx_stream_proxy_module
     contexts: [stream, stream server]
-    status: missing
+    status: implemented
+    field: Upstream.spec.tls.depth
   - name: proxy_ssl_trusted_certificate
     module: ngx_stream_proxy_module
     contexts: [stream, stream server]
-    status: missing
+    status: implemented
+    field: Upstream.spec.tls.ca
   - name: proxy_ssl_crl
     module: ngx_stream_proxy_module
     contexts: [stream, stream server]
@@ -3129,11 +3163,13 @@ directives:
   - name: proxy_ssl_certificate
     module: ngx_stream_proxy_module
     contexts: [stream, stream server]
-    status: missing
+    status: implemented
+    field: Upstream.spec.tls.certificate
   - name: proxy_ssl_certificate_key
     module: ngx_stream_proxy_module
     contexts: [stream, stream server]
-    status: missing
+    status: implemented
+    field: Certificate.spec.keyPem
   - name: proxy_ssl_certificate_cache
     module: ngx_stream_proxy_module
     contexts: [stream, stream server]
@@ -3161,19 +3197,23 @@ directives:
   - name: split_clients
     module: ngx_stream_split_clients_module
     contexts: [stream]
-    status: missing
+    status: implemented
+    field: Lookup splitClients
   - name: ssl_handshake_timeout
     module: ngx_stream_ssl_module
     contexts: [stream, stream server]
-    status: missing
+    status: implemented
+    field: fixed 60s
   - name: ssl_certificate
     module: ngx_stream_ssl_module
     contexts: [stream, stream server]
-    status: missing
+    status: implemented
+    field: Stream.spec.tls.defaultCertificate
   - name: ssl_certificate_key
     module: ngx_stream_ssl_module
     contexts: [stream, stream server]
-    status: missing
+    status: implemented
+    field: Certificate.spec.keyPem
   - name: ssl_certificate_cache
     module: ngx_stream_ssl_module
     contexts: [stream, stream server]
@@ -3193,31 +3233,39 @@ directives:
   - name: ssl_dhparam
     module: ngx_stream_ssl_module
     contexts: [stream, stream server]
-    status: missing
+    status: implemented
+    field: Stream.spec.tls.dhParams
   - name: ssl_ecdh_curve
     module: ngx_stream_ssl_module
     contexts: [stream, stream server]
-    status: missing
+    status: implemented
+    field: Stream.spec.tls.groups
   - name: ssl_protocols
     module: ngx_stream_ssl_module
     contexts: [stream, stream server]
-    status: missing
+    status: implemented
+    field: Stream.spec.tls.minVersion, maxVersion
   - name: ssl_ciphers
     module: ngx_stream_ssl_module
     contexts: [stream, stream server]
-    status: missing
+    status: implemented
+    field: Stream.spec.tls.ciphers
   - name: ssl_verify_client
     module: ngx_stream_ssl_module
     contexts: [stream, stream server]
-    status: missing
+    status: implemented
+    field: Stream.spec.tls.clientAuth.mode
+    note: failures close the session
   - name: ssl_verify_depth
     module: ngx_stream_ssl_module
     contexts: [stream, stream server]
-    status: missing
+    status: implemented
+    field: Stream.spec.tls.clientAuth.depth
   - name: ssl_client_certificate
     module: ngx_stream_ssl_module
     contexts: [stream, stream server]
-    status: missing
+    status: implemented
+    field: Stream.spec.tls.clientAuth.ca
   - name: ssl_trusted_certificate
     module: ngx_stream_ssl_module
     contexts: [stream, stream server]
@@ -3225,15 +3273,19 @@ directives:
   - name: ssl_prefer_server_ciphers
     module: ngx_stream_ssl_module
     contexts: [stream, stream server]
-    status: missing
+    status: implemented
+    field: Stream.spec.tls.preferServerCiphers
   - name: ssl_session_cache
     module: ngx_stream_ssl_module
     contexts: [stream, stream server]
-    status: missing
+    status: partial
+    field: Stream.spec.tls.sessionCacheSize
+    note: per worker only
   - name: ssl_session_tickets
     module: ngx_stream_ssl_module
     contexts: [stream, stream server]
-    status: missing
+    status: implemented
+    field: Stream.spec.tls.noSessionTickets
   - name: ssl_session_ticket_key
     module: ngx_stream_ssl_module
     contexts: [stream, stream server]
@@ -3277,7 +3329,9 @@ directives:
   - name: ssl_conf_command
     module: ngx_stream_ssl_module
     contexts: [stream, stream server]
-    status: missing
+    status: partial
+    field: Stream.spec.tls.ciphersuites
+    note: Ciphersuites only
   - name: ssl_reject_handshake
     module: ngx_stream_ssl_module
     contexts: [stream, stream server]
@@ -3289,15 +3343,18 @@ directives:
   - name: ssl_preread
     module: ngx_stream_ssl_preread_module
     contexts: [stream, stream server]
-    status: missing
+    status: implemented
+    field: Stream.spec.sslPreread
   - name: hash
     module: ngx_stream_upstream_hash_module
     contexts: [stream upstream]
-    status: missing
+    status: implemented
+    field: Upstream.spec.balancing
   - name: least_conn
     module: ngx_stream_upstream_least_conn_module
     contexts: [stream upstream]
-    status: missing
+    status: implemented
+    field: Upstream.spec.balancing
   - name: least_time
     module: ngx_stream_upstream_least_time_module
     contexts: [stream upstream]
@@ -3305,11 +3362,13 @@ directives:
   - name: upstream
     module: ngx_stream_upstream_module
     contexts: [stream]
-    status: missing
+    status: implemented
+    field: Upstream
   - name: server
     module: ngx_stream_upstream_module
     contexts: [stream upstream]
-    status: missing
+    status: implemented
+    field: Upstream.spec.targets
   - name: resolver
     module: ngx_stream_upstream_module
     contexts: [stream upstream]
@@ -3321,7 +3380,8 @@ directives:
   - name: random
     module: ngx_stream_upstream_random_module
     contexts: [stream upstream]
-    status: missing
+    status: implemented
+    field: Upstream.spec.balancing
   - name: zone
     module: ngx_stream_upstream_zone_module
     contexts: [stream upstream]

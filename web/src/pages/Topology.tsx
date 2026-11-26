@@ -14,8 +14,8 @@ import { Card, Dialog, Empty, ErrorBanner, Field, Loading, PageHeader, toast, to
 import type { Refs } from "../form/SchemaForm";
 import { useRefs } from "./Resources";
 
-// Lookup tables are global variables, not part of the request flow.
-type Col = Exclude<Kind, "lookups"> | "targets";
+// Lookup tables are global variables and streams bypass the HTTP flow.
+type Col = Exclude<Kind, "lookups" | "streams"> | "targets";
 const COLS: Col[] = ["listeners", "sites", "routes", "upstreams", "targets"];
 const COL_TITLE: Record<Col, string> = { listeners: "Listeners", sites: "Sites", routes: "Routes", upstreams: "Upstreams", targets: "Targets", certificates: "Certificates", policies: "Policies" };
 

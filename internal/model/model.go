@@ -7,6 +7,7 @@ package model
 //go:generate go run schemagen.go
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -60,10 +61,11 @@ var (
 	CertificateKind = Kind{Plural: "certificates", IDPrefix: "cert", New: func() Resource { return &Certificate{} }}
 	PolicyKind      = Kind{Plural: "policies", IDPrefix: "pol", New: func() Resource { return &Policy{} }}
 	LookupKind      = Kind{Plural: "lookups", IDPrefix: "lk", New: func() Resource { return &Lookup{} }}
+	StreamKind      = Kind{Plural: "streams", IDPrefix: "st", New: func() Resource { return &Stream{} }}
 )
 
 // Kinds lists every resource kind in a fixed order.
-var Kinds = []Kind{ListenerKind, SiteKind, RouteKind, UpstreamKind, CertificateKind, PolicyKind, LookupKind}
+var Kinds = []Kind{ListenerKind, SiteKind, RouteKind, UpstreamKind, CertificateKind, PolicyKind, LookupKind, StreamKind}
 
 // KindByPlural finds a kind by its collection name.
 func KindByPlural(plural string) (Kind, bool) {
@@ -870,6 +872,65 @@ type CompressionPolicy struct {
 	Disable string `json:"disable,omitempty"`
 }
 
+// Stream is an L4 proxy (nginx stream server): TCP connections or UDP
+// datagrams on an address are relayed to an upstream.
+type Stream struct {
+	Meta
+	Spec StreamSpec `json:"spec"`
+}
+
+type StreamProtocol string
+
+const (
+	StreamTCP StreamProtocol = "tcp"
+	StreamUDP StreamProtocol = "udp"
+)
+
+type StreamSpec struct {
+	// host:port. A TCP stream must not share it with a listener.
+	Address string `json:"address"`
+	// "tcp" (default) or "udp" (nginx listen udp).
+	Protocol  StreamProtocol `json:"protocol,omitempty"`
+	ReusePort bool           `json:"reusePort,omitempty"`
+	Backlog   uint32         `json:"backlog,omitempty"`
+	// TLS termination (nginx listen ssl); defaultCertificate is required.
+	// TCP only.
+	TLS *ListenerTLS `json:"tls,omitempty"`
+	// Read the SNI name and ALPN from the ClientHello without terminating
+	// TLS (nginx ssl_preread), for routing by serverNames. TCP only.
+	SSLPreread bool `json:"sslPreread,omitempty"`
+	// The first route whose serverNames match the session's SNI name serves
+	// it; a route without names matches every session.
+	Routes []StreamRoute `json:"routes"`
+	// Policy IDs: ipAccess, connLimit and accessLog apply (nginx allow,
+	// deny, limit_conn and access_log in a stream server).
+	Policies []string `json:"policies,omitempty"`
+	// Send a PROXY protocol v1 header to the upstream (nginx
+	// proxy_protocol on). TCP only.
+	ProxyProtocol bool `json:"proxyProtocol,omitempty"`
+	// nginx proxy_connect_timeout. Empty: "60s".
+	ConnectTimeout string `json:"connectTimeout,omitempty"`
+	// Idle time after which the session ends (nginx proxy_timeout). Empty:
+	// "10m".
+	Timeout string `json:"timeout,omitempty"`
+	// UDP: responses expected per datagram; the session ends after them
+	// (nginx proxy_responses). Nil: until the timeout.
+	Responses *uint32 `json:"responses,omitempty"`
+	// Do not try another target when connecting fails (nginx
+	// proxy_next_upstream off).
+	NoNextUpstream bool `json:"noNextUpstream,omitempty"`
+	// Targets tried at most. Zero: all (nginx proxy_next_upstream_tries).
+	Tries uint32 `json:"tries,omitempty"`
+}
+
+type StreamRoute struct {
+	// SNI names, like a site's hostnames (nginx map $ssl_preread_server_name
+	// or server_name in a stream server). Empty: every session.
+	ServerNames []HostMatch `json:"serverNames,omitempty"`
+	// Upstream ID.
+	Upstream string `json:"upstream"`
+}
+
 // Lookup defines a variable computed from others: nginx map, geo or
 // split_clients. Its name is the variable, usable as $name in every template
 // of the configuration.
@@ -968,6 +1029,7 @@ type Config struct {
 	Certificates []*Certificate `json:"certificates,omitempty"`
 	Policies     []*Policy      `json:"policies,omitempty"`
 	Lookups      []*Lookup      `json:"lookups,omitempty"`
+	Streams      []*Stream      `json:"streams,omitempty"`
 }
 
 // Of returns the resources of kind.
@@ -993,6 +1055,8 @@ func (c *Config) Of(kind Kind) []Resource {
 		add(len(c.Policies), func(i int) Resource { return c.Policies[i] })
 	case LookupKind.Plural:
 		add(len(c.Lookups), func(i int) Resource { return c.Lookups[i] })
+	case StreamKind.Plural:
+		add(len(c.Streams), func(i int) Resource { return c.Streams[i] })
 	}
 	return out
 }
@@ -1014,6 +1078,8 @@ func (c *Config) Add(r Resource) {
 		c.Policies = append(c.Policies, r)
 	case *Lookup:
 		c.Lookups = append(c.Lookups, r)
+	case *Stream:
+		c.Streams = append(c.Streams, r)
 	default:
 		panic("model: unknown resource type")
 	}
@@ -1068,6 +1134,14 @@ func Refs(r Resource) []Ref {
 		if t := r.Spec.TLS; t != nil {
 			add(CertificateKind, "spec.tls.certificate", t.Certificate)
 		}
+	case *Stream:
+		if t := r.Spec.TLS; t != nil {
+			add(CertificateKind, "spec.tls.defaultCertificate", t.DefaultCertificate)
+		}
+		for i, rt := range r.Spec.Routes {
+			add(UpstreamKind, fmt.Sprintf("spec.routes[%d].upstream", i), rt.Upstream)
+		}
+		add(PolicyKind, "spec.policies", r.Spec.Policies...)
 	case *Policy:
 		if f := r.Spec.ForwardAuth; f != nil {
 			add(UpstreamKind, "spec.forwardAuth.upstream", f.Upstream)

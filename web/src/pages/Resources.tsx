@@ -80,6 +80,13 @@ function summary(kind: Kind, r: Resource, refs: Refs | undefined): ReactNode {
       return certStatus(r);
     case "policies":
       return s.type;
+    case "streams":
+      return (
+        <span className="mono">
+          {s.protocol === "udp" ? "udp" : "tcp"} {s.address}
+          {s.sslPreread ? " · preread" : s.tls ? " · tls" : ""}
+        </span>
+      );
     case "lookups":
       return <span className="mono">${s.variable || r.name.replaceAll("-", "_")} ← {s.type === "geo" ? s.source || "$remote_addr" : s.source}</span>;
   }

@@ -88,6 +88,8 @@ func Validate(r Resource) FieldErrors {
 		r.Spec.validate(&es)
 	case *Lookup:
 		r.Spec.validate(&es, r.VariableName())
+	case *Stream:
+		r.Spec.validate(&es)
 	}
 	return es
 }
@@ -122,6 +124,49 @@ func (s *ListenerSpec) validate(es *FieldErrors) {
 	if s.HTTP2 && s.TLS == nil {
 		es.add("spec.http2", "requires tls")
 	}
+}
+
+func (s *StreamSpec) validate(es *FieldErrors) {
+	if err := checkHostPort(s.Address); err != "" {
+		es.add("spec.address", "%s", err)
+	}
+	switch s.Protocol {
+	case "", StreamTCP:
+	case StreamUDP:
+		if s.TLS != nil || s.SSLPreread || s.ProxyProtocol {
+			es.add("spec.protocol", "tls, sslPreread and proxyProtocol need tcp")
+		}
+	default:
+		es.add("spec.protocol", "must be tcp or udp")
+	}
+	if s.Protocol != StreamUDP && s.Responses != nil {
+		es.add("spec.responses", "only for udp")
+	}
+	if t := s.TLS; t != nil {
+		if t.DefaultCertificate == "" {
+			es.add("spec.tls.defaultCertificate", "required")
+		}
+		if s.SSLPreread {
+			es.add("spec.sslPreread", "conflicts with tls")
+		}
+		(&ListenerSpec{Address: s.Address, TLS: t}).validate(es)
+	}
+	if len(s.Routes) == 0 {
+		es.add("spec.routes", "at least one route is required")
+	}
+	for i, r := range s.Routes {
+		if r.Upstream == "" {
+			es.add(fmt.Sprintf("spec.routes[%d].upstream", i), "required")
+		}
+		for j, h := range r.ServerNames {
+			h.validate(es, fmt.Sprintf("spec.routes[%d].serverNames[%d]", i, j))
+		}
+		if len(r.ServerNames) > 0 && s.TLS == nil && !s.SSLPreread {
+			es.add(fmt.Sprintf("spec.routes[%d].serverNames", i), "need tls or sslPreread")
+		}
+	}
+	checkDuration(es, "spec.connectTimeout", s.ConnectTimeout)
+	checkDuration(es, "spec.timeout", s.Timeout)
 }
 
 func checkTLSVersions(es *FieldErrors, path, lo, hi string) {
@@ -617,31 +662,34 @@ func (o *HeaderOps) validate(es *FieldErrors, path string) {
 	}
 }
 
+func (h HostMatch) validate(es *FieldErrors, p string) {
+	switch h.Type {
+	case HostExact:
+		if !IsHostname(h.Value) {
+			es.add(p+".value", "must be a lowercase hostname")
+		}
+	case HostWildcard:
+		if !isWildcard(h.Value) {
+			es.add(p+".value", `must be "*.name", "name.*" or ".name" with a lowercase hostname`)
+		}
+	case HostRegex:
+		// The pattern grammar is PCRE2's; the proxy checks it when it
+		// loads the snapshot.
+		if h.Value == "" {
+			es.add(p+".value", "must not be empty")
+		}
+	default:
+		es.add(p+".type", "must be %q, %q or %q", HostExact, HostWildcard, HostRegex)
+	}
+}
+
 func (s *SiteSpec) validate(es *FieldErrors) {
 	if len(s.Listeners) == 0 {
 		es.add("spec.listeners", "at least one listener is required")
 	}
 	checkIDs(es, "spec.listeners", s.Listeners)
 	for i, h := range s.Hostnames {
-		p := fmt.Sprintf("spec.hostnames[%d]", i)
-		switch h.Type {
-		case HostExact:
-			if !IsHostname(h.Value) {
-				es.add(p+".value", "must be a lowercase hostname")
-			}
-		case HostWildcard:
-			if !isWildcard(h.Value) {
-				es.add(p+".value", `must be "*.name", "name.*" or ".name" with a lowercase hostname`)
-			}
-		case HostRegex:
-			// The pattern grammar is PCRE2's; the proxy checks it when it
-			// loads the snapshot.
-			if h.Value == "" {
-				es.add(p+".value", "must not be empty")
-			}
-		default:
-			es.add(p+".type", "must be %q, %q or %q", HostExact, HostWildcard, HostRegex)
-		}
+		h.validate(es, fmt.Sprintf("spec.hostnames[%d]", i))
 	}
 	checkIDs(es, "spec.routes", s.Routes)
 	checkRewrites(es, "spec.rewrite", s.Rewrite)
