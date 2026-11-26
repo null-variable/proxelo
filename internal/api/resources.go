@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/null-variable/proxelo/internal/model"
 	"github.com/null-variable/proxelo/internal/store"
@@ -217,6 +218,22 @@ func (a *api) delete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// traffic sums what proxies handled over ?window (a duration, default 5m,
+// at most 15m), for every revision.
+func (a *api) traffic(w http.ResponseWriter, r *http.Request) {
+	window := 5 * time.Minute
+	if v := r.URL.Query().Get("window"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil || d <= 0 || d > 15*time.Minute {
+			a.fail(w, badRequest("window must be a duration up to 15m"))
+			return
+		}
+		window = d
+	}
+	now := time.Now()
+	writeJSON(w, http.StatusOK, map[string]any{"window": window.String(), "traffic": a.d.Traffic(now.Add(-window), now, 0)})
+}
+
 func (a *api) nodes(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": a.d.Nodes()})
 }
@@ -341,12 +358,12 @@ func (a *api) tag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Tag != "" && !nameOK(req.Tag) {
-		a.fail(w, httpError{http.StatusUnprocessableEntity, "tag: must be 1-64 lowercase letters, digits, '.', '_' or '-'"})
+		a.fail(w, httpError{status: http.StatusUnprocessableEntity, msg: "tag: must be 1-64 lowercase letters, digits, '.', '_' or '-'"})
 		return
 	}
 	if err := a.st.SetTag(r.Context(), n, req.Tag); err != nil {
 		if errors.Is(err, store.ErrNameTaken) {
-			err = httpError{http.StatusConflict, "tag is on another revision"}
+			err = httpError{status: http.StatusConflict, msg: "tag is on another revision"}
 		}
 		a.fail(w, err)
 		return

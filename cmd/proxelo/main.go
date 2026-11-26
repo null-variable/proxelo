@@ -29,6 +29,7 @@ import (
 	"github.com/null-variable/proxelo/internal/model"
 	"github.com/null-variable/proxelo/internal/simulate"
 	"github.com/null-variable/proxelo/internal/store"
+	"github.com/null-variable/proxelo/internal/ui"
 )
 
 var version = "dev"
@@ -115,7 +116,7 @@ func control(args []string) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	st, err := store.Open(filepath.Join(dir, "proxelo.db"))
+	st, err := store.Open(filepath.Join(dir, "proxelo.db"), func(m string) { log.Info(m) })
 	if err != nil {
 		return err
 	}
@@ -154,7 +155,10 @@ func control(args []string) error {
 		log.Info("admin address set by break-glass", "addr", string(v))
 		*listen = string(v)
 	}
-	adm := admin.New(api.Handler(st, dist, dep, sim, api.Options{CertsChanged: certs.Kick, AdminAddr: *listen, SecureCookies: *secureCookies}, log), allowList, log)
+	root := http.NewServeMux()
+	root.Handle("/api/", api.Handler(st, dist, dep, sim, api.Options{CertsChanged: certs.Kick, AdminAddr: *listen, SecureCookies: *secureCookies}, log))
+	root.Handle("/", ui.Handler())
+	adm := admin.New(root, allowList, log)
 	if err := adm.Bind(*listen); err != nil {
 		return fmt.Errorf("admin API: %w", err)
 	}

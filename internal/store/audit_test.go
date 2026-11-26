@@ -8,7 +8,7 @@ import (
 )
 
 func TestAuditChain(t *testing.T) {
-	st, err := Open(filepath.Join(t.TempDir(), "t.db"))
+	st, err := Open(filepath.Join(t.TempDir(), "t.db"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

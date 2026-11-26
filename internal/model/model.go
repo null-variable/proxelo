@@ -4,6 +4,8 @@
 // references into the snapshot served by proxies.
 package model
 
+//go:generate go run schemagen.go
+
 import (
 	"time"
 

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	simv1 "github.com/null-variable/proxelo-api/gen/go/proxelo/sim/v1"
 	snapshotv1 "github.com/null-variable/proxelo-api/gen/go/proxelo/snapshot/v1"
@@ -31,6 +32,7 @@ const maxBody = 1 << 20
 type Distributor interface {
 	Publish(snapshot []byte) error
 	Nodes() []distrib.NodeStatus
+	Traffic(from, to time.Time, revision uint64) distrib.Traffic
 }
 
 // Simulator loads snapshots and runs requests with the proxy engine.
@@ -59,6 +61,7 @@ func Handler(st *store.Store, d Distributor, dep *deploy.Manager, sim Simulator,
 	mux := http.NewServeMux()
 	v, ed, op, adm := auth.Viewer, auth.Editor, auth.Operator, auth.Admin
 
+	mux.HandleFunc("GET /api/v1/auth/status", a.authStatus)
 	mux.HandleFunc("POST /api/v1/auth/setup", a.setup)
 	mux.HandleFunc("POST /api/v1/auth/login", a.login)
 	mux.HandleFunc("POST /api/v1/auth/logout", a.require(v, a.logout))
@@ -94,6 +97,11 @@ func Handler(st *store.Store, d Distributor, dep *deploy.Manager, sim Simulator,
 	mux.HandleFunc("POST /api/v1/revisions/{rev}/rollback", a.require(op, a.rollback))
 	mux.HandleFunc("PUT /api/v1/revisions/{rev}/tag", a.require(op, a.tag))
 	mux.HandleFunc("GET /api/v1/nodes", a.require(v, a.nodes))
+	mux.HandleFunc("GET /api/v1/traffic", a.require(v, a.traffic))
+	mux.HandleFunc("GET /api/v1/schema", a.require(v, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/schema+json")
+		w.Write(model.SchemaJSON)
+	}))
 	mux.HandleFunc("POST /api/v1/simulate", a.require(v, a.simulate))
 
 	mux.HandleFunc("GET /api/v1/{kind}", a.require(v, a.list))
@@ -128,7 +136,9 @@ func (a *api) changed(touched []store.ItemState) {
 
 // errorBody is the JSON body of every error response.
 type errorBody struct {
-	Error  string             `json:"error"`
+	Error string `json:"error"`
+	// Machine-readable reason, for example "totp_required".
+	Code   string             `json:"code,omitempty"`
 	Fields []model.FieldError `json:"fields,omitempty"`
 }
 
@@ -148,7 +158,7 @@ func (a *api) fail(w http.ResponseWriter, err error) {
 	default:
 		var he httpError
 		if errors.As(err, &he) {
-			writeJSON(w, he.status, errorBody{Error: he.msg})
+			writeJSON(w, he.status, errorBody{Error: he.msg, Code: he.code})
 			return
 		}
 		a.log.Error("api", "err", err)
@@ -159,12 +169,13 @@ func (a *api) fail(w http.ResponseWriter, err error) {
 type httpError struct {
 	status int
 	msg    string
+	code   string
 }
 
 func (e httpError) Error() string { return e.msg }
 
 func badRequest(format string, args ...any) error {
-	return httpError{http.StatusBadRequest, fmt.Sprintf(format, args...)}
+	return httpError{status: http.StatusBadRequest, msg: fmt.Sprintf(format, args...)}
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -178,7 +189,7 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 func kindOf(r *http.Request) (model.Kind, error) {
 	k, ok := model.KindByPlural(r.PathValue("kind"))
 	if !ok {
-		return k, httpError{http.StatusNotFound, fmt.Sprintf("unknown resource kind %q", r.PathValue("kind"))}
+		return k, httpError{status: http.StatusNotFound, msg: fmt.Sprintf("unknown resource kind %q", r.PathValue("kind"))}
 	}
 	return k, nil
 }
@@ -254,7 +265,7 @@ func (a *api) dryLoad(snapshot []byte) error {
 	err := a.sim.DryLoad(snapshot)
 	var fe model.FieldErrors
 	if err != nil && !errors.As(err, &fe) {
-		return httpError{http.StatusServiceUnavailable, err.Error()}
+		return httpError{status: http.StatusServiceUnavailable, msg: err.Error()}
 	}
 	return err
 }
@@ -279,7 +290,7 @@ type simulateResult struct {
 
 func (a *api) simulate(w http.ResponseWriter, r *http.Request) {
 	if a.sim == nil {
-		a.fail(w, httpError{http.StatusServiceUnavailable, "simulator unavailable"})
+		a.fail(w, httpError{status: http.StatusServiceUnavailable, msg: "simulator unavailable"})
 		return
 	}
 	var req simulateRequest
@@ -355,7 +366,7 @@ func compileBytes(cfg model.Config) ([]byte, *snapshotv1.Snapshot, error) {
 func (a *api) runSim(snapshot []byte, reqs []*simv1.HttpRequest) (simulateResult, error) {
 	resp, err := a.sim.Run(snapshot, reqs)
 	if err != nil {
-		return simulateResult{}, httpError{http.StatusServiceUnavailable, err.Error()}
+		return simulateResult{}, httpError{status: http.StatusServiceUnavailable, msg: err.Error()}
 	}
 	res := simulateResult{Error: resp.Error, Results: []json.RawMessage{}}
 	for _, x := range resp.Results {

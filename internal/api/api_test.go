@@ -20,6 +20,7 @@ import (
 	"github.com/null-variable/proxelo/internal/auth"
 	"github.com/null-variable/proxelo/internal/deploy"
 	"github.com/null-variable/proxelo/internal/distrib"
+	"github.com/null-variable/proxelo/internal/model"
 	"github.com/null-variable/proxelo/internal/store"
 )
 
@@ -37,6 +38,7 @@ type client struct {
 // fakeDistributor records published snapshots.
 type fakeDistributor struct {
 	published [][]byte
+	traffic   distrib.Traffic
 }
 
 func (f *fakeDistributor) Publish(b []byte) error {
@@ -49,7 +51,7 @@ func (f *fakeDistributor) Nodes() []distrib.NodeStatus {
 }
 
 func (f *fakeDistributor) Traffic(from, to time.Time, revision uint64) distrib.Traffic {
-	return distrib.Traffic{}
+	return f.traffic
 }
 
 const ownerPassword = "owner-password-1"
@@ -57,7 +59,7 @@ const ownerPassword = "owner-password-1"
 // newClient returns a client logged in as the owner created through setup.
 func newClient(t *testing.T) *client {
 	t.Helper()
-	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -408,6 +410,50 @@ func TestRequestErrors(t *testing.T) {
 	wantStatus(t, c.do("GET", "/api/v1/revisions/x", nil, nil, nil), http.StatusBadRequest)
 }
 
+// The web console needs these to start: setup state before login, the
+// CSRF token after a reload, the form schema, and traffic for the dashboard.
+func TestConsoleEndpoints(t *testing.T) {
+	c := newClient(t)
+	anon := &client{t: t, srv: c.srv, http: &http.Client{}}
+	var status struct {
+		SetupRequired bool `json:"setupRequired"`
+	}
+	wantStatus(t, anon.do("GET", "/api/v1/auth/status", nil, nil, &status), http.StatusOK)
+	if status.SetupRequired {
+		t.Fatal("setup still required after setup")
+	}
+	var me struct {
+		CSRF string `json:"csrfToken"`
+	}
+	wantStatus(t, c.do("GET", "/api/v1/auth/me", nil, nil, &me), http.StatusOK)
+	if me.CSRF == "" || me.CSRF != c.csrf {
+		t.Fatalf("me csrfToken = %q, want the login one", me.CSRF)
+	}
+
+	var schema struct {
+		Defs  map[string]json.RawMessage `json:"$defs"`
+		Kinds map[string]string          `json:"x-kinds"`
+	}
+	wantStatus(t, anon.do("GET", "/api/v1/schema", nil, nil, nil), http.StatusUnauthorized)
+	wantStatus(t, c.do("GET", "/api/v1/schema", nil, nil, &schema), http.StatusOK)
+	for _, k := range model.Kinds {
+		if _, ok := schema.Defs[schema.Kinds[k.Plural]]; !ok {
+			t.Errorf("schema has no spec for %s", k.Plural)
+		}
+	}
+
+	c.d.traffic = distrib.Traffic{Requests: 10, ServerErrors: 1}
+	var tr struct {
+		Window  string          `json:"window"`
+		Traffic distrib.Traffic `json:"traffic"`
+	}
+	wantStatus(t, c.do("GET", "/api/v1/traffic?window=1m", nil, nil, &tr), http.StatusOK)
+	if tr.Window != "1m0s" || tr.Traffic.Requests != 10 || tr.Traffic.ServerErrors != 1 {
+		t.Fatalf("traffic = %+v", tr)
+	}
+	wantStatus(t, c.do("GET", "/api/v1/traffic?window=1h", nil, nil, nil), http.StatusBadRequest)
+}
+
 func TestServerFieldsIgnoredOnCreate(t *testing.T) {
 	c := newClient(t)
 	c.begin("ids")
@@ -513,7 +559,11 @@ func TestAuth(t *testing.T) {
 	code, _ := auth.TOTPCode(setup.Secret, time.Now())
 	wantStatus(t, v.do("POST", "/api/v1/auth/totp/enable", map[string]any{"code": code}, nil, nil), http.StatusNoContent)
 	anon := &client{t: t, srv: c.srv, http: &http.Client{}}
-	wantStatus(t, anon.do("POST", "/api/v1/auth/login", map[string]any{"name": "eve", "password": "viewer-password"}, nil, nil), http.StatusUnauthorized)
+	var needCode errorBody
+	wantStatus(t, anon.do("POST", "/api/v1/auth/login", map[string]any{"name": "eve", "password": "viewer-password"}, nil, &needCode), http.StatusUnauthorized)
+	if needCode.Code != "totp_required" {
+		t.Fatalf("login without code = %+v", needCode)
+	}
 	// The code used for enabling cannot be replayed.
 	wantStatus(t, anon.do("POST", "/api/v1/auth/login", map[string]any{"name": "eve", "password": "viewer-password", "code": code}, nil, nil), http.StatusUnauthorized)
 

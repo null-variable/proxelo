@@ -127,8 +127,10 @@ control plane is down and reconnects when it is back.
 | `POST /api/v1/revisions/{rev}/confirm`, `/rollback`, `PUT .../tag` | Commit-confirm, rollback (`0` empties), retention tag |
 | `GET /api/v1/revisions/{rev}/snapshot` | Compiled snapshot (protobuf, includes keys; admin) |
 | `GET /api/v1/nodes` | Connected proxies: active, last sent and last rejected revision |
+| `GET /api/v1/traffic?window=5m` | Requests, 5xx, upstream attempts and failures summed over every proxy (window up to 15m) |
+| `GET /api/v1/schema` | JSON Schema of every resource spec, generated from `internal/model` (`go generate ./internal/model`) |
 | `POST /api/v1/simulate` | Run requests (`{"requests":[{"method","target","headers","remoteAddr","listener"}]}`) against the latest or a given `revision`, and with `"changeset"` against that change set as it would apply; returns site, route, rewritten URI, upstream or file, status and a trace |
-| `/api/v1/auth/{setup,login,logout,me,password,totp/*,tokens}` | Accounts, 2FA, API tokens |
+| `/api/v1/auth/{status,setup,login,logout,me,password,totp/*,tokens}` | Accounts, 2FA, API tokens; `status` tells whether setup is pending, `me` returns the session CSRF token |
 | `/api/v1/users`, `GET /api/v1/audit[/verify]` | Account management and audit log (admin) |
 
 Validation errors return `422` with field paths such as
@@ -141,12 +143,57 @@ go run ./cmd/proxelo compile examples/basic.json snapshot.bin
 proxelo-proxy check snapshot.bin
 ```
 
+### Web console
+
+The admin listener serves the console at `/`. Its source is in `web/`
+(Vite, React, TypeScript, TanStack Query and Router, SCSS; no Tailwind,
+no CDN). The
+build goes to `internal/ui/dist` and is embedded into the binary, so build
+the web app before `go build`; without it the console answers 503.
+
+```sh
+cd web
+bun install
+bun run build                        # tsc --noEmit, then vite build into internal/ui/dist
+PROXELO_API=127.0.0.1:9443 bun run dev   # dev server proxying /api to a running control plane
+```
+
+`go generate ./internal/ui` runs the same install and build.
+
+| Screen | What it does |
+|---|---|
+| Dashboard | 5-minute traffic, 5xx and upstream failure rates, node sync, certificates expiring within 30 days, recent revisions, pending-confirmation banner |
+| Sites, Routes, Upstreams, Certificates, Policies, Listeners | Lists with search; editors generated from `/api/v1/schema` (reference fields become pickers) with a Raw JSON tab; server field errors shown at the field; site route tree with nginx match badges |
+| Changes | Change sets (the active one is the draft every edit goes to), resource and effective diff, validate with safety findings, apply with commit-confirm, import, export, discard; revisions with confirm and rollback |
+| Simulator | One request against the latest revision, side by side with the active change set |
+| Nodes, Settings | Proxy sync state; password, TOTP, API tokens, users and the audit log |
+
+Light and dark modes follow the system and can be switched. Pages are laid
+out for 390px phones and up. The editors render from `GET /api/v1/schema`, so
+a new model field shows up in the console after `go generate
+./internal/model` with no web change.
+
+### Database migrations
+
+The store keeps its schema version in SQLite `PRAGMA user_version` and
+upgrades on open (`internal/store/migrate.go`). Each migration is a
+function appended to an ordered list and runs in its own transaction with
+foreign keys checked afterwards. Before the first step the database is
+copied to `proxelo.db.v<N>-<UTC time>.bak` with `VACUUM INTO`. A database
+newer than the binary is refused. Databases from before change sets (no
+version) migrate too: the latest revision becomes the head and unapplied
+edits move into one change set.
+
+To change the schema, append a migration; never edit a released one.
+`TestNewAndMigratedSchemasMatch` checks that a new database and an
+upgraded one end up identical.
+
 ## Layout
 
 | Path | Contents |
 |---|---|
 | `cmd/proxelo` | Control plane binary |
-| `internal/model` | Resources edited through the API and their field validation |
+| `internal/model` | Resources edited through the API, their field validation and generated JSON Schema |
 | `internal/compile` | Resource to snapshot compiler, golden tests in `testdata/` |
 | `internal/store` | SQLite storage: head resources, change sets, revisions, accounts, audit log |
 | `internal/api` | REST API |
@@ -159,6 +206,8 @@ proxelo-proxy check snapshot.bin
 | `internal/distrib` | Snapshot and ACME challenge distribution to proxies over the control socket |
 | `internal/acme` | ACME issuance and renewal |
 | `internal/simulate` | Resident `proxelo-proxy sim` helper for dry-loads and simulation |
+| `internal/ui` | Serves the embedded web console build |
+| `web` | Web console source (Vite + React + TypeScript, bun) |
 | `examples` | Sample resource files |
 | `test/bench` | Benchmark harness: nginx vs `proxelo-proxy` (S1, S3), see its README |
 
@@ -168,6 +217,8 @@ proxelo-proxy check snapshot.bin
 go vet ./...
 go test ./...
 go test ./internal/compile -update   # rewrite golden snapshots
+go generate ./internal/model         # rewrite schema.json after model changes
+(cd web && bun install && bun run build)  # web console, before go build
 ```
 
 ## License

@@ -1,0 +1,919 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "AccessLogPolicy": {
+      "type": "object",
+      "description": "AccessLogPolicy is nginx access_log with log_format. One applies: the closest to the route.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "False turns logging off for the routes it applies to.",
+          "x-nullable": true
+        },
+        "escapeJson": {
+          "type": "boolean",
+          "description": "Escape values for JSON; implied by format \"json\"."
+        },
+        "format": {
+          "type": "string",
+          "description": "\"combined\" (default), \"main\", \"json\", or a template with nginx variables."
+        },
+        "path": {
+          "type": "string",
+          "description": "\"stdout\", \"stderr\" or an absolute file path."
+        }
+      },
+      "x-order": [
+        "path",
+        "format",
+        "escapeJson",
+        "enabled"
+      ],
+      "required": [
+        "path"
+      ]
+    },
+    "Action": {
+      "type": "object",
+      "description": "Action carries the settings for Type and nothing else.",
+      "properties": {
+        "proxy": {
+          "$ref": "#/$defs/ProxyAction",
+          "x-nullable": true
+        },
+        "return": {
+          "$ref": "#/$defs/ReturnAction",
+          "x-nullable": true
+        },
+        "static": {
+          "$ref": "#/$defs/StaticAction",
+          "x-nullable": true
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "static",
+            "proxy",
+            "return"
+          ]
+        }
+      },
+      "x-order": [
+        "type",
+        "static",
+        "proxy",
+        "return"
+      ],
+      "required": [
+        "type"
+      ]
+    },
+    "Balancing": {
+      "type": "object",
+      "properties": {
+        "algorithm": {
+          "type": "string",
+          "description": "Empty: round_robin.",
+          "enum": [
+            "round_robin",
+            "least_conn"
+          ]
+        }
+      },
+      "x-order": [
+        "algorithm"
+      ]
+    },
+    "CertStatus": {
+      "type": "object",
+      "description": "CertStatus is what the control plane read from the chain, or the last issuance error.",
+      "properties": {
+        "dnsNames": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "error": {
+          "type": "string"
+        },
+        "notAfter": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "subject": {
+          "type": "string"
+        }
+      },
+      "x-order": [
+        "subject",
+        "dnsNames",
+        "notAfter",
+        "error"
+      ]
+    },
+    "CertificateSpec": {
+      "type": "object",
+      "properties": {
+        "chainPem": {
+          "type": "string",
+          "description": "PEM, leaf first. For acme, filled in when issued."
+        },
+        "domains": {
+          "type": "array",
+          "description": "For acme: the names to issue for.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "keyPem": {
+          "type": "string",
+          "description": "PEM private key. Never returned by the API."
+        },
+        "source": {
+          "type": "string",
+          "description": "\"upload\" (default) or \"acme\".",
+          "enum": [
+            "upload",
+            "acme"
+          ]
+        },
+        "status": {
+          "$ref": "#/$defs/CertStatus",
+          "description": "Set by the control plane.",
+          "readOnly": true
+        }
+      },
+      "x-order": [
+        "source",
+        "chainPem",
+        "keyPem",
+        "domains",
+        "status"
+      ]
+    },
+    "ErrorPage": {
+      "type": "object",
+      "description": "ErrorPage is nginx error_page. Exactly one of URI and Route is set.",
+      "properties": {
+        "codes": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "route": {
+          "type": "string",
+          "description": "Route ID handling the error like an nginx named location (@name); its path match is not used.",
+          "x-ref": "routes"
+        },
+        "status": {
+          "type": "integer",
+          "description": "Nil keeps the original code, 0 takes the redirected request's status (nginx \"error_page 404 = /x\"), anything else replaces the code.",
+          "minimum": 0,
+          "x-nullable": true
+        },
+        "uri": {
+          "type": "string",
+          "description": "Path for an internal redirect, or an absolute http(s) URL for a redirect."
+        }
+      },
+      "x-order": [
+        "codes",
+        "uri",
+        "route",
+        "status"
+      ],
+      "required": [
+        "codes"
+      ]
+    },
+    "HeaderOps": {
+      "type": "object",
+      "properties": {
+        "add": {
+          "type": "array",
+          "description": "Added alongside existing headers of the same name.",
+          "items": {
+            "$ref": "#/$defs/HeaderValue"
+          }
+        },
+        "always": {
+          "type": "boolean",
+          "description": "Response headers only: send with every status (nginx always)."
+        },
+        "remove": {
+          "type": "array",
+          "description": "Names to drop.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "set": {
+          "type": "object",
+          "description": "Header name to value template; replaces headers with that name. On responses, sent only with success and redirect statuses unless Always.",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "x-order": [
+        "set",
+        "add",
+        "remove",
+        "always"
+      ]
+    },
+    "HeaderValue": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "x-order": [
+        "name",
+        "value"
+      ],
+      "required": [
+        "name",
+        "value"
+      ]
+    },
+    "HeadersPolicy": {
+      "type": "object",
+      "description": "HeadersPolicy replaces nginx add_header, proxy_set_header and proxy_hide_header. Several headers policies merge by header name, the closer one winning.",
+      "properties": {
+        "request": {
+          "$ref": "#/$defs/HeaderOps",
+          "description": "Headers of the request sent upstream."
+        },
+        "response": {
+          "$ref": "#/$defs/HeaderOps"
+        }
+      },
+      "x-order": [
+        "response",
+        "request"
+      ]
+    },
+    "HostMatch": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "exact",
+            "wildcard",
+            "regex"
+          ]
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "x-order": [
+        "type",
+        "value"
+      ],
+      "required": [
+        "type",
+        "value"
+      ]
+    },
+    "Keepalive": {
+      "type": "object",
+      "properties": {
+        "idle": {
+          "type": "integer",
+          "description": "Idle connections kept per worker (nginx keepalive).",
+          "minimum": 0
+        },
+        "maxRequests": {
+          "type": "integer",
+          "description": "Zero: 1000.",
+          "minimum": 0
+        },
+        "timeout": {
+          "type": "string",
+          "description": "Empty: \"60s\"."
+        }
+      },
+      "x-order": [
+        "idle",
+        "timeout",
+        "maxRequests"
+      ]
+    },
+    "ListenerSpec": {
+      "type": "object",
+      "properties": {
+        "address": {
+          "type": "string",
+          "description": "host:port, for example \"0.0.0.0:443\"."
+        },
+        "backlog": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "defaultSite": {
+          "type": "string",
+          "description": "Site ID served when no hostname matches (nginx default_server).",
+          "x-ref": "sites"
+        },
+        "http2": {
+          "type": "boolean",
+          "description": "Offer HTTP/2 through ALPN; requires TLS."
+        },
+        "reusePort": {
+          "type": "boolean"
+        },
+        "tls": {
+          "$ref": "#/$defs/ListenerTLS",
+          "description": "TLS termination. Nil: plain TCP.",
+          "x-nullable": true
+        }
+      },
+      "x-order": [
+        "address",
+        "reusePort",
+        "backlog",
+        "defaultSite",
+        "tls",
+        "http2"
+      ],
+      "required": [
+        "address"
+      ]
+    },
+    "ListenerTLS": {
+      "type": "object",
+      "properties": {
+        "ciphers": {
+          "type": "string",
+          "description": "OpenSSL cipher list for TLS 1.2 and below (nginx ssl_ciphers). Empty: \"HIGH:!aNULL:!MD5\"."
+        },
+        "defaultCertificate": {
+          "type": "string",
+          "description": "Certificate ID for handshakes without SNI or whose name selects a site without certificates. Empty: those handshakes fail.",
+          "x-ref": "certificates"
+        },
+        "minVersion": {
+          "type": "string",
+          "description": "\"1.0\", \"1.1\", \"1.2\" or \"1.3\". Empty: \"1.2\" (nginx ssl_protocols TLSv1.2 TLSv1.3)."
+        }
+      },
+      "x-order": [
+        "defaultCertificate",
+        "minVersion",
+        "ciphers"
+      ]
+    },
+    "Match": {
+      "type": "object",
+      "description": "Match selects requests by path (nginx location) and, optionally, by conditions checked after the path. Routes with the same path in one block are tried in order with their conditions, then the one without.",
+      "properties": {
+        "expr": {
+          "type": "string",
+          "description": "CEL expression over `request` (see proxelo.expr.v1.Request) that must be a bool, with the standard library and the network extension."
+        },
+        "headers": {
+          "type": "array",
+          "description": "Header conditions; names are case-insensitive.",
+          "items": {
+            "$ref": "#/$defs/ValueMatch"
+          }
+        },
+        "methods": {
+          "type": "array",
+          "description": "Uppercase methods; empty allows any.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "path": {
+          "$ref": "#/$defs/PathMatch"
+        },
+        "query": {
+          "type": "array",
+          "description": "Query argument conditions; names are case-sensitive.",
+          "items": {
+            "$ref": "#/$defs/ValueMatch"
+          }
+        }
+      },
+      "x-order": [
+        "path",
+        "methods",
+        "headers",
+        "query",
+        "expr"
+      ],
+      "required": [
+        "path"
+      ]
+    },
+    "PassiveHealth": {
+      "type": "object",
+      "description": "PassiveHealth is nginx max_fails and fail_timeout.",
+      "properties": {
+        "failTimeout": {
+          "type": "string",
+          "description": "Empty: \"10s\"."
+        },
+        "maxFails": {
+          "type": "integer",
+          "description": "Nil: 1. Zero disables it.",
+          "minimum": 0,
+          "x-nullable": true
+        }
+      },
+      "x-order": [
+        "maxFails",
+        "failTimeout"
+      ]
+    },
+    "PathMatch": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "exact",
+            "prefix",
+            "prefixPriority",
+            "regex",
+            "regexCI"
+          ]
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "x-order": [
+        "type",
+        "value"
+      ],
+      "required": [
+        "type",
+        "value"
+      ]
+    },
+    "PolicySpec": {
+      "type": "object",
+      "description": "PolicySpec carries the settings for Type and nothing else.",
+      "properties": {
+        "accessLog": {
+          "$ref": "#/$defs/AccessLogPolicy",
+          "x-nullable": true
+        },
+        "headers": {
+          "$ref": "#/$defs/HeadersPolicy",
+          "x-nullable": true
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "headers",
+            "accessLog"
+          ]
+        }
+      },
+      "x-order": [
+        "type",
+        "headers",
+        "accessLog"
+      ],
+      "required": [
+        "type"
+      ]
+    },
+    "ProxyAction": {
+      "type": "object",
+      "properties": {
+        "retry": {
+          "$ref": "#/$defs/Retry",
+          "x-nullable": true
+        },
+        "timeouts": {
+          "$ref": "#/$defs/ProxyTimeouts"
+        },
+        "upstream": {
+          "type": "string",
+          "description": "Upstream ID.",
+          "x-ref": "upstreams"
+        }
+      },
+      "x-order": [
+        "upstream",
+        "timeouts",
+        "retry"
+      ],
+      "required": [
+        "upstream"
+      ]
+    },
+    "ProxyTimeouts": {
+      "type": "object",
+      "description": "ProxyTimeouts are Go durations such as \"5s\". Empty: 60s, the nginx defaults.",
+      "properties": {
+        "connect": {
+          "type": "string"
+        },
+        "read": {
+          "type": "string"
+        },
+        "send": {
+          "type": "string"
+        }
+      },
+      "x-order": [
+        "connect",
+        "send",
+        "read"
+      ]
+    },
+    "Retry": {
+      "type": "object",
+      "description": "Retry is nginx proxy_next_upstream. Nil: on error and timeout.",
+      "properties": {
+        "on": {
+          "type": "array",
+          "description": "\"error\", \"timeout\", \"http_500\", \"http_502\", \"http_503\", \"http_504\", \"http_403\", \"http_404\", \"http_429\", \"non_idempotent\"; empty: never.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "tries": {
+          "type": "integer",
+          "description": "Zero: no limit.",
+          "minimum": 0
+        }
+      },
+      "x-order": [
+        "on",
+        "tries"
+      ],
+      "required": [
+        "on"
+      ]
+    },
+    "ReturnAction": {
+      "type": "object",
+      "description": "ReturnAction is nginx return.",
+      "properties": {
+        "status": {
+          "type": "integer",
+          "description": "0-999. 444 closes the connection without a response.",
+          "minimum": 0
+        },
+        "text": {
+          "type": "string",
+          "description": "Location for 301, 302, 303, 307 and 308, otherwise the body."
+        }
+      },
+      "x-order": [
+        "status",
+        "text"
+      ],
+      "required": [
+        "status"
+      ]
+    },
+    "Rewrite": {
+      "type": "object",
+      "description": "Rewrite is nginx rewrite.",
+      "properties": {
+        "flag": {
+          "type": "string",
+          "enum": [
+            "",
+            "last",
+            "break",
+            "redirect",
+            "permanent"
+          ]
+        },
+        "regex": {
+          "type": "string",
+          "description": "PCRE2 pattern matched against the path."
+        },
+        "replacement": {
+          "type": "string"
+        }
+      },
+      "x-order": [
+        "regex",
+        "replacement",
+        "flag"
+      ],
+      "required": [
+        "regex",
+        "replacement"
+      ]
+    },
+    "RouteSpec": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/Action"
+        },
+        "children": {
+          "type": "array",
+          "description": "Nested route IDs (nginx location inside a prefix location). Their paths must lie inside this route's prefix.",
+          "items": {
+            "type": "string",
+            "x-ref": "routes"
+          }
+        },
+        "errorPages": {
+          "type": "array",
+          "description": "Empty inherits the parent route's, then the site's.",
+          "items": {
+            "$ref": "#/$defs/ErrorPage"
+          }
+        },
+        "inheritPolicies": {
+          "type": "boolean",
+          "description": "False drops the policies of the parent route and the site.",
+          "x-nullable": true
+        },
+        "match": {
+          "$ref": "#/$defs/Match"
+        },
+        "policies": {
+          "type": "array",
+          "description": "Policy IDs added to those of the parent route and the site.",
+          "items": {
+            "type": "string",
+            "x-ref": "policies"
+          }
+        },
+        "rewrite": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Rewrite"
+          }
+        }
+      },
+      "x-order": [
+        "match",
+        "rewrite",
+        "action",
+        "children",
+        "errorPages",
+        "policies",
+        "inheritPolicies"
+      ],
+      "required": [
+        "match",
+        "action"
+      ]
+    },
+    "SiteSpec": {
+      "type": "object",
+      "properties": {
+        "certificates": {
+          "type": "array",
+          "description": "Certificate IDs offered on TLS listeners, at most one per key type.",
+          "items": {
+            "type": "string",
+            "x-ref": "certificates"
+          }
+        },
+        "errorPages": {
+          "type": "array",
+          "description": "Inherited by routes that set none of their own, as in nginx.",
+          "items": {
+            "$ref": "#/$defs/ErrorPage"
+          }
+        },
+        "hostnames": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HostMatch"
+          }
+        },
+        "listeners": {
+          "type": "array",
+          "description": "Listener IDs.",
+          "items": {
+            "type": "string",
+            "x-ref": "listeners"
+          }
+        },
+        "policies": {
+          "type": "array",
+          "description": "Policy IDs applied to every route of the site.",
+          "items": {
+            "type": "string",
+            "x-ref": "policies"
+          }
+        },
+        "redirectHttpToHttps": {
+          "type": "boolean",
+          "description": "On plain listeners, answer every request with a 301 to https."
+        },
+        "return": {
+          "$ref": "#/$defs/ReturnAction",
+          "description": "Server-level return, after Rewrite.",
+          "x-nullable": true
+        },
+        "rewrite": {
+          "type": "array",
+          "description": "Server-level rewrites, run before a route is chosen.",
+          "items": {
+            "$ref": "#/$defs/Rewrite"
+          }
+        },
+        "routes": {
+          "type": "array",
+          "description": "Route IDs in display order. Matching priority does not depend on it.",
+          "items": {
+            "type": "string",
+            "x-ref": "routes"
+          }
+        }
+      },
+      "x-order": [
+        "listeners",
+        "hostnames",
+        "routes",
+        "rewrite",
+        "return",
+        "errorPages",
+        "certificates",
+        "redirectHttpToHttps",
+        "policies"
+      ],
+      "required": [
+        "listeners"
+      ]
+    },
+    "StaticAction": {
+      "type": "object",
+      "properties": {
+        "index": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "root": {
+          "type": "string",
+          "description": "Absolute directory path."
+        },
+        "tryFiles": {
+          "$ref": "#/$defs/TryFiles",
+          "x-nullable": true
+        }
+      },
+      "x-order": [
+        "root",
+        "index",
+        "tryFiles"
+      ],
+      "required": [
+        "root"
+      ]
+    },
+    "Target": {
+      "type": "object",
+      "properties": {
+        "address": {
+          "type": "string",
+          "description": "host:port"
+        },
+        "backup": {
+          "type": "boolean",
+          "description": "Used only when no other target is available."
+        },
+        "weight": {
+          "type": "integer",
+          "description": "Zero means 1.",
+          "minimum": 0
+        }
+      },
+      "x-order": [
+        "address",
+        "weight",
+        "backup"
+      ],
+      "required": [
+        "address"
+      ]
+    },
+    "TryFiles": {
+      "type": "object",
+      "description": "TryFiles is nginx try_files. Exactly one of URI, Status and Route is the fallback.",
+      "properties": {
+        "files": {
+          "type": "array",
+          "description": "Paths under Root; a trailing \"/\" matches a directory.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "route": {
+          "type": "string",
+          "description": "Route ID, like an nginx named location (@name).",
+          "x-ref": "routes"
+        },
+        "status": {
+          "type": "integer",
+          "description": "Answer with this code, nginx \"=404\".",
+          "minimum": 0
+        },
+        "uri": {
+          "type": "string",
+          "description": "Internal redirect, for example \"/index.html\"."
+        }
+      },
+      "x-order": [
+        "files",
+        "uri",
+        "status",
+        "route"
+      ],
+      "required": [
+        "files"
+      ]
+    },
+    "UpstreamSpec": {
+      "type": "object",
+      "properties": {
+        "balancing": {
+          "$ref": "#/$defs/Balancing"
+        },
+        "keepalive": {
+          "$ref": "#/$defs/Keepalive"
+        },
+        "passiveHealth": {
+          "$ref": "#/$defs/PassiveHealth"
+        },
+        "targets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Target"
+          }
+        }
+      },
+      "x-order": [
+        "targets",
+        "balancing",
+        "passiveHealth",
+        "keepalive"
+      ],
+      "required": [
+        "targets",
+        "keepalive"
+      ]
+    },
+    "ValueMatch": {
+      "type": "object",
+      "description": "ValueMatch is one condition on a header or query argument, compared with the raw value as sent.",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "enum": [
+            "present",
+            "absent",
+            "equals",
+            "prefix",
+            "suffix",
+            "contains",
+            "regex"
+          ]
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "x-order": [
+        "name",
+        "op",
+        "value"
+      ],
+      "required": [
+        "name",
+        "op"
+      ]
+    }
+  },
+  "x-kinds": {
+    "certificates": "CertificateSpec",
+    "listeners": "ListenerSpec",
+    "policies": "PolicySpec",
+    "routes": "RouteSpec",
+    "sites": "SiteSpec",
+    "upstreams": "UpstreamSpec"
+  },
+  "$comment": "Generated by internal/model/schemagen.go; do not edit."
+}

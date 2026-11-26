@@ -34,6 +34,8 @@ type principal struct {
 	role auth.Role
 	// "session" or "token".
 	via string
+	// The session's CSRF token, for a reloaded UI to recover it.
+	csrf string
 }
 
 func (p *principal) name() string {
@@ -73,7 +75,7 @@ func (a *api) authenticate(r *http.Request) (*principal, error) {
 			return nil, errUnauthenticated
 		}
 		if len(t.CIDRs) > 0 && !allowed(t.CIDRs, clientIP(r)) {
-			return nil, httpError{http.StatusForbidden, "token not allowed from this address"}
+			return nil, httpError{status: http.StatusForbidden, msg: "token not allowed from this address"}
 		}
 		u, err := a.st.User(ctx, t.User)
 		if err != nil {
@@ -98,16 +100,16 @@ func (a *api) authenticate(r *http.Request) (*principal, error) {
 	// echo the session's CSRF token.
 	if r.Method != http.MethodGet && r.Method != http.MethodHead &&
 		subtle.ConstantTimeCompare([]byte(r.Header.Get("X-CSRF-Token")), []byte(se.CSRF)) != 1 {
-		return nil, httpError{http.StatusForbidden, "missing or wrong X-CSRF-Token"}
+		return nil, httpError{status: http.StatusForbidden, msg: "missing or wrong X-CSRF-Token"}
 	}
 	u, err := a.st.User(ctx, se.User)
 	if err != nil {
 		return nil, errUnauthenticated
 	}
-	return &principal{user: u, role: auth.Role(u.Role), via: "session"}, nil
+	return &principal{user: u, role: auth.Role(u.Role), via: "session", csrf: se.CSRF}, nil
 }
 
-var errUnauthenticated = httpError{http.StatusUnauthorized, "authentication required"}
+var errUnauthenticated = httpError{status: http.StatusUnauthorized, msg: "authentication required"}
 
 func allowed(cidrs []string, ip netip.Addr) bool {
 	for _, c := range cidrs {
@@ -137,7 +139,7 @@ func (a *api) require(min auth.Role, h http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		if !p.role.Allows(min) {
-			a.fail(w, httpError{http.StatusForbidden, "requires role " + string(min) + " or higher"})
+			a.fail(w, httpError{status: http.StatusForbidden, msg: "requires role " + string(min) + " or higher"})
 			return
 		}
 		h(w, r.WithContext(context.WithValue(r.Context(), principalKey{}, p)))
@@ -173,6 +175,16 @@ func (a *api) setSession(w http.ResponseWriter, r *http.Request, u *store.User) 
 	return nil
 }
 
+// authStatus tells a login page whether the owner must be created first.
+func (a *api) authStatus(w http.ResponseWriter, r *http.Request) {
+	_, err := a.st.Value(r.Context(), SetupTokenKey)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		a.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"setupRequired": err == nil})
+}
+
 // setup creates the first owner with the setup token printed at first
 // start.
 func (a *api) setup(w http.ResponseWriter, r *http.Request) {
@@ -187,7 +199,7 @@ func (a *api) setup(w http.ResponseWriter, r *http.Request) {
 	}
 	want, err := a.st.Value(r.Context(), SetupTokenKey)
 	if errors.Is(err, store.ErrNotFound) {
-		a.fail(w, httpError{http.StatusConflict, "setup is done"})
+		a.fail(w, httpError{status: http.StatusConflict, msg: "setup is done"})
 		return
 	}
 	if err != nil {
@@ -196,7 +208,7 @@ func (a *api) setup(w http.ResponseWriter, r *http.Request) {
 	}
 	if subtle.ConstantTimeCompare([]byte(req.Token), want) != 1 {
 		a.auditAs(r.Context(), "anonymous", "auth.setup.failed", "", map[string]any{"ip": clientIP(r).String()})
-		a.fail(w, httpError{http.StatusForbidden, "wrong setup token"})
+		a.fail(w, httpError{status: http.StatusForbidden, msg: "wrong setup token"})
 		return
 	}
 	if err := checkAccount(req.Name, req.Password); err != nil {
@@ -206,7 +218,7 @@ func (a *api) setup(w http.ResponseWriter, r *http.Request) {
 	u := &store.User{Name: req.Name, Role: string(auth.Owner), Password: auth.HashPassword(req.Password)}
 	if err := a.st.CreateFirstUser(r.Context(), u, SetupTokenKey); err != nil {
 		if errors.Is(err, store.ErrConflict) {
-			err = httpError{http.StatusConflict, "setup is done"}
+			err = httpError{status: http.StatusConflict, msg: "setup is done"}
 		}
 		a.fail(w, err)
 		return
@@ -235,7 +247,7 @@ func (a *api) login(w http.ResponseWriter, r *http.Request) {
 			a.st.LoginFailed(ctx, u.ID, maxFailures, lockFor)
 		}
 		a.auditAs(ctx, "anonymous", "auth.login.failed", "", detail)
-		a.fail(w, httpError{http.StatusUnauthorized, "wrong name, password or code"})
+		a.fail(w, httpError{status: http.StatusUnauthorized, msg: "wrong name, password or code"})
 	}
 	u, err := a.st.UserByName(ctx, req.Name)
 	if errors.Is(err, store.ErrNotFound) {
@@ -249,7 +261,7 @@ func (a *api) login(w http.ResponseWriter, r *http.Request) {
 	}
 	if time.Now().Before(u.LockedUntil) {
 		a.auditAs(ctx, "anonymous", "auth.login.failed", u.ID, map[string]any{"reason": "locked", "ip": clientIP(r).String()})
-		a.fail(w, httpError{http.StatusTooManyRequests, "account locked after failed logins; try later"})
+		a.fail(w, httpError{status: http.StatusTooManyRequests, msg: "account locked after failed logins; try later"})
 		return
 	}
 	if !auth.CheckPassword(u.Password, req.Password) {
@@ -258,7 +270,7 @@ func (a *api) login(w http.ResponseWriter, r *http.Request) {
 	}
 	if u.TOTPEnabled {
 		if req.Code == "" {
-			a.fail(w, httpError{http.StatusUnauthorized, "code required"})
+			a.fail(w, httpError{status: http.StatusUnauthorized, msg: "two-factor code required", code: "totp_required"})
 			return
 		}
 		step, ok := auth.CheckTOTP(u.TOTPSecret, req.Code, time.Now())
@@ -292,15 +304,19 @@ func (a *api) logout(w http.ResponseWriter, r *http.Request) {
 
 func (a *api) me(w http.ResponseWriter, r *http.Request) {
 	p := who(r)
-	writeJSON(w, http.StatusOK, map[string]any{"user": p.user, "role": p.role, "via": p.via})
+	out := map[string]any{"user": p.user, "role": p.role, "via": p.via}
+	if p.csrf != "" {
+		out["csrfToken"] = p.csrf
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func checkAccount(name, password string) error {
 	if !nameOK(name) {
-		return httpError{http.StatusUnprocessableEntity, "name: must be 1-64 lowercase letters, digits, '.', '_' or '-'"}
+		return httpError{status: http.StatusUnprocessableEntity, msg: "name: must be 1-64 lowercase letters, digits, '.', '_' or '-'"}
 	}
 	if err := auth.ValidatePassword(password); err != nil {
-		return httpError{http.StatusUnprocessableEntity, "password: " + err.Error()}
+		return httpError{status: http.StatusUnprocessableEntity, msg: "password: " + err.Error()}
 	}
 	return nil
 }

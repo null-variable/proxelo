@@ -40,11 +40,11 @@ func (a *api) createUser(w http.ResponseWriter, r *http.Request) {
 	}
 	role, err := auth.ParseRole(req.Role)
 	if err != nil {
-		a.fail(w, httpError{http.StatusUnprocessableEntity, "role: " + err.Error()})
+		a.fail(w, httpError{status: http.StatusUnprocessableEntity, msg: "role: " + err.Error()})
 		return
 	}
 	if !mayManage(who(r), role) {
-		a.fail(w, httpError{http.StatusForbidden, "only owners create owners"})
+		a.fail(w, httpError{status: http.StatusForbidden, msg: "only owners create owners"})
 		return
 	}
 	if err := checkAccount(req.Name, req.Password); err != nil {
@@ -67,7 +67,7 @@ func (a *api) loadUser(w http.ResponseWriter, r *http.Request) (*store.User, boo
 		return nil, false
 	}
 	if !mayManage(who(r), auth.Role(u.Role)) {
-		a.fail(w, httpError{http.StatusForbidden, "only owners manage owners"})
+		a.fail(w, httpError{status: http.StatusForbidden, msg: "only owners manage owners"})
 		return nil, false
 	}
 	return u, true
@@ -92,11 +92,11 @@ func (a *api) updateUser(w http.ResponseWriter, r *http.Request) {
 	if req.Role != "" {
 		role, err := auth.ParseRole(req.Role)
 		if err != nil {
-			a.fail(w, httpError{http.StatusUnprocessableEntity, "role: " + err.Error()})
+			a.fail(w, httpError{status: http.StatusUnprocessableEntity, msg: "role: " + err.Error()})
 			return
 		}
 		if !mayManage(who(r), role) {
-			a.fail(w, httpError{http.StatusForbidden, "only owners make owners"})
+			a.fail(w, httpError{status: http.StatusForbidden, msg: "only owners make owners"})
 			return
 		}
 		if err := a.st.SetRole(r.Context(), u.ID, string(role)); err != nil {
@@ -109,7 +109,7 @@ func (a *api) updateUser(w http.ResponseWriter, r *http.Request) {
 		hash := u.Password
 		if req.Password != "" {
 			if err := auth.ValidatePassword(req.Password); err != nil {
-				a.fail(w, httpError{http.StatusUnprocessableEntity, "password: " + err.Error()})
+				a.fail(w, httpError{status: http.StatusUnprocessableEntity, msg: "password: " + err.Error()})
 				return
 			}
 			hash = auth.HashPassword(req.Password)
@@ -130,7 +130,7 @@ func (a *api) updateUser(w http.ResponseWriter, r *http.Request) {
 
 func roleErr(err error) error {
 	if errors.Is(err, store.ErrLastOwner) {
-		return httpError{http.StatusConflict, err.Error()}
+		return httpError{status: http.StatusConflict, msg: err.Error()}
 	}
 	return err
 }
@@ -160,11 +160,11 @@ func (a *api) changePassword(w http.ResponseWriter, r *http.Request) {
 	}
 	u := who(r).user
 	if !auth.CheckPassword(u.Password, req.Current) {
-		a.fail(w, httpError{http.StatusForbidden, "current password is wrong"})
+		a.fail(w, httpError{status: http.StatusForbidden, msg: "current password is wrong"})
 		return
 	}
 	if err := auth.ValidatePassword(req.Password); err != nil {
-		a.fail(w, httpError{http.StatusUnprocessableEntity, "password: " + err.Error()})
+		a.fail(w, httpError{status: http.StatusUnprocessableEntity, msg: "password: " + err.Error()})
 		return
 	}
 	if err := a.st.SetPassword(r.Context(), u.ID, auth.HashPassword(req.Password), false); err != nil {
@@ -180,7 +180,7 @@ func (a *api) changePassword(w http.ResponseWriter, r *http.Request) {
 func (a *api) totpSetup(w http.ResponseWriter, r *http.Request) {
 	u := who(r).user
 	if u.TOTPEnabled {
-		a.fail(w, httpError{http.StatusConflict, "two-factor is already on; disable it first"})
+		a.fail(w, httpError{status: http.StatusConflict, msg: "two-factor is already on; disable it first"})
 		return
 	}
 	secret := auth.NewTOTPSecret()
@@ -201,12 +201,12 @@ func (a *api) totpEnable(w http.ResponseWriter, r *http.Request) {
 	}
 	u := who(r).user
 	if u.TOTPSecret == "" || u.TOTPEnabled {
-		a.fail(w, httpError{http.StatusConflict, "call /auth/totp/setup first"})
+		a.fail(w, httpError{status: http.StatusConflict, msg: "call /auth/totp/setup first"})
 		return
 	}
 	step, ok := auth.CheckTOTP(u.TOTPSecret, req.Code, time.Now())
 	if !ok {
-		a.fail(w, httpError{http.StatusUnprocessableEntity, "code: does not match"})
+		a.fail(w, httpError{status: http.StatusUnprocessableEntity, msg: "code: does not match"})
 		return
 	}
 	if err := a.st.SetTOTP(r.Context(), u.ID, u.TOTPSecret, true); err != nil {
@@ -228,7 +228,7 @@ func (a *api) totpDisable(w http.ResponseWriter, r *http.Request) {
 	}
 	u := who(r).user
 	if !auth.CheckPassword(u.Password, req.Password) {
-		a.fail(w, httpError{http.StatusForbidden, "password is wrong"})
+		a.fail(w, httpError{status: http.StatusForbidden, msg: "password is wrong"})
 		return
 	}
 	if err := a.st.SetTOTP(r.Context(), u.ID, "", false); err != nil {
@@ -263,25 +263,25 @@ func (a *api) createToken(w http.ResponseWriter, r *http.Request) {
 	}
 	p := who(r)
 	if p.via != "session" {
-		a.fail(w, httpError{http.StatusForbidden, "tokens are created from a login session"})
+		a.fail(w, httpError{status: http.StatusForbidden, msg: "tokens are created from a login session"})
 		return
 	}
 	if !nameOK(req.Name) {
-		a.fail(w, httpError{http.StatusUnprocessableEntity, "name: must be 1-64 lowercase letters, digits, '.', '_' or '-'"})
+		a.fail(w, httpError{status: http.StatusUnprocessableEntity, msg: "name: must be 1-64 lowercase letters, digits, '.', '_' or '-'"})
 		return
 	}
 	role := p.role
 	if req.Role != "" {
 		rr, err := auth.ParseRole(req.Role)
 		if err != nil {
-			a.fail(w, httpError{http.StatusUnprocessableEntity, "role: " + err.Error()})
+			a.fail(w, httpError{status: http.StatusUnprocessableEntity, msg: "role: " + err.Error()})
 			return
 		}
 		role = rr.Lower(p.role)
 	}
 	for i, c := range req.CIDRs {
 		if _, err := netip.ParsePrefix(c); err != nil {
-			a.fail(w, httpError{http.StatusUnprocessableEntity, "cidrs[" + itoa(i) + "]: must be a CIDR"})
+			a.fail(w, httpError{status: http.StatusUnprocessableEntity, msg: "cidrs[" + itoa(i) + "]: must be a CIDR"})
 			return
 		}
 	}
@@ -289,7 +289,7 @@ func (a *api) createToken(w http.ResponseWriter, r *http.Request) {
 	if req.ExpiresIn != "" {
 		d, err := time.ParseDuration(req.ExpiresIn)
 		if err != nil || d <= 0 || d > maxTokenLife {
-			a.fail(w, httpError{http.StatusUnprocessableEntity, "expiresIn: must be a duration up to 8784h"})
+			a.fail(w, httpError{status: http.StatusUnprocessableEntity, msg: "expiresIn: must be a duration up to 8784h"})
 			return
 		}
 		life = d

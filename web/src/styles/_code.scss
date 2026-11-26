@@ -1,0 +1,71 @@
+@use "mixins" as *;
+
+// Code editor, JSON views and diffs.
+.code {
+  display: block;
+  width: 100%;
+  min-height: 320px;
+  padding: 12px;
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: var(--px-recessed);
+  box-shadow: var(--shadow-ring);
+  color: var(--px-text-default);
+  font: 400 var(--text-sm) / 20px var(--font-mono);
+  white-space: pre;
+  overflow: auto;
+  resize: vertical;
+  tab-size: 2;
+
+  &:focus {
+    outline: 2px solid var(--px-focus);
+    outline-offset: 0;
+  }
+
+  &--sm {
+    min-height: 72px;
+  }
+}
+
+pre.code {
+  min-height: 0;
+  max-height: 480px;
+  margin: 0;
+  resize: none;
+}
+
+.diff {
+  width: 100%;
+  border-collapse: collapse;
+  font: 400 var(--text-sm) / 20px var(--font-mono);
+
+  td {
+    padding: 4px 12px;
+    border-bottom: 1px solid var(--px-hairline);
+    vertical-align: top;
+    word-break: break-all;
+  }
+
+  tr:last-child td {
+    border-bottom: 0;
+  }
+
+  &__path {
+    width: 30%;
+    color: var(--px-text-strong);
+
+    @include mobile {
+      width: 40%;
+    }
+  }
+}
+
+.diff__old {
+  background: var(--px-danger-tint);
+  color: var(--px-text-danger);
+}
+
+.diff__new {
+  background: var(--px-success-tint);
+  color: var(--px-text-success);
+}

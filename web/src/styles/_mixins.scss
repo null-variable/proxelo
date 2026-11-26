@@ -1,0 +1,8 @@
+// Below this width the side navigation collapses into a drawer.
+$mobile: 767px;
+
+@mixin mobile {
+  @media (max-width: $mobile) {
+    @content;
+  }
+}

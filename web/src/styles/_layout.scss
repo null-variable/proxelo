@@ -1,0 +1,224 @@
+@use "mixins" as *;
+
+// Console layout on top of the tokens.
+html,
+body,
+#root {
+  height: 100%;
+}
+
+.app {
+  min-height: 100vh;
+}
+
+.sidenav {
+  overflow-y: auto;
+
+  &__badge {
+    margin-left: auto;
+  }
+
+  &__narrow {
+    display: none;
+  }
+}
+
+button.sidenav__item {
+  border: 0;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.main {
+  overflow-x: hidden;
+}
+
+.topbar__changeset {
+  width: auto;
+  max-width: 280px;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+
+  &--between {
+    justify-content: space-between;
+  }
+}
+
+.grow {
+  flex: 1;
+  min-width: 0;
+}
+
+.muted {
+  color: var(--px-text-subtle);
+}
+
+.small {
+  font-size: var(--text-sm);
+}
+
+.strong {
+  font-weight: 600;
+  color: var(--px-text-strong);
+}
+
+.danger-text {
+  color: var(--px-text-danger);
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.break {
+  word-break: break-all;
+}
+
+.ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 320px;
+}
+
+.mt {
+  margin-top: 16px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.card {
+  &__head h2 {
+    font: 600 var(--text-base) / 20px var(--font-sans);
+    color: var(--px-text-strong);
+  }
+
+  &__body--flush {
+    padding: 0;
+
+    .data-table-wrap {
+      border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+      box-shadow: none;
+    }
+  }
+}
+
+fieldset.card {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+
+.fieldset-plain {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+
+// Dialog overlay.
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: color-mix(in srgb, var(--px-contrast) 40%, transparent);
+
+  .dialog {
+    max-height: calc(100vh - 48px);
+    overflow-y: auto;
+  }
+}
+
+.dialog--wide {
+  max-width: 640px;
+}
+
+.toasts {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.toast--danger .toast__title {
+  color: var(--px-text-danger);
+}
+
+.auth {
+  min-height: 100vh;
+  justify-content: center;
+
+  &__brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    color: var(--px-text-strong);
+  }
+}
+
+.list-card .data-table-wrap {
+  box-shadow: none;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+
+@include mobile {
+  .sidenav[data-open="true"] {
+    display: flex;
+    position: fixed;
+    top: var(--topbar-h);
+    left: 0;
+    bottom: 0;
+    z-index: 15;
+    width: var(--sidebar-w);
+    box-shadow: var(--shadow-ring);
+  }
+
+  .sidenav__narrow {
+    display: flex;
+  }
+
+  .topbar__wide {
+    display: none;
+  }
+
+  .topbar__changeset {
+    max-width: 120px;
+  }
+
+  .page-actions {
+    flex-wrap: wrap;
+  }
+
+  .ellipsis {
+    max-width: 160px;
+  }
+}

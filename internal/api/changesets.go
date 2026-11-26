@@ -240,14 +240,14 @@ func (m applyMode) timeout(def time.Duration) (time.Duration, error) {
 		return 0, nil
 	case "confirm":
 	default:
-		return 0, httpError{http.StatusUnprocessableEntity, `mode: must be "confirm" or "direct"`}
+		return 0, httpError{status: http.StatusUnprocessableEntity, msg: `mode: must be "confirm" or "direct"`}
 	}
 	d := deploy.DefaultConfirmTimeout
 	if m.ConfirmTimeout != 0 {
 		d = time.Duration(m.ConfirmTimeout) * time.Second
 	}
 	if d > deploy.MaxConfirmTimeout {
-		return 0, httpError{http.StatusUnprocessableEntity, fmt.Sprintf("confirmTimeout: at most %d", int(deploy.MaxConfirmTimeout/time.Second))}
+		return 0, httpError{status: http.StatusUnprocessableEntity, msg: fmt.Sprintf("confirmTimeout: at most %d", int(deploy.MaxConfirmTimeout/time.Second))}
 	}
 	return d, nil
 }
@@ -358,7 +358,7 @@ func (a *api) importBundle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if b.APIVersion != bundleVersion {
-		a.fail(w, httpError{http.StatusUnprocessableEntity, "apiVersion: must be " + bundleVersion})
+		a.fail(w, httpError{status: http.StatusUnprocessableEntity, msg: "apiVersion: must be " + bundleVersion})
 		return
 	}
 	var es model.FieldErrors

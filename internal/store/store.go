@@ -31,94 +31,6 @@ var (
 	ErrNotPending = errors.New("revision is not pending confirmation")
 )
 
-// schemaVersion is stored in PRAGMA user_version. Databases of another
-// version are refused rather than migrated.
-const schemaVersion = 2
-
-const schema = `
-CREATE TABLE IF NOT EXISTS resources (
-	kind    TEXT    NOT NULL,
-	id      TEXT    NOT NULL PRIMARY KEY,
-	name    TEXT    NOT NULL,
-	version INTEGER NOT NULL,
-	body    TEXT    NOT NULL,
-	UNIQUE (kind, name)
-);
-CREATE TABLE IF NOT EXISTS revisions (
-	revision   INTEGER NOT NULL PRIMARY KEY,
-	created_at TEXT    NOT NULL,
-	author     TEXT    NOT NULL,
-	message    TEXT    NOT NULL,
-	hash       BLOB    NOT NULL,
-	config     TEXT    NOT NULL,
-	snapshot   BLOB    NOT NULL,
-	status     TEXT    NOT NULL,
-	confirm_by TEXT,
-	tag        TEXT    UNIQUE,
-	guard      TEXT    NOT NULL DEFAULT ''
-);
-CREATE TABLE IF NOT EXISTS state (
-	key   TEXT NOT NULL PRIMARY KEY,
-	value BLOB NOT NULL
-);
-CREATE TABLE IF NOT EXISTS changesets (
-	id            TEXT    NOT NULL PRIMARY KEY,
-	author        TEXT    NOT NULL,
-	message       TEXT    NOT NULL,
-	base_revision INTEGER NOT NULL,
-	created_at    TEXT    NOT NULL,
-	updated_at    TEXT    NOT NULL
-);
-CREATE TABLE IF NOT EXISTS changeset_items (
-	changeset TEXT NOT NULL REFERENCES changesets (id) ON DELETE CASCADE,
-	kind      TEXT NOT NULL,
-	id        TEXT NOT NULL,
-	base      TEXT,
-	body      TEXT,
-	PRIMARY KEY (changeset, id)
-);
-CREATE TABLE IF NOT EXISTS users (
-	id           TEXT    NOT NULL PRIMARY KEY,
-	name         TEXT    NOT NULL UNIQUE,
-	role         TEXT    NOT NULL,
-	password     TEXT    NOT NULL,
-	totp_secret  TEXT    NOT NULL DEFAULT '',
-	totp_enabled INTEGER NOT NULL DEFAULT 0,
-	totp_last    INTEGER NOT NULL DEFAULT 0,
-	failures     INTEGER NOT NULL DEFAULT 0,
-	locked_until TEXT    NOT NULL DEFAULT '',
-	created_at   TEXT    NOT NULL
-);
-CREATE TABLE IF NOT EXISTS sessions (
-	hash       BLOB NOT NULL PRIMARY KEY,
-	user       TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
-	csrf       TEXT NOT NULL,
-	created_at TEXT NOT NULL,
-	last_seen  TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS tokens (
-	id         TEXT NOT NULL PRIMARY KEY,
-	hash       BLOB NOT NULL,
-	user       TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
-	name       TEXT NOT NULL,
-	role       TEXT NOT NULL,
-	cidrs      TEXT NOT NULL,
-	expires_at TEXT NOT NULL,
-	created_at TEXT NOT NULL,
-	last_used  TEXT NOT NULL DEFAULT ''
-);
-CREATE TABLE IF NOT EXISTS audit (
-	seq    INTEGER NOT NULL PRIMARY KEY,
-	at     TEXT    NOT NULL,
-	actor  TEXT    NOT NULL,
-	action TEXT    NOT NULL,
-	target TEXT    NOT NULL,
-	detail TEXT    NOT NULL,
-	prev   BLOB    NOT NULL,
-	hash   BLOB    NOT NULL
-);
-`
-
 // Store is safe for concurrent use.
 type Store struct {
 	db  *sql.DB
@@ -132,8 +44,13 @@ type dbtx interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
-// Open opens or creates the database at path.
-func Open(path string) (*Store, error) {
+// Open opens or creates the database at path and migrates it to the
+// current schema (see migrate.go). log receives one line per migration
+// step; nil discards them.
+func Open(path string, log func(string)) (*Store, error) {
+	if log == nil {
+		log = func(string) {}
+	}
 	dsn := "file:" + path + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)"
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
@@ -142,29 +59,12 @@ func Open(path string) (*Store, error) {
 	// One connection serializes writers, which SQLite requires anyway, and
 	// keeps read-modify-write transactions free of SQLITE_BUSY.
 	db.SetMaxOpenConns(1)
-	if err := initSchema(db); err != nil {
+	now := time.Now()
+	if err := migrate(context.Background(), db, path, now, log); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	return &Store{db: db, now: func() time.Time { return time.Now().UTC().Truncate(time.Millisecond) }}, nil
-}
-
-func initSchema(db *sql.DB) error {
-	var version, tables int
-	if err := db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
-		return err
-	}
-	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table'`).Scan(&tables); err != nil {
-		return err
-	}
-	if tables > 0 && version != schemaVersion {
-		return fmt.Errorf("database schema version %d, want %d: it was made by another proxelo version", version, schemaVersion)
-	}
-	if _, err := db.Exec(schema); err != nil {
-		return err
-	}
-	_, err := db.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, schemaVersion))
-	return err
 }
 
 func (s *Store) Close() error { return s.db.Close() }

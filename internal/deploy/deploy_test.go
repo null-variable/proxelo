@@ -29,7 +29,7 @@ func (f *fakePub) Traffic(from, to time.Time, revision uint64) distrib.Traffic {
 
 func setup(t *testing.T, g Guard) (*Manager, *store.Store, *fakePub) {
 	t.Helper()
-	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
