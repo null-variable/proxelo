@@ -192,6 +192,15 @@ and answers each with an ack. It keeps the last snapshot it applied in
 `<data>/proxy/lkg.snap` and starts from it, so it serves traffic while the
 control plane is down and reconnects when it is back.
 
+To upgrade the proxy binary without dropping connections, replace the file
+and send SIGUSR2 to the proxy (or to `proxelo up`, which then supervises the
+new process). The new process takes over the listening sockets from the
+running one and starts accepting; the old one stops accepting, lets open
+connections finish (`--drain`, 60s by default) and exits. If the new binary
+fails to start, the old one keeps serving. SIGQUIT is the same graceful stop
+without a successor. Under systemd, use `Type=notify`, `NotifyAccess=all` and
+`ExecReload=/bin/kill -USR2 $MAINPID`.
+
 | Endpoint | Purpose |
 |---|---|
 | `GET /api/v1/{kind}[/{id}][?changeset=]` | List or read `listeners`, `sites`, `routes`, `upstreams`, `certificates`, `policies` |
