@@ -282,15 +282,20 @@ func parseRevision(r *http.Request) (uint64, error) {
 	return n, nil
 }
 
-func (a *api) revisions(w http.ResponseWriter, r *http.Request, _ *access) {
+func (a *api) revisions(w http.ResponseWriter, r *http.Request, ac *access) {
 	revs, err := a.st.Revisions(r.Context())
 	if err != nil {
 		a.fail(w, err)
 		return
 	}
-	if revs == nil {
-		revs = []*store.Revision{}
+	out := []*store.Revision{}
+	for _, rev := range revs {
+		// Group members see the revisions that touched their groups.
+		if ac.seesAll() || ac.seesGroups(rev.Groups) {
+			out = append(out, rev)
+		}
 	}
+	revs = out
 	writeJSON(w, http.StatusOK, map[string]any{"items": revs})
 }
 
@@ -303,16 +308,28 @@ func redactConfig(cfg model.Config) model.Config {
 	return out
 }
 
-func (a *api) revision(w http.ResponseWriter, r *http.Request) {
+// revision returns one revision with the resources the caller can read.
+func (a *api) revision(w http.ResponseWriter, r *http.Request, ac *access) {
 	rev, err := a.loadRevision(r)
+	if err == nil && !ac.seesAll() && !ac.seesGroups(rev.Groups) {
+		err = store.ErrNotFound
+	}
 	if err != nil {
 		a.fail(w, err)
 		return
 	}
+	var cfg model.Config
+	for _, k := range model.Kinds {
+		for _, res := range rev.Config.Of(k) {
+			if ac.canRead(k.Plural, res) {
+				cfg.Add(res)
+			}
+		}
+	}
 	writeJSON(w, http.StatusOK, struct {
 		*store.Revision
 		Config model.Config `json:"config"`
-	}{rev, redactConfig(rev.Config)})
+	}{rev, redactConfig(cfg)})
 }
 
 // snapshot returns the compiled snapshot, private keys included; it needs

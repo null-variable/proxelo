@@ -56,15 +56,22 @@
     stroke: var(--px-text-placeholder);
     stroke-width: 1.5;
 
-    &--on {
-      stroke: var(--px-text-link);
-      stroke-width: 2.5;
-    }
-
     &--drag {
       stroke: var(--px-text-subtle);
       stroke-dasharray: 5 4;
       pointer-events: none;
+    }
+
+    &--w1 { stroke-width: 1.5; }
+    &--w2 { stroke-width: 2.5; }
+    &--w3 { stroke-width: 4; }
+    &--w4 { stroke-width: 6; }
+
+    &--warn { stroke: var(--px-warning); }
+    &--bad { stroke: var(--px-danger); }
+
+    &--on {
+      stroke: var(--px-text-link);
     }
 
     &--ok {
@@ -72,6 +79,15 @@
       stroke-width: 2.5;
       stroke-dasharray: none;
     }
+  }
+
+  &__traffic {
+    font-size: 11px;
+    fill: var(--px-text-subtle);
+    font-variant-numeric: tabular-nums;
+
+    &--warn { fill: var(--px-text-warning); }
+    &--bad { fill: var(--px-text-danger); }
   }
 
   &__arrow {

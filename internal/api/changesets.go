@@ -22,13 +22,36 @@ import (
 
 func uintParamValue(s string) (uint64, error) { return strconv.ParseUint(s, 10, 64) }
 
-func (a *api) changesets(w http.ResponseWriter, r *http.Request, _ *access) {
+func (a *api) changesets(w http.ResponseWriter, r *http.Request, ac *access) {
 	css, err := a.st.ChangeSets(r.Context())
 	if err != nil {
 		a.fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": css})
+	out := []*store.ChangeSet{}
+	for _, cs := range css {
+		ok, err := a.seesChangeSet(r, ac, cs)
+		if err != nil {
+			a.fail(w, err)
+			return
+		}
+		if ok {
+			out = append(out, cs)
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": out})
+}
+
+// seesChangeSet: instance viewers see every change set; group members
+// those they opened and those touching only resources they can read.
+func (a *api) seesChangeSet(r *http.Request, ac *access, cs *store.ChangeSet) (bool, error) {
+	if ac.seesAll() || cs.Author == ac.p.user.Name {
+		return true, nil
+	}
+	if len(cs.Items) == 0 {
+		return false, nil
+	}
+	return a.requireItems(r, ac, cs.ID, auth.Viewer) == nil, nil
 }
 
 func (a *api) createChangeSet(w http.ResponseWriter, r *http.Request, _ *access) {
@@ -48,8 +71,14 @@ func (a *api) createChangeSet(w http.ResponseWriter, r *http.Request, _ *access)
 	writeJSON(w, http.StatusCreated, cs)
 }
 
-func (a *api) changeset(w http.ResponseWriter, r *http.Request, _ *access) {
+func (a *api) changeset(w http.ResponseWriter, r *http.Request, ac *access) {
 	cs, err := a.st.ChangeSet(r.Context(), r.PathValue("id"))
+	if err == nil {
+		var ok bool
+		if ok, err = a.seesChangeSet(r, ac, cs); err == nil && !ok {
+			err = store.ErrNotFound
+		}
+	}
 	if err != nil {
 		a.fail(w, err)
 		return

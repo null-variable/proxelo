@@ -2,12 +2,13 @@
 // route → upstream → target). Members connect nodes by dragging one onto
 // another or from the side panel; every edit lands in the active
 // change set like a form save. The diagram exports as SVG, PNG, Mermaid,
-// Graphviz DOT or JSON.
+// Graphviz DOT or JSON. With traffic on, edges thicken with recent requests
+// and turn amber or red with the share of 5xx answers.
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { api, requestText } from "../api/client";
-import { KINDS, TEMPLATES, type Graph, type GraphNode, type Group, type Items, type Kind, type Resource } from "../api/types";
+import { KINDS, TEMPLATES, type Graph, type GraphNode, type Group, type Items, type Kind, type Resource, type TrafficCount } from "../api/types";
 import { useApp } from "../app/context";
 import { Card, Dialog, Empty, ErrorBanner, Field, Loading, PageHeader, toast, toastError } from "../components/ui";
 import type { Refs } from "../form/SchemaForm";
@@ -28,6 +29,30 @@ function q(cs: string): string {
   return cs ? `?changeset=${cs}` : "";
 }
 
+// trafficClass maps a count to a width step (1–4, by order of magnitude
+// relative to the busiest edge) and an error level.
+function trafficClass(t: TrafficCount | undefined, max: number): string {
+  if (!t || !t.requests || !max) return "";
+  const step = Math.max(1, Math.min(4, 4 - Math.floor(Math.log10(max / t.requests))));
+  const level = errorLevel(t);
+  return ` topo__edge--w${step}` + (level ? ` topo__edge--${level}` : "");
+}
+
+function errorLevel(t: TrafficCount): "" | "warn" | "bad" {
+  const share = t.requests ? t.errors / t.requests : 0;
+  return share >= 0.05 ? "bad" : share >= 0.01 ? "warn" : "";
+}
+
+function compact(n: number): string {
+  return n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? (n / 1e3).toFixed(1) + "k" : String(n);
+}
+
+function trafficText(t: TrafficCount | undefined): string {
+  if (!t?.requests) return "";
+  const share = (t.errors / t.requests) * 100;
+  return compact(t.requests) + (t.errors ? ` · ${share < 1 ? share.toFixed(1) : Math.round(share)}% err` : "");
+}
+
 function clip(s: string, n: number): string {
   return s.length > n ? s.slice(0, n - 1) + "…" : s;
 }
@@ -38,10 +63,11 @@ interface FlowEdge {
   from: string;
   to: string;
   field: string;
+  traffic?: TrafficCount;
 }
 
 function flowEdges(g: Graph): FlowEdge[] {
-  return g.edges.map((e) => (e.field === "spec.listeners" ? { from: e.to, to: e.from, field: e.field } : e));
+  return g.edges.map((e) => (e.field === "spec.listeners" ? { ...e, from: e.to, to: e.from } : e));
 }
 
 interface Box {
@@ -229,7 +255,15 @@ type Sel = { node: string } | { edge: number } | null;
 export function Topology() {
   const app = useApp();
   const cs = app.changeset;
-  const graph = useQuery({ queryKey: ["topology", cs], queryFn: () => api.get<Graph>(`/topology${q(cs)}`) });
+  // Traffic covers the running configuration, so it is off while a change
+  // set is shown.
+  const [traffic, setTraffic] = useState("");
+  const win = cs ? "" : traffic;
+  const graph = useQuery({
+    queryKey: ["topology", cs, win],
+    queryFn: () => api.get<Graph>(`/topology${q(cs)}${win ? (cs ? "&" : "?") + "traffic=" + win : ""}`),
+    refetchInterval: win ? 10_000 : false,
+  });
   const groups = useQuery({ queryKey: ["groups"], queryFn: () => api.get<Items<Group>>("/groups") });
   const refs = useRefs(cs);
   const [group, setGroup] = useState("*");
@@ -246,7 +280,8 @@ export function Topology() {
     const nodes = g.nodes.filter((n) => COLS.includes(n.kind) && (group === "*" || (n.group ?? "") === group));
     const ids = new Set(nodes.map((n) => n.id));
     const edges = flowEdges(g).filter((e) => ids.has(e.from) && ids.has(e.to));
-    return { nodes, edges, ...layout(nodes, edges) };
+    const max = Math.max(0, ...edges.map((e) => e.traffic?.requests ?? 0));
+    return { nodes, edges, max, ...layout(nodes, edges) };
   }, [graph.data, group]);
 
   const groupName = (id?: string) => (id ? groups.data?.items.find((g) => g.id === id)?.name ?? id : "");
@@ -348,6 +383,14 @@ export function Topology() {
           <option value="">Ungrouped</option>
           {(groups.data?.items ?? []).map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
         </select>
+        {!cs && (
+          <select className="input input--sm" aria-label="Traffic" value={traffic} onChange={(e) => setTraffic(e.target.value)}>
+            <option value="">No traffic</option>
+            <option value="1m">Traffic 1m</option>
+            <option value="5m">Traffic 5m</option>
+            <option value="15m">Traffic 15m</option>
+          </select>
+        )}
         <select className="input input--sm" aria-label="Export" value="" onChange={(e) => { void exportAs(e.target.value as "svg"); e.target.value = ""; }}>
           <option value="" disabled>Export…</option>
           <option value="svg">SVG image</option>
@@ -399,7 +442,7 @@ export function Topology() {
               onPointerCancel={() => setDrag(null)}
             >
               <defs>
-                <marker id="topo-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+                <marker id="topo-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
                   <path d="M0,0 L10,5 L0,10 z" className="topo__arrow" />
                 </marker>
               </defs>
@@ -427,7 +470,9 @@ export function Topology() {
                 return (
                   <g key={`${e.from}-${e.to}-${e.field}`} onClick={() => setSel({ edge: i })}>
                     <path d={d} className="topo__hit" data-export="skip" />
-                    <path d={d} className={"topo__edge" + (on ? " topo__edge--on" : "")} markerEnd="url(#topo-arrow)" />
+                    <path d={d} className={"topo__edge" + trafficClass(e.traffic, view.max) + (on ? " topo__edge--on" : "")} markerEnd="url(#topo-arrow)">
+                      {e.traffic && <title>{trafficText(e.traffic) || "no requests"}</title>}
+                    </path>
                   </g>
                 );
               })}
@@ -449,7 +494,8 @@ export function Topology() {
                   <rect className="topo__box" width={NODE_W} height={NODE_H} rx={8} />
                   <rect className="topo__accent" width={4} height={NODE_H - 16} x={0} y={8} rx={2} />
                   <text className="topo__name" x={14} y={21}>{clip(n.name, 24)}</text>
-                  <text className="topo__detail" x={14} y={39}>{clip(n.detail ?? "", 30)}</text>
+                  <text className="topo__detail" x={14} y={39}>{clip(n.detail ?? "", n.traffic ? 16 : 30)}</text>
+                  {n.traffic && <text className={"topo__traffic" + (errorLevel(n.traffic) ? ` topo__traffic--${errorLevel(n.traffic)}` : "")} x={NODE_W - 8} y={39} textAnchor="end">{trafficText(n.traffic)}</text>}
                   {n.group && group === "*" && <text className="topo__group" x={NODE_W - 8} y={21} textAnchor="end">{clip(groupName(n.group), 10)}</text>}
                   {canStart(n) && <circle data-export="skip" className="topo__handle" cx={NODE_W} cy={NODE_H / 2} r={7} aria-hidden="true" />}
                 </g>
@@ -465,13 +511,15 @@ export function Topology() {
           <aside className="topo__panel">
             {selNode ? (
               <NodePanel node={selNode} view={view} refs={refs.data} groupName={groupName} editable={editable(selNode)} ownerEditable={ownerEditable} busy={busy}
-                onConnect={connect} onDisconnect={disconnect} onAddTarget={(addr) => mutate(selNode, (res) => ({ spec: { targets: [...(res.spec?.targets ?? []), { address: addr }] } }), `Target ${addr} added`)} />
+                onConnect={connect} onDisconnect={disconnect} onAddTarget={(addr) => mutate(selNode, (res) => ({ spec: { targets: [...(res.spec?.targets ?? []), { address: addr }] } }), `Target ${addr} added`)}
+                onPatch={(p, done) => mutate(selNode, p, done)} />
             ) : selEdge ? (
               <EdgePanel edge={selEdge} view={view} editable={ownerEditable(selEdge)} busy={busy} onDisconnect={disconnect} />
             ) : (
               <Card title="Diagram">
-                <p className="muted small">Click a node or connection to select it. Drag a node onto another to connect them: listener → site, site → route, route → child route or upstream. Valid targets light up while dragging; Esc cancels.</p>
+                <p className="muted small">Click a node or connection to select it. Drag a node onto another to connect them: listener → site, site → route, route → child route or upstream. Certificates and policies are attached from a site's or route's panel. Valid targets light up while dragging; Esc cancels.</p>
                 <p className="muted small mt">Dashed nodes are disabled. Details are edited in each resource's form.</p>
+                {win && <p className="muted small mt">Line width follows requests in the last {win}; amber lines answer 1% or more 5xx, red 5% or more.</p>}
               </Card>
             )}
           </aside>
@@ -485,10 +533,11 @@ export function Topology() {
 interface View {
   nodes: GraphNode[];
   edges: FlowEdge[];
+  max: number;
   boxes: Map<string, Box>;
 }
 
-function NodePanel({ node, view, refs, groupName, editable, ownerEditable, busy, onConnect, onDisconnect, onAddTarget }: {
+function NodePanel({ node, view, refs, groupName, editable, ownerEditable, busy, onConnect, onDisconnect, onAddTarget, onPatch }: {
   node: GraphNode;
   view: View;
   refs: Refs | undefined;
@@ -499,6 +548,7 @@ function NodePanel({ node, view, refs, groupName, editable, ownerEditable, busy,
   onConnect: (from: GraphNode, to: GraphNode) => void;
   onDisconnect: (e: FlowEdge) => void;
   onAddTarget: (address: string) => void;
+  onPatch: (patch: (res: Resource) => object | string, done: string) => void;
 }) {
   const [target, setTarget] = useState("");
   const [addr, setAddr] = useState("");
@@ -508,10 +558,13 @@ function NodePanel({ node, view, refs, groupName, editable, ownerEditable, busy,
   const name = (id: string) => view.boxes.get(id)?.node.name ?? id;
   const res = find(refs, node);
   const upstreamID = node.kind === "targets" ? node.id.slice(0, node.id.lastIndexOf("/")) : "";
-  const attached = node.kind === "sites" || node.kind === "routes"
-    ? [...((res?.spec?.certificates ?? []) as string[]).map((id) => `certificate ${refs?.certificates?.find((r) => r.id === id)?.name ?? id}`),
-       ...((res?.spec?.policies ?? []) as string[]).map((id) => `policy ${refs?.policies?.find((r) => r.id === id)?.name ?? id}`)]
-    : [];
+  // Certificates (sites) and policies (sites, routes) are attached here;
+  // they sit outside the request flow, so the canvas leaves them out.
+  const [attach, setAttach] = useState("");
+  const slots: ("certificates" | "policies")[] = node.kind === "sites" ? ["certificates", "policies"] : node.kind === "routes" ? ["policies"] : [];
+  const attached = slots.flatMap((k) => ((res?.spec?.[k] ?? []) as string[]).map((id) => ({ k, id, name: refs?.[k]?.find((r) => r.id === id)?.name ?? id })));
+  const attachable = slots.flatMap((k) => (refs?.[k] ?? []).filter((r) => !attached.some((a) => a.id === r.id)).map((r) => ({ k, r })));
+  const setList = (k: "certificates" | "policies", ids: string[], done: string) => onPatch(() => ({ spec: { [k]: ids } }), done);
   return (
     <Card title={node.name} actions={node.kind !== "targets"
       ? <Link className="btn btn--sm" to="/$kind/$id" params={{ kind: node.kind, id: node.id }}>Open form</Link>
@@ -519,7 +572,30 @@ function NodePanel({ node, view, refs, groupName, editable, ownerEditable, busy,
       <div className="stack">
         <div className="muted small">{KINDS[node.kind as Kind]?.one ?? "target"}{node.group ? ` · group ${groupName(node.group)}` : ""}{node.disabled ? " · disabled" : ""}</div>
         {node.detail && <div className="mono small">{node.detail}</div>}
-        {attached.length > 0 && <div className="small">Attached: {attached.join(", ")}</div>}
+        {attached.length > 0 && (
+          <ul className="topo__links">
+            {attached.map((a) => (
+              <li key={a.id}>
+                <span className="grow">{KINDS[a.k].one} {a.name}</span>
+                {editable && <button className="btn btn--ghost btn--sm" disabled={busy}
+                  onClick={() => setList(a.k, ((res?.spec?.[a.k] ?? []) as string[]).filter((x) => x !== a.id), `${KINDS[a.k].one} ${a.name} detached`)}>Detach</button>}
+              </li>
+            ))}
+          </ul>
+        )}
+        {editable && attachable.length > 0 && (
+          <div className="row">
+            <select className="input input--sm grow" aria-label="Attach" value={attach} onChange={(e) => setAttach(e.target.value)}>
+              <option value="">Attach…</option>
+              {attachable.map(({ k, r }) => <option key={r.id} value={r.id}>{KINDS[k].one} {r.name}</option>)}
+            </select>
+            <button className="btn btn--sm" disabled={!attach || busy} onClick={() => {
+              const a = attachable.find((x) => x.r.id === attach);
+              if (a) setList(a.k, [...((res?.spec?.[a.k] ?? []) as string[]), a.r.id], `${KINDS[a.k].one} ${a.r.name} attached`);
+              setAttach("");
+            }}>Attach</button>
+          </div>
+        )}
         {inc.length + out.length > 0 && (
           <ul className="topo__links">
             {[...inc, ...out].map((e) => (

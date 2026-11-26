@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/oklog/ulid/v2"
+
+	"github.com/null-variable/proxelo/internal/model"
 )
 
 // Group scopes resources and member roles. Subgroups inherit the members
@@ -51,6 +53,50 @@ func migrateGroups(ctx context.Context, tx *sql.Tx) error {
 			PRIMARY KEY (grp, user)
 		)`,
 	)
+}
+
+// migrateRevisionGroups records on each revision the groups it touched,
+// so group members see the history of their groups. Older revisions are
+// filled in by comparing each with the one before.
+func migrateRevisionGroups(ctx context.Context, tx *sql.Tx) error {
+	if err := execAll(ctx, tx, `ALTER TABLE revisions ADD COLUMN groups TEXT NOT NULL DEFAULT '[]'`); err != nil {
+		return err
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT revision, config FROM revisions ORDER BY revision`)
+	if err != nil {
+		return err
+	}
+	type rev struct {
+		n   uint64
+		cfg model.Config
+	}
+	var revs []rev
+	for rows.Next() {
+		var r rev
+		var cfg string
+		if err := rows.Scan(&r.n, &cfg); err != nil {
+			rows.Close()
+			return err
+		}
+		if err := json.Unmarshal([]byte(cfg), &r.cfg); err != nil {
+			rows.Close()
+			return err
+		}
+		revs = append(revs, r)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	var prev model.Config
+	for _, r := range revs {
+		g, _ := json.Marshal(touchedGroups(prev, r.cfg))
+		if _, err := tx.ExecContext(ctx, `UPDATE revisions SET groups = ? WHERE revision = ?`, string(g), r.n); err != nil {
+			return err
+		}
+		prev = r.cfg
+	}
+	return nil
 }
 
 // Groups lists every group by name, with its members.

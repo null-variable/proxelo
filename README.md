@@ -95,7 +95,10 @@ them, and a subgroup's domains stay inside its parent's. Members read the
 ungrouped listeners and certificates their sites attach to, cannot reference
 anything else outside their groups, apply only change sets whose resources
 are all in groups where they are operators, and confirm only the revisions
-they applied. Group admins manage members up to their own role and create
+they applied. Each revision records the groups whose resources it changed:
+members list only those revisions, and change sets they opened or whose
+resources they can all read. Instance-wide views (nodes, fleet traffic) need
+an instance role. Group admins manage members up to their own role and create
 subgroups; a group's domains are changed from its parent.
 
 Every change, login, failure and recovery is written to an append-only audit
@@ -154,7 +157,7 @@ control plane is down and reconnects when it is back.
 | `/api/v1/auth/{status,setup,login,logout,me,password,totp/*,tokens}` | Accounts, 2FA, API tokens; `status` tells whether setup is pending, `me` returns the session CSRF token |
 | `/api/v1/users`, `GET /api/v1/audit[/verify]` | Account management and audit log (admin) |
 | `GET/POST /api/v1/groups`, `PATCH/DELETE /groups/{id}`, `PUT /groups/{id}/members`, `DELETE /groups/{id}/members/{user}` | Groups, their domains and member roles; the list returns the caller's effective role per group |
-| `GET /api/v1/topology[?changeset=][&format=json\|mermaid\|dot]` | Request-flow graph (listener → site → route → upstream → target) of the resources the caller can read, as JSON or a Mermaid or Graphviz diagram |
+| `GET /api/v1/topology[?changeset=][&format=json\|mermaid\|dot][&traffic=5m]` | Request-flow graph (listener → site → route → upstream → target) of the resources the caller can read, as JSON or a Mermaid or Graphviz diagram; `traffic` (up to 15m) adds request and 5xx counts per node and edge |
 
 Validation errors return `422` with field paths such as
 `routes[rt_...].spec.action.proxy.upstream`.
@@ -187,7 +190,7 @@ PROXELO_API=127.0.0.1:9443 bun run dev   # dev server proxying /api to a running
 |---|---|
 | Dashboard | 5-minute traffic, 5xx and upstream failure rates, node sync, certificates expiring within 30 days, recent revisions, pending-confirmation banner |
 | Sites, Routes, Upstreams, Certificates, Policies, Listeners | Lists with search; editors generated from `/api/v1/schema` (reference fields become pickers) with a Raw JSON tab; server field errors shown at the field; site route tree with nginx match badges |
-| Topology | The configuration as a request-flow diagram, filterable by group; drag a node onto another (valid targets light up) or use the side panel to connect listener → site, site → route, route → child route or upstream, remove connections, add resources and upstream targets, all into the active change set; export as SVG, PNG, Mermaid, Graphviz DOT or JSON |
+| Topology | The configuration as a request-flow diagram, filterable by group; drag a node onto another (valid targets light up) or use the side panel to connect listener → site, site → route, route → child route or upstream, remove connections, attach or detach certificates and policies, add resources and upstream targets, all into the active change set; a traffic overlay sizes edges by recent requests and colors them by 5xx share; export as SVG, PNG, Mermaid, Graphviz DOT or JSON |
 | Changes | Change sets (the active one is the draft every edit goes to), resource and effective diff, validate with safety findings, apply with commit-confirm, import, export, discard; revisions with confirm and rollback |
 | Simulator | One request against the latest revision, side by side with the active change set |
 | Nodes, Settings | Proxy sync state; password, TOTP, API tokens, groups with members and domains, users and the audit log |
@@ -229,7 +232,7 @@ upgraded one end up identical.
 | `internal/breakglass` | Local recovery socket |
 | `internal/distrib` | Snapshot and ACME challenge distribution to proxies over the control socket |
 | `internal/acme` | ACME issuance and renewal |
-| `internal/topology` | Request-flow graph of a configuration and its Mermaid and DOT rendering |
+| `internal/topology` | Request-flow graph of a configuration, its traffic overlay and its Mermaid and DOT rendering |
 | `internal/simulate` | Resident `proxelo-proxy sim` helper for dry-loads and simulation |
 | `internal/ui` | Serves the embedded web console build |
 | `web` | Web console source (Vite + React + TypeScript, bun) |

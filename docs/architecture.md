@@ -150,7 +150,7 @@ from one engine.
 | `internal/lint` | Warnings and admin-access safety checks |
 | `internal/deploy` | Apply, commit-confirm timer, traffic guard, rollback |
 | `internal/distrib` | gRPC stream to proxies: snapshots, ACME challenges, acks, traffic counters |
-| `internal/topology` | Request-flow graph and its Mermaid and DOT rendering |
+| `internal/topology` | Request-flow graph, traffic overlay, Mermaid and DOT rendering |
 | `internal/simulate` | The resident `proxelo-proxy sim` helper |
 | `internal/acme` | ACME issuance and renewal |
 | `internal/api`, `internal/auth`, `internal/admin`, `internal/breakglass` | REST API, credentials and roles, admin listener, local recovery socket |

@@ -19,7 +19,23 @@ type Node struct {
 	// One line describing it: an address, hostnames, a path match.
 	Detail   string `json:"detail,omitempty"`
 	Disabled bool   `json:"disabled,omitempty"`
+	// Requests over the traffic window, when asked for: for sites and
+	// routes the requests they answered, for upstreams and targets the
+	// attempts made to them.
+	Traffic *Traffic `json:"traffic,omitempty"`
 }
+
+// Traffic is a request count and how many failed: 5xx answers, or failed
+// upstream attempts.
+type Traffic struct {
+	Requests uint64 `json:"requests"`
+	Errors   uint64 `json:"errors"`
+}
+
+// Counts are per-resource traffic counts by kind and key: "sites" by site
+// ID, "routes" by site ID + "/" + route ID, "targets" by upstream ID + "/" +
+// address.
+type Counts func(kind, key string) (Traffic, bool)
 
 // Edge is a reference: From uses To.
 type Edge struct {
@@ -27,6 +43,8 @@ type Edge struct {
 	To   string `json:"to"`
 	// The referencing field, for example "spec.routes".
 	Field string `json:"field"`
+	// Requests that took this edge over the traffic window, when asked for.
+	Traffic *Traffic `json:"traffic,omitempty"`
 }
 
 // Graph is a configuration as nodes and edges in flow order. Edges point
@@ -240,4 +258,100 @@ func mermaidKeys(g Graph) map[string]string {
 // mermaidText escapes a label for a quoted Mermaid node.
 func mermaidText(s string) string {
 	return strings.ReplaceAll(s, `"`, "#quot;")
+}
+
+// AddTraffic attaches the counts to g. A request is counted at the route
+// that answered it, the innermost one, so:
+//   - sites and targets carry their own counts;
+//   - a route carries the requests it answered on every site;
+//   - site → route and route → child edges carry the requests that went
+//     down that branch (the route and its descendants);
+//   - route → upstream edges carry the route's requests, upstream →
+//     target edges the target's attempts, upstreams the sum of their
+//     targets;
+//   - listener → site edges carry the site's requests when the site has
+//     one listener.
+func AddTraffic(g *Graph, counts Counts) {
+	idx := make(map[string]int, len(g.Nodes))
+	var sites []string
+	for i, n := range g.Nodes {
+		idx[n.ID] = i
+		if n.Kind == "sites" {
+			sites = append(sites, n.ID)
+		}
+	}
+	children := map[string][]string{}
+	listeners := map[string]int{}
+	for _, e := range g.Edges {
+		switch e.Field {
+		case "spec.children":
+			children[e.From] = append(children[e.From], e.To)
+		case "spec.listeners":
+			listeners[e.From]++
+		}
+	}
+	// subtree sums the counts of route and its descendants on site.
+	var subtree func(site, route string, seen map[string]bool) Traffic
+	subtree = func(site, route string, seen map[string]bool) Traffic {
+		if seen[route] {
+			return Traffic{}
+		}
+		seen[route] = true
+		t, _ := counts("routes", site+"/"+route)
+		for _, c := range children[route] {
+			s := subtree(site, c, seen)
+			t.Requests += s.Requests
+			t.Errors += s.Errors
+		}
+		return t
+	}
+	set := func(t Traffic) *Traffic {
+		if t.Requests == 0 {
+			return nil
+		}
+		return &t
+	}
+	sum := func(a, b Traffic) Traffic { return Traffic{a.Requests + b.Requests, a.Errors + b.Errors} }
+	nodeOwn := map[string]Traffic{}
+	for i := range g.Nodes {
+		n := &g.Nodes[i]
+		switch n.Kind {
+		case "sites":
+			t, _ := counts("sites", n.ID)
+			nodeOwn[n.ID] = t
+		case "routes":
+			var t Traffic
+			for _, s := range sites {
+				c, _ := counts("routes", s+"/"+n.ID)
+				t = sum(t, c)
+			}
+			nodeOwn[n.ID] = t
+		}
+	}
+	for i := range g.Edges {
+		e := &g.Edges[i]
+		var t Traffic
+		switch e.Field {
+		case "spec.routes":
+			t = subtree(e.From, e.To, map[string]bool{})
+		case "spec.children":
+			for _, s := range sites {
+				t = sum(t, subtree(s, e.To, map[string]bool{}))
+			}
+		case "spec.action.proxy.upstream":
+			t = nodeOwn[e.From]
+		case "spec.targets":
+			t, _ = counts("targets", e.From+"/"+g.Nodes[idx[e.To]].Name)
+			nodeOwn[e.To] = t
+			nodeOwn[e.From] = sum(nodeOwn[e.From], t)
+		case "spec.listeners":
+			if listeners[e.From] == 1 {
+				t = nodeOwn[e.From]
+			}
+		}
+		e.Traffic = set(t)
+	}
+	for i := range g.Nodes {
+		g.Nodes[i].Traffic = set(nodeOwn[g.Nodes[i].ID])
+	}
 }

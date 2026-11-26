@@ -54,8 +54,9 @@ export function AppProvider({ me, onLogout, askChangeSet, children }: { me: Me; 
     else localStorage.removeItem(CS_KEY);
   };
   const list = css.data?.items ?? [];
-  // The stored change set may have been applied or discarded elsewhere.
-  const active = css.data && changeset && !list.some((c) => c.id === changeset) ? "" : changeset;
+  // The stored change set may have been applied or discarded elsewhere, so
+  // it is used only once the list confirms it.
+  const active = list.some((c) => c.id === changeset) ? changeset : "";
 
   const state: AppState = {
     me,

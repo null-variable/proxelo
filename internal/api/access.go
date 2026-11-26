@@ -175,6 +175,20 @@ func (ac *access) visibleGroups() []*store.Group {
 	return out
 }
 
+// seesAll reports whether the principal reads ungrouped resources, and so
+// every revision and change set.
+func (ac *access) seesAll() bool { return ac.p.role.Allows(auth.Viewer) }
+
+// seesGroups reports whether the principal reads one of groups.
+func (ac *access) seesGroups(groups []string) bool {
+	for _, g := range groups {
+		if ac.in(g).Allows(auth.Viewer) {
+			return true
+		}
+	}
+	return false
+}
+
 // requireAny wraps h for principals whose best role, instance or group, is
 // at least min. Handlers then check each resource with access.
 func (a *api) requireAny(min auth.Role, h func(http.ResponseWriter, *http.Request, *access)) http.HandlerFunc {

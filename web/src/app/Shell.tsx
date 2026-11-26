@@ -11,12 +11,14 @@ interface NavItem {
   to: string;
   label: string;
   badge?: boolean;
+  // Instance-wide pages hidden from group-only accounts.
+  instance?: boolean;
 }
 
 const RESOURCE_NAV: Kind[] = ["sites", "routes", "upstreams", "certificates", "policies", "listeners"];
 
 const NAV: { group: string; items: NavItem[] }[] = [
-  { group: "Overview", items: [{ to: "/", label: "Dashboard" }, { to: "/nodes", label: "Nodes" }] },
+  { group: "Overview", items: [{ to: "/", label: "Dashboard" }, { to: "/nodes", label: "Nodes", instance: true }] },
   { group: "Configuration", items: [{ to: "/topology", label: "Topology" }, ...RESOURCE_NAV.map((k) => ({ to: `/${k}`, label: KINDS[k].label }))] },
   { group: "Operate", items: [{ to: "/changes", label: "Changes", badge: true }, { to: "/simulator", label: "Simulator" }] },
   { group: "Settings", items: [{ to: "/settings", label: "Settings" }] },
@@ -85,7 +87,7 @@ export function Shell() {
         {NAV.map((g) => (
           <div key={g.group} style={{ display: "contents" }}>
             <div className="sidenav__group">{g.group}</div>
-            {g.items.map((it) => (
+            {g.items.filter((it) => !it.instance || app.can("viewer")).map((it) => (
               <Link key={it.to} className="sidenav__item" to={it.to} aria-current={current(it.to) ? "page" : undefined}>
                 <i className="sidenav__icon" aria-hidden="true" />
                 {it.label}

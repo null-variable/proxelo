@@ -42,3 +42,51 @@ func TestBuildAndRender(t *testing.T) {
 		t.Fatalf("dot:\n%s", d)
 	}
 }
+
+func TestAddTraffic(t *testing.T) {
+	cfg := model.Config{
+		Listeners: []*model.Listener{{Meta: model.Meta{ID: "lst_a"}}},
+		Sites:     []*model.Site{{Meta: model.Meta{ID: "site_a"}, Spec: model.SiteSpec{Listeners: []string{"lst_a"}, Routes: []string{"rt_p"}}}},
+		Routes: []*model.Route{
+			{Meta: model.Meta{ID: "rt_p"}, Spec: model.RouteSpec{Children: []string{"rt_c"}}},
+			{Meta: model.Meta{ID: "rt_c"}, Spec: model.RouteSpec{Action: model.Action{Type: "proxy", Proxy: &model.ProxyAction{Upstream: "up_a"}}}},
+		},
+		Upstreams: []*model.Upstream{{Meta: model.Meta{ID: "up_a"}, Spec: model.UpstreamSpec{Targets: []model.Target{{Address: "10.0.0.1:80"}, {Address: "10.0.0.2:80"}}}}},
+	}
+	g := Build(cfg, func(string, model.Resource) bool { return true })
+	counts := map[string]Traffic{
+		"sites/site_a":             {Requests: 10, Errors: 1},
+		"routes/site_a/rt_p":       {Requests: 3},
+		"routes/site_a/rt_c":       {Requests: 7, Errors: 1},
+		"targets/up_a/10.0.0.1:80": {Requests: 5, Errors: 1},
+		"targets/up_a/10.0.0.2:80": {Requests: 3},
+	}
+	AddTraffic(&g, func(kind, key string) (Traffic, bool) {
+		c, ok := counts[kind+"/"+key]
+		return c, ok
+	})
+	edge := map[string]Traffic{}
+	for _, e := range g.Edges {
+		if e.Traffic != nil {
+			edge[e.From+">"+e.To] = *e.Traffic
+		}
+	}
+	// The site → parent edge carries the whole branch.
+	want := map[string]Traffic{
+		"site_a>lst_a": {10, 1}, "site_a>rt_p": {10, 1}, "rt_p>rt_c": {7, 1}, "rt_c>up_a": {7, 1},
+		"up_a>up_a/0": {5, 1}, "up_a>up_a/1": {3, 0},
+	}
+	for k, w := range want {
+		if edge[k] != w {
+			t.Errorf("edge %s = %+v, want %+v", k, edge[k], w)
+		}
+	}
+	for _, n := range g.Nodes {
+		if n.ID == "up_a" && (n.Traffic == nil || *n.Traffic != (Traffic{8, 1})) {
+			t.Errorf("upstream traffic = %+v", n.Traffic)
+		}
+		if n.ID == "rt_p" && (n.Traffic == nil || *n.Traffic != (Traffic{3, 0})) {
+			t.Errorf("route traffic = %+v", n.Traffic)
+		}
+	}
+}

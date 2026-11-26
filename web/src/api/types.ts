@@ -40,6 +40,11 @@ export interface Group {
   createdAt: string;
 }
 
+export interface TrafficCount {
+  requests: number;
+  errors: number;
+}
+
 export interface GraphNode {
   id: string;
   kind: Kind | "targets";
@@ -47,12 +52,14 @@ export interface GraphNode {
   group?: string;
   detail?: string;
   disabled?: boolean;
+  traffic?: TrafficCount;
 }
 
 export interface GraphEdge {
   from: string;
   to: string;
   field: string;
+  traffic?: TrafficCount;
 }
 
 export interface Graph {

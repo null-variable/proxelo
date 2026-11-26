@@ -33,6 +33,7 @@ type Distributor interface {
 	Publish(snapshot []byte) error
 	Nodes() []distrib.NodeStatus
 	Traffic(from, to time.Time, revision uint64) distrib.Traffic
+	ResourceTraffic(from, to time.Time) map[distrib.ResourceKey]distrib.Count
 }
 
 // Simulator loads snapshots and runs requests with the proxy engine.
@@ -101,7 +102,7 @@ func Handler(st *store.Store, d Distributor, dep *deploy.Manager, sim Simulator,
 	mux.HandleFunc("GET /api/v1/export", a.require(v, a.export))
 
 	mux.HandleFunc("GET /api/v1/revisions", a.requireAny(v, a.revisions))
-	mux.HandleFunc("GET /api/v1/revisions/{rev}", a.require(v, a.revision))
+	mux.HandleFunc("GET /api/v1/revisions/{rev}", a.requireAny(v, a.revision))
 	mux.HandleFunc("GET /api/v1/revisions/{rev}/snapshot", a.require(adm, a.snapshot))
 	mux.HandleFunc("POST /api/v1/revisions/{rev}/confirm", a.requireAny(op, a.confirm))
 	mux.HandleFunc("POST /api/v1/revisions/{rev}/rollback", a.require(op, a.rollback))

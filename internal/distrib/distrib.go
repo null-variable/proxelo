@@ -55,6 +55,23 @@ type Sample struct {
 	ServerErrors     uint64
 	UpstreamAttempts uint64
 	UpstreamFailures uint64
+	// Per resource, keyed by ResourceKey.
+	Resources map[ResourceKey]Count
+}
+
+// ResourceKey names a site ("sites", site ID), a route within a site
+// ("routes", site ID + "/" + route ID) or an upstream target ("targets",
+// upstream ID + "/" + address).
+type ResourceKey struct {
+	Kind string
+	ID   string
+}
+
+// Count is a request count and how many failed: 5xx answers for sites and
+// routes, failed attempts for targets.
+type Count struct {
+	Requests uint64 `json:"requests"`
+	Errors   uint64 `json:"errors"`
 }
 
 // Traffic is what proxies handled over a window.
@@ -310,10 +327,64 @@ func (d *Distributor) record(n *node, st *distribv1.Stats) {
 	for drop < len(n.samples) && now.Sub(n.samples[drop].At) > statsWindow {
 		drop++
 	}
+	res := make(map[ResourceKey]Count, len(st.GetSites())+len(st.GetRoutes())+len(st.GetTargets()))
+	for _, s := range st.GetSites() {
+		res[ResourceKey{"sites", s.GetId()}] = Count{s.GetRequests(), s.GetServerErrors()}
+	}
+	for _, r := range st.GetRoutes() {
+		res[ResourceKey{"routes", r.GetSiteId() + "/" + r.GetId()}] = Count{r.GetRequests(), r.GetServerErrors()}
+	}
+	for _, t := range st.GetTargets() {
+		res[ResourceKey{"targets", t.GetUpstreamId() + "/" + t.GetAddress()}] = Count{t.GetAttempts(), t.GetFailures()}
+	}
 	n.samples = append(n.samples[drop:], Sample{
 		At: now, Revision: st.GetRevision(), Requests: st.GetRequests(), ServerErrors: st.GetServerErrors(),
 		UpstreamAttempts: st.GetUpstreamAttempts(), UpstreamFailures: st.GetUpstreamFailures(),
+		Resources: res,
 	})
+}
+
+// ResourceTraffic sums, over connected proxies, the per-resource counts
+// between from and to, as Traffic does for the totals.
+func (d *Distributor) ResourceTraffic(from, to time.Time) map[ResourceKey]Count {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	out := map[ResourceKey]Count{}
+	for _, n := range d.nodes {
+		var first, last *Sample
+		for i := range n.samples {
+			s := &n.samples[i]
+			if s.At.Before(from) || s.At.After(to) {
+				continue
+			}
+			if first == nil {
+				first = s
+			}
+			last = s
+		}
+		if first == nil {
+			continue
+		}
+		for k, b := range last.Resources {
+			a := first.Resources[k]
+			c := out[k]
+			c.Requests += delta(a.Requests, b.Requests)
+			c.Errors += delta(a.Errors, b.Errors)
+			if c.Requests > 0 {
+				out[k] = c
+			}
+		}
+	}
+	return out
+}
+
+// delta is the growth of a cumulative counter; a proxy restart, which
+// resets it, counts from zero.
+func delta(a, b uint64) uint64 {
+	if b < a {
+		return b
+	}
+	return b - a
 }
 
 // Traffic sums, over connected proxies, what they handled between from and
@@ -338,12 +409,6 @@ func (d *Distributor) Traffic(from, to time.Time, revision uint64) Traffic {
 		}
 		if first == nil {
 			continue
-		}
-		delta := func(a, b uint64) uint64 {
-			if b < a {
-				return b
-			}
-			return b - a
 		}
 		t.Requests += delta(first.Requests, last.Requests)
 		t.ServerErrors += delta(first.ServerErrors, last.ServerErrors)

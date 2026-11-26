@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -40,7 +41,9 @@ type Revision struct {
 	ConfirmBy time.Time      `json:"confirmBy,omitzero"`
 	Tag       string         `json:"tag,omitempty"`
 	// Set by the guard when traffic got worse while pending.
-	Guard    string       `json:"guard,omitempty"`
+	Guard string `json:"guard,omitempty"`
+	// Groups of the resources this revision added, changed or removed.
+	Groups   []string     `json:"groups,omitempty"`
 	Config   model.Config `json:"-"`
 	Snapshot []byte       `json:"-"`
 }
@@ -95,17 +98,29 @@ func (s *Store) newRevision(ctx context.Context, tx *sql.Tx, author, message str
 	if err != nil {
 		return nil, err
 	}
+	var prev model.Config
+	if last > 0 {
+		p, err := revision(ctx, tx, last)
+		if err != nil && !errors.Is(err, ErrNotFound) {
+			return nil, err
+		}
+		if p != nil {
+			prev = p.Config
+		}
+	}
+	groups := touchedGroups(prev, cfg)
+	groupsJSON, _ := json.Marshal(groups)
 	rev := &Revision{
 		Revision: last + 1, CreatedAt: s.now(), Author: author, Message: message,
-		Hash: snap.GetHash(), Status: StatusConfirmed, Config: cfg, Snapshot: snapBytes,
+		Hash: snap.GetHash(), Status: StatusConfirmed, Config: cfg, Snapshot: snapBytes, Groups: groups,
 	}
 	var by any
 	if !confirmBy.IsZero() {
 		rev.Status, rev.ConfirmBy = StatusPending, confirmBy.UTC().Truncate(time.Millisecond)
 		by = formatTime(rev.ConfirmBy)
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO revisions (revision, created_at, author, message, hash, config, snapshot, status, confirm_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		rev.Revision, formatTime(rev.CreatedAt), author, message, rev.Hash, string(cfgJSON), snapBytes, rev.Status, by); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO revisions (revision, created_at, author, message, hash, config, snapshot, status, confirm_by, groups) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		rev.Revision, formatTime(rev.CreatedAt), author, message, rev.Hash, string(cfgJSON), snapBytes, rev.Status, by, string(groupsJSON)); err != nil {
 		return nil, err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM state WHERE key = ?`, headDirty); err != nil {
@@ -341,7 +356,7 @@ func (s *Store) Revision(ctx context.Context, n uint64) (*Revision, error) {
 	return revision(ctx, s.db, n)
 }
 
-const revisionCols = `revision, created_at, author, message, hash, status, COALESCE(confirm_by, ''), COALESCE(tag, ''), guard`
+const revisionCols = `revision, created_at, author, message, hash, status, COALESCE(confirm_by, ''), COALESCE(tag, ''), guard, groups`
 
 func revision(ctx context.Context, q dbtx, n uint64) (*Revision, error) {
 	row := q.QueryRowContext(ctx, `SELECT `+revisionCols+`, config, snapshot FROM revisions WHERE revision = ?`, n)
@@ -363,8 +378,11 @@ func revision(ctx context.Context, q dbtx, n uint64) (*Revision, error) {
 
 func scanRevision(row interface{ Scan(...any) error }, extra ...any) (*Revision, error) {
 	var rev Revision
-	var created, confirmBy string
-	if err := row.Scan(append([]any{&rev.Revision, &created, &rev.Author, &rev.Message, &rev.Hash, &rev.Status, &confirmBy, &rev.Tag, &rev.Guard}, extra...)...); err != nil {
+	var created, confirmBy, groups string
+	if err := row.Scan(append([]any{&rev.Revision, &created, &rev.Author, &rev.Message, &rev.Hash, &rev.Status, &confirmBy, &rev.Tag, &rev.Guard, &groups}, extra...)...); err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal([]byte(groups), &rev.Groups); err != nil {
 		return nil, err
 	}
 	var err error
@@ -375,4 +393,47 @@ func scanRevision(row interface{ Scan(...any) error }, extra ...any) (*Revision,
 		return nil, err
 	}
 	return &rev, nil
+}
+
+// touchedGroups lists, sorted, the groups of resources that differ between
+// prev and next, with both the old and the new group of a moved resource.
+func touchedGroups(prev, next model.Config) []string {
+	body := func(r model.Resource) string {
+		b, _ := json.Marshal(r)
+		return string(b)
+	}
+	old := map[string]model.Resource{}
+	for _, k := range model.Kinds {
+		for _, r := range prev.Of(k) {
+			old[r.Common().ID] = r
+		}
+	}
+	set := map[string]bool{}
+	mark := func(r model.Resource) {
+		if g := r.Common().Group; g != "" {
+			set[g] = true
+		}
+	}
+	for _, k := range model.Kinds {
+		for _, r := range next.Of(k) {
+			o, ok := old[r.Common().ID]
+			delete(old, r.Common().ID)
+			if ok && body(o) == body(r) {
+				continue
+			}
+			mark(r)
+			if ok {
+				mark(o)
+			}
+		}
+	}
+	for _, r := range old {
+		mark(r)
+	}
+	out := make([]string, 0, len(set))
+	for g := range set {
+		out = append(out, g)
+	}
+	slices.Sort(out)
+	return out
 }

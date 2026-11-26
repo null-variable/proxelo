@@ -39,6 +39,7 @@ type client struct {
 type fakeDistributor struct {
 	published [][]byte
 	traffic   distrib.Traffic
+	resources map[distrib.ResourceKey]distrib.Count
 }
 
 func (f *fakeDistributor) Publish(b []byte) error {
@@ -52,6 +53,10 @@ func (f *fakeDistributor) Nodes() []distrib.NodeStatus {
 
 func (f *fakeDistributor) Traffic(from, to time.Time, revision uint64) distrib.Traffic {
 	return f.traffic
+}
+
+func (f *fakeDistributor) ResourceTraffic(from, to time.Time) map[distrib.ResourceKey]distrib.Count {
+	return f.resources
 }
 
 const ownerPassword = "owner-password-1"

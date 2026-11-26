@@ -27,12 +27,16 @@ function Stat({ label, value, sub, danger }: { label: string; value: string; sub
 
 export function Dashboard() {
   const app = useApp();
+  // Fleet traffic and nodes are instance-wide; group-only accounts see
+  // their groups' changes and certificates.
+  const fleet = app.can("viewer");
   const traffic = useQuery({
     queryKey: ["traffic"],
     queryFn: () => api.get<{ traffic: Traffic }>("/traffic?window=5m"),
     refetchInterval: 10000,
+    enabled: fleet,
   });
-  const nodes = useQuery({ queryKey: ["nodes"], queryFn: () => api.get<Items<NodeStatus>>("/nodes"), refetchInterval: 10000 });
+  const nodes = useQuery({ queryKey: ["nodes"], queryFn: () => api.get<Items<NodeStatus>>("/nodes"), refetchInterval: 10000, enabled: fleet });
   const revs = useQuery({ queryKey: ["revisions"], queryFn: () => api.get<Items<Revision>>("/revisions") });
   const certs = useQuery({ queryKey: ["certificates", ""], queryFn: () => api.get<Items<Resource>>("/certificates") });
 
@@ -46,17 +50,17 @@ export function Dashboard() {
 
   return (
     <div className="stack">
-      <PageHeader title="Dashboard" sub="Traffic over the last 5 minutes, nodes and recent changes." />
-      <div className="grid grid--3">
+      <PageHeader title="Dashboard" sub={fleet ? "Traffic over the last 5 minutes, nodes and recent changes." : "Recent changes to your groups."} />
+      {fleet && <div className="grid grid--3">
         <Stat label="Requests" value={t ? t.requests.toLocaleString() : "–"} sub={t && `${(t.requests / WINDOW_SECONDS).toFixed(1)} req/s`} />
         <Stat label="5xx rate" value={t ? pct(t.serverErrors, t.requests) : "–"} sub={t && `${t.serverErrors.toLocaleString()} responses`}
           danger={!!t && t.requests > 0 && t.serverErrors / t.requests > 0.05} />
         <Stat label="Upstream failure rate" value={t ? pct(t.upstreamFailures, t.upstreamAttempts) : "–"} sub={t && `${t.upstreamAttempts.toLocaleString()} attempts`}
           danger={!!t && t.upstreamAttempts > 0 && t.upstreamFailures / t.upstreamAttempts > 0.05} />
-      </div>
+      </div>}
       {app.pending && <PendingBanner rev={app.pending} />}
-      <div className="grid grid--2">
-        <Card title="Nodes" actions={<Link className="btn btn--ghost btn--sm" to="/nodes">View all</Link>}>
+      <div className={fleet ? "grid grid--2" : "stack"}>
+        {fleet && <Card title="Nodes" actions={<Link className="btn btn--ghost btn--sm" to="/nodes">View all</Link>}>
           {nodes.isPending ? <Loading /> : nodes.error ? <ErrorBanner error={nodes.error} /> : nodeItems.length === 0 ? (
             <Empty title="No proxy connected" text="Start proxelo-proxy with the control socket to serve traffic." />
           ) : (
@@ -71,7 +75,7 @@ export function Dashboard() {
               ))}
             </div>
           )}
-        </Card>
+        </Card>}
         <Card title="Certificates needing attention" actions={<Link className="btn btn--ghost btn--sm" to="/$kind" params={{ kind: "certificates" }}>View all</Link>}>
           {certs.isPending ? <Loading /> : attention.length === 0 ? (
             <p className="muted">No certificate expires within 30 days.</p>

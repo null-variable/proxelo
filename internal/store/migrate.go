@@ -33,6 +33,7 @@ var migrations = []migration{
 	{"initial schema", migrateInitial},
 	{"change sets, revision lifecycle, accounts and audit log", migrateChangeSets},
 	{"groups and group members", migrateGroups},
+	{"groups each revision touched", migrateRevisionGroups},
 }
 
 // SchemaVersion is the version this binary migrates databases to.

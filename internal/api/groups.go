@@ -3,8 +3,10 @@ package api
 import (
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/null-variable/proxelo/internal/auth"
+	"github.com/null-variable/proxelo/internal/distrib"
 	"github.com/null-variable/proxelo/internal/model"
 	"github.com/null-variable/proxelo/internal/store"
 	"github.com/null-variable/proxelo/internal/topology"
@@ -244,7 +246,8 @@ func (a *api) directory(w http.ResponseWriter, r *http.Request, ac *access) {
 
 // topology returns the request-flow graph of the head, or of change set
 // ?changeset as it would apply, with the resources the caller can read.
-// ?format=mermaid or dot returns a diagram source instead of JSON.
+// ?format=mermaid or dot returns a diagram source instead of JSON;
+// ?traffic=<window> (up to 15m) adds what proxies handled per node and edge.
 func (a *api) topology(w http.ResponseWriter, r *http.Request, ac *access) {
 	cfg, err := a.st.View(r.Context(), changeSetParam(r))
 	if err != nil {
@@ -252,6 +255,19 @@ func (a *api) topology(w http.ResponseWriter, r *http.Request, ac *access) {
 		return
 	}
 	g := topology.Build(cfg, ac.canRead)
+	if v := r.URL.Query().Get("traffic"); v != "" {
+		window, err := time.ParseDuration(v)
+		if err != nil || window <= 0 || window > 15*time.Minute {
+			a.fail(w, badRequest("traffic must be a duration up to 15m"))
+			return
+		}
+		now := time.Now()
+		counts := a.d.ResourceTraffic(now.Add(-window), now)
+		topology.AddTraffic(&g, func(kind, key string) (topology.Traffic, bool) {
+			c, ok := counts[distrib.ResourceKey{Kind: kind, ID: key}]
+			return topology.Traffic{Requests: c.Requests, Errors: c.Errors}, ok
+		})
+	}
 	switch f := r.URL.Query().Get("format"); f {
 	case "", "json":
 		writeJSON(w, http.StatusOK, g)

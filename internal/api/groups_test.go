@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/null-variable/proxelo/internal/distrib"
 	"github.com/null-variable/proxelo/internal/store"
 	"github.com/null-variable/proxelo/internal/topology"
 )
@@ -91,6 +92,48 @@ func TestGroups(t *testing.T) {
 	var applied applied
 	wantStatus(t, ann.do("POST", "/api/v1/changesets/"+ann.cs+"/apply", map[string]any{"mode": "confirm"}, nil, &applied), http.StatusCreated)
 	wantStatus(t, ann.do("POST", "/api/v1/revisions/"+itoa(int(applied.Revision.Revision))+"/confirm", nil, nil, nil), http.StatusOK)
+
+	// Ann sees her revision, not the infrastructure one; an unrelated
+	// change set stays hidden.
+	var revs struct {
+		Items []store.Revision `json:"items"`
+	}
+	wantStatus(t, ann.do("GET", "/api/v1/revisions", nil, nil, &revs), http.StatusOK)
+	if len(revs.Items) != 1 || revs.Items[0].Revision != applied.Revision.Revision || len(revs.Items[0].Groups) != 1 || revs.Items[0].Groups[0] != pay.ID {
+		t.Fatalf("revisions = %+v", revs.Items)
+	}
+	wantStatus(t, ann.do("GET", "/api/v1/revisions/1", nil, nil, nil), http.StatusNotFound)
+	c.begin("private")
+	c.create("upstreams", map[string]any{"name": "secret", "spec": map[string]any{"targets": []any{map[string]any{"address": "127.0.0.1:9002"}}}})
+	var css struct {
+		Items []store.ChangeSet `json:"items"`
+	}
+	wantStatus(t, ann.do("GET", "/api/v1/changesets", nil, nil, &css), http.StatusOK)
+	if len(css.Items) != 0 {
+		t.Fatalf("changesets = %+v", css.Items)
+	}
+	wantStatus(t, ann.do("GET", "/api/v1/changesets/"+c.cs, nil, nil, nil), http.StatusNotFound)
+
+	// Traffic on the topology: the site's count reaches the listener edge,
+	// the route's the site edge.
+	var g2 topology.Graph
+	wantStatus(t, ann.do("GET", "/api/v1/topology", nil, nil, &g2), http.StatusOK)
+	var siteID string
+	for _, n := range g2.Nodes {
+		if n.Kind == "sites" {
+			siteID = n.ID
+		}
+	}
+	c.d.resources = map[distrib.ResourceKey]distrib.Count{
+		{Kind: "sites", ID: siteID}: {Requests: 10, Errors: 2},
+	}
+	wantStatus(t, ann.do("GET", "/api/v1/topology?traffic=5m", nil, nil, &g2), http.StatusOK)
+	for _, e := range g2.Edges {
+		if e.Field == "spec.listeners" && (e.Traffic == nil || e.Traffic.Requests != 10 || e.Traffic.Errors != 2) {
+			t.Fatalf("listener edge traffic = %+v", e.Traffic)
+		}
+	}
+	wantStatus(t, ann.do("GET", "/api/v1/topology?traffic=1h", nil, nil, nil), http.StatusBadRequest)
 
 	// A group in use cannot be deleted.
 	wantStatus(t, c.do("DELETE", "/api/v1/groups/"+pay.ID, nil, nil, nil), http.StatusConflict)
