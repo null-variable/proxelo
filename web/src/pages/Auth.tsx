@@ -1,12 +1,12 @@
 // Login and first-owner setup.
 import { useState, type FormEvent, type ReactNode } from "react";
 import { api, APIError, setCSRF } from "../api/client";
-import { ErrorBanner, Field, Toasts } from "../components/ui";
+import { ErrorBanner, Field, Logo, Toasts } from "../components/ui";
 
 function AuthCard({ title, sub, children }: { title: string; sub?: string; children: ReactNode }) {
   return (
     <div className="auth">
-      <div className="auth__brand"><span className="logo-mark" aria-hidden="true" />Proxelo</div>
+      <div className="auth__brand"><Logo size={24} />Proxelo</div>
       <div className="auth__card">
         <h1 className="auth__title">{title}</h1>
         {sub && <p className="muted">{sub}</p>}

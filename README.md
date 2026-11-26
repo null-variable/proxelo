@@ -1,3 +1,8 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/banner-dark.jpg">
+  <img alt="Proxelo" src="docs/images/banner-light.jpg">
+</picture>
+
 # Proxelo
 
 Proxelo is a web server, reverse proxy and load balancer managed through an

@@ -22,21 +22,25 @@ The two processes share nothing but the messages in
 Buffers). Neither imports the other's code, so each can be released on its
 own as long as the protocol stays compatible.
 
-```
-            browser / API client
-                    │ HTTPS (admin port, loopback by default)
-                    ▼
- ┌──────────────────────────────────┐        ┌────────────────────────────┐
- │ proxelo (control plane, Go)      │        │ proxelo-proxy (Rust)       │
- │                                  │ Unix   │                            │
- │ API ─ change sets ─ store (SQLite│ socket │ sync ─▶ validate ─▶ build  │
- │       │                          │ gRPC   │           ─▶ atomic swap   │
- │       ▼                          │◀──────▶│                            │
- │ compile ─▶ snapshot bytes ───────┼───────▶│ serve HTTP/1.1, HTTP/2, TLS│
- │ ACME, guard, audit, web console  │  acks, │                            │
- └──────────────────────────────────┘  stats └────────────────────────────┘
-                                                  ▲
-                                                  │ client traffic
+```mermaid
+flowchart LR
+    client["Browser / API client"] -- "HTTPS (admin port)" --> api
+    subgraph cp["proxelo — control plane (Go)"]
+        api["REST API<br/>web console"] --> cs["Change sets"]
+        cs --> store[("SQLite<br/>head · revisions · audit")]
+        cs --> compile["Compile"]
+        compile --> sim["Dry-load<br/>(proxelo-proxy sim)"]
+        compile --> dist["Distribute<br/>guard · ACME"]
+    end
+    subgraph dp["proxelo-proxy — data plane (Rust)"]
+        sync["sync"] --> build["validate · build"] --> swap["atomic swap"]
+        swap --> serve["serve HTTP/1.1 · HTTP/2 · TLS"]
+        swap --> lkg[("lkg.snap")]
+    end
+    dist -- "snapshot + SHA-256<br/>(gRPC over a Unix socket)" --> sync
+    sync -- "acks · traffic counters" --> dist
+    traffic["Client traffic"] --> serve
+    serve --> upstreams["Upstreams"]
 ```
 
 ## Resources
@@ -85,8 +89,42 @@ console draws its forms from it, so a new field needs no console change.
    While it is pending, proxies report traffic counters every 5 s and a guard
    compares the 5xx and upstream failure rates with the five minutes before.
 
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> Draft: edit
+    Draft --> Draft: validate, diff
+    Draft --> Pending: apply (merged, compiled, dry-loaded)
+    Draft --> Confirmed: apply without confirm
+    Pending --> Confirmed: confirm
+    Pending --> Reverted: timer expires, or guard trips (when set to roll back)
+    Reverted --> [*]: last confirmed configuration as a new revision
+    Confirmed --> [*]
+```
+
 Rollback creates a new revision with an older configuration, so history
 stays linear. The newest 500 revisions and every tagged one are kept.
+
+### Inside the proxy
+
+```mermaid
+sequenceDiagram
+    participant C as control plane
+    participant P as proxy
+    participant L as listeners
+    participant R as requests in flight
+    C->>P: snapshot rev N+1 + SHA-256
+    P->>P: check hash, validate, build runtime<br/>(tables, regexes, TLS contexts)
+    P->>L: bind new sockets, keep unchanged ones
+    alt build or bind fails
+        P-->>C: reject (keep serving rev N)
+    else
+        P->>P: atomic swap to rev N+1
+        Note over R: started on rev N, finish on rev N
+        P->>P: write lkg.snap
+        P-->>C: ack rev N+1
+    end
+```
 
 ## Why snapshots
 
@@ -129,6 +167,21 @@ The request phases follow nginx: site rewrites and return, route lookup,
 route rewrites, `try_files`, content. Internal redirects, `rewrite last` and
 named routes re-enter the phases the way nginx does. Once a keepalive
 connection is warm, serving a request does not allocate; a test enforces it.
+
+```mermaid
+flowchart TD
+    accept["accept · TLS · HTTP/1.1 or HTTP/2"] --> site["pick site<br/>(listener, Host)"]
+    site --> srw["site rewrite · return"]
+    srw --> find["find route<br/>(=, ^~, regex, prefix)"]
+    find --> rrw["route rewrite"]
+    rrw -- "rewrite last" --> find
+    rrw --> try["try_files"]
+    try -- "fallback URI" --> find
+    try --> content["content<br/>static · proxy · return"]
+    content -- "error_page" --> find
+    content --> out["headers · range · response"]
+    out --> log["access log · metrics"]
+```
 
 ## Security boundaries
 

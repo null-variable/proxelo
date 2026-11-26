@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { KINDS, type Kind } from "../api/types";
-import { Toasts, timeAgo } from "../components/ui";
+import { Logo, Toasts, timeAgo } from "../components/ui";
 import { useApp } from "./context";
 
 interface NavItem {
@@ -67,7 +67,7 @@ export function Shell() {
       <header className="topbar">
         <div className="topbar__brand">
           <button className="btn btn--ghost btn--sm menu-btn" aria-label="Menu" aria-expanded={menu} onClick={() => setMenu(!menu)}>☰</button>
-          <span className="logo-mark" aria-hidden="true" />
+          <Logo />
           Proxelo
         </div>
         <select className="input input--sm topbar__changeset" aria-label="Active change set" value={app.changeset} onChange={(e) => app.setChangeSet(e.target.value)}>
