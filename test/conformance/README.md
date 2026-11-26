@@ -85,7 +85,8 @@ directive coverage.
 
 Without Docker, `-nginx path/to/sbin/nginx` runs a local build of the same
 nginx version instead; it needs the modules the cases use
-(`--with-http_auth_request_module --with-http_realip_module`). nginx built
+(`--with-http_auth_request_module --with-http_realip_module
+--with-http_gzip_static_module`). nginx built
 on macOS matches `location ~` regexes caselessly, unlike the Linux
 reference, so a case relying on case-sensitive regexes differs there.
 

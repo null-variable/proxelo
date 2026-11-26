@@ -177,6 +177,58 @@ function ArrayField({ ctx, title, desc, s, value, onChange, path, err }: { ctx: 
     onChange(n);
   };
   const blank = item.type === "object" ? {} : item.type === "integer" ? 0 : "";
+  const cols = tableColumns(ctx, item);
+  if (cols) {
+    return (
+      <div className="field">
+        <span className="field__label" id={id}>{title}</span>
+        <div className="data-table-wrap">
+          <table className="data-table data-table--edit" aria-labelledby={id}>
+            <thead>
+              <tr>
+                {cols.map(([k]) => <th key={k}>{label(k)}</th>)}
+                <th><span className="sr-only">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              {value.map((v, i) => {
+                const row = (v as Obj) ?? {};
+                const sub = `${path}[${i}]`;
+                return (
+                  <tr key={i}>
+                    {cols.map(([k, cs]) => {
+                      const cellErr = errorAt(ctx.errors, `${sub}.${k}`);
+                      return (
+                        <td key={k}>
+                          <Scalar id={`${id}-${i}-${k}`} ctx={ctx} s={cs} value={row[k]} err={cellErr} label={`${label(k)} ${i + 1}`}
+                            onChange={(x) => {
+                              const n = { ...row };
+                              if (isEmpty(x)) delete n[k];
+                              else n[k] = x;
+                              set(i, n);
+                            }} />
+                          {cellErr && <span className="field__error" role="alert">{cellErr}</span>}
+                        </td>
+                      );
+                    })}
+                    <td className="data-table__actions">
+                      <button type="button" className="btn btn--ghost btn--sm" disabled={i === 0} onClick={() => move(i, -1)} aria-label="Move up">↑</button>
+                      <button type="button" className="btn btn--ghost btn--sm" disabled={i === value.length - 1} onClick={() => move(i, 1)} aria-label="Move down">↓</button>
+                      <button type="button" className="btn btn--danger-text btn--sm" onClick={() => onChange(value.filter((_, j) => j !== i))}>Remove</button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div className="mt-sm">
+          <button type="button" className="btn btn--sm" onClick={() => onChange([...value, blank])}>Add</button>
+        </div>
+        {err ? <span className="field__error" role="alert">{err}</span> : desc && <span className="field__hint">{desc}</span>}
+      </div>
+    );
+  }
   return (
     <div className="field">
       <span className="field__label" id={id}>{title}</span>
@@ -213,6 +265,15 @@ function ArrayField({ ctx, title, desc, s, value, onChange, path, err }: { ctx: 
       {err ? <span className="field__error" role="alert">{err}</span> : desc && <span className="field__hint">{desc}</span>}
     </div>
   );
+}
+
+// Rows of a few scalar fields edit as a table.
+function tableColumns(ctx: Ctx, item: Schema): [string, Schema][] | undefined {
+  if (item.type !== "object" || !item.properties) return undefined;
+  const keys = item["x-order"] ?? Object.keys(item.properties);
+  if (keys.length < 2 || keys.length > 4) return undefined;
+  const cols = keys.map((k) => [k, resolve(ctx.root, item.properties![k]!)] as [string, Schema]);
+  return cols.every(([, c]) => c.type === "string" || c.type === "integer" || c.type === "boolean") ? cols : undefined;
 }
 
 function MapField({ ctx, s, value, onChange, path }: { ctx: Ctx; s: Schema; value: Obj; onChange: (v: Obj) => void; path: string }) {

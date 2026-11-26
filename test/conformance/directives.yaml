@@ -587,19 +587,25 @@ directives:
   - name: gzip_vary
     module: ngx_http_core_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.compression.vary
   - name: gzip_http_version
     module: ngx_http_core_module
     contexts: [http, server, location]
-    status: missing
+    status: partial
+    field: Policy.spec.compression.http10
+    note: 1.0 or 1.1 (http10)
   - name: gzip_proxied
     module: ngx_http_core_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.compression.proxied
   - name: gzip_disable
     module: ngx_http_core_module
     contexts: [http, server, location]
-    status: missing
+    status: partial
+    field: Policy.spec.compression.disable
+    note: PCRE2 regex only; no "msie6"
   - name: disable_symlinks
     module: ngx_http_core_module
     contexts: [http, server, location]
@@ -843,7 +849,9 @@ directives:
   - name: geo
     module: ngx_http_geo_module
     contexts: [http]
-    status: missing
+    status: partial
+    field: Lookup.spec.geo
+    note: CIDR entries; no ranges, delete, include or proxy
   - name: geoip_country
     module: ngx_http_geoip_module
     contexts: [http]
@@ -991,35 +999,44 @@ directives:
   - name: gunzip
     module: ngx_http_gunzip_filter_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.compression.gunzip
   - name: gunzip_buffers
     module: ngx_http_gunzip_filter_module
     contexts: [http, server, location]
-    status: missing
+    status: fixed
+    note: streamed without fixed buffers
   - name: gzip
     module: ngx_http_gzip_filter_module
     contexts: [http, server, location, location if]
-    status: missing
+    status: implemented
+    field: Policy.spec.compression.encodings
+    note: compression policy; also br and zstd
   - name: gzip_buffers
     module: ngx_http_gzip_filter_module
     contexts: [http, server, location]
-    status: missing
+    status: fixed
+    note: streamed without fixed buffers
   - name: gzip_types
     module: ngx_http_gzip_filter_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.compression.types
   - name: gzip_comp_level
     module: ngx_http_gzip_filter_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.compression.gzipLevel
   - name: gzip_window
     module: ngx_http_gzip_filter_module
     contexts: [http, server, location]
-    status: missing
+    status: fixed
+    note: "15"
   - name: gzip_hash
     module: ngx_http_gzip_filter_module
     contexts: [http, server, location]
-    status: missing
+    status: fixed
+    note: "8"
   - name: postpone_gzipping
     module: ngx_http_gzip_filter_module
     contexts: [http, server, location]
@@ -1031,11 +1048,13 @@ directives:
   - name: gzip_min_length
     module: ngx_http_gzip_filter_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.compression.minLength
   - name: gzip_static
     module: ngx_http_gzip_static_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.compression.static
   - name: expires
     module: ngx_http_headers_filter_module
     contexts: [http, server, location, location if]
@@ -1169,15 +1188,19 @@ directives:
   - name: map
     module: ngx_http_map_module
     contexts: [http]
-    status: missing
+    status: implemented
+    field: Lookup.spec.map
+    note: lookup table resource
   - name: map_hash_max_size
     module: ngx_http_map_module
     contexts: [http]
-    status: missing
+    status: fixed
+    note: no limit
   - name: map_hash_bucket_size
     module: ngx_http_map_module
     contexts: [http]
-    status: missing
+    status: fixed
+    note: no limit
   - name: memcached_pass
     module: ngx_http_memcached_module
     contexts: [location, location if]
@@ -1832,7 +1855,8 @@ directives:
   - name: split_clients
     module: ngx_http_split_clients_module
     contexts: [http]
-    status: missing
+    status: implemented
+    field: Lookup.spec.split
   - name: ssi
     module: ngx_http_ssi_filter_module
     contexts: [http, server, location, location if]

@@ -16,6 +16,7 @@ package main
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -561,6 +562,18 @@ func send(ctx context.Context, client *http.Client, r Req, up *echo) Response {
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return Response{Err: err.Error()}
+	}
+	// Encoders differ in the bytes they produce for the same input; the
+	// decoded body is what must match.
+	if strings.EqualFold(resp.Header.Get("Content-Encoding"), "gzip") && len(body) > 0 {
+		zr, err := gzip.NewReader(bytes.NewReader(body))
+		if err != nil {
+			return Response{Err: "bad gzip body: " + err.Error()}
+		}
+		body, err = io.ReadAll(zr)
+		if err != nil {
+			return Response{Err: "bad gzip body: " + err.Error()}
+		}
 	}
 	// Generated error pages name the server; that is the only expected
 	// difference in them.

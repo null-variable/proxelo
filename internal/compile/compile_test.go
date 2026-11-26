@@ -435,3 +435,125 @@ func TestValidateAccessPolicies(t *testing.T) {
 		t.Errorf("ParseSize = %d %v", n, err)
 	}
 }
+
+func TestCompileLookupsAndCompression(t *testing.T) {
+	cfg := validConfig()
+	cfg.Lookups = []*model.Lookup{
+		// backend sorts before country, which it uses: the compiled order must swap them.
+		{Meta: meta("lk_backend", "backend"), Spec: model.LookupSpec{Type: model.LookupMap, Source: "$country", Map: &model.MapTable{
+			Entries: []model.MapEntry{{Key: "kr", Value: "seoul"}, {Match: model.MapRegexCI, Key: "^u", Value: "us-$1"}},
+			Default: "any",
+		}}},
+		{Meta: meta("lk_country", "country"), Spec: model.LookupSpec{Type: model.LookupGeo, Geo: &model.GeoTable{
+			Entries: []model.GeoEntry{{Network: "10.1.2.3/8", Value: "kr"}, {Network: "::1", Value: "lo"}},
+		}}},
+		{Meta: meta("lk_ab", "ab-test"), Spec: model.LookupSpec{Type: model.LookupSplit, Source: "$remote_addr", Split: &model.SplitClients{
+			Buckets: []model.SplitBucket{{Percent: "0.5%", Value: "a"}, {Percent: "*", Value: "b"}},
+		}}},
+	}
+	br := uint32(4)
+	cfg.Policies = []*model.Policy{
+		{Meta: meta("pol_gz", "gz"), Spec: model.PolicySpec{Type: model.PolicyCompression, Compression: &model.CompressionPolicy{
+			Encodings: []string{"zstd", "gzip"}, Types: []string{"text/css"}, Proxied: []string{"any"}, Static: "on",
+		}}},
+		{Meta: meta("pol_br", "br"), Spec: model.PolicySpec{Type: model.PolicyCompression, Compression: &model.CompressionPolicy{
+			Encodings: []string{"br"}, MinLength: "1k", BrotliLevel: &br, Vary: true,
+		}}},
+	}
+	cfg.Sites[0].Spec.Policies = []string{"pol_gz"}
+	cfg.Routes[0].Spec.Policies = []string{"pol_br"}
+	for _, r := range cfg.Lookups {
+		if es := model.Validate(r); len(es) > 0 {
+			t.Fatalf("%s: %v", r.ID, es)
+		}
+	}
+	snap, err := Compile(cfg, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, l := range snap.GetLookups() {
+		names = append(names, l.GetName())
+	}
+	if strings.Join(names, ",") != "ab_test,country,backend" {
+		t.Fatalf("lookups = %v", names)
+	}
+	g := snap.GetLookups()[1]
+	if g.GetSource() != "$remote_addr" || g.GetGeo().GetEntries()[0].GetCidr() != "10.0.0.0/8" || g.GetGeo().GetEntries()[1].GetCidr() != "::1/128" {
+		t.Fatalf("geo = %v", g)
+	}
+	if e := snap.GetLookups()[2].GetMap().GetEntries(); e[0].GetKind() != snapshotv1.LookupMapEntry_KIND_EXACT || e[1].GetKind() != snapshotv1.LookupMapEntry_KIND_REGEX_CI {
+		t.Fatalf("map = %v", e)
+	}
+	if p := snap.GetLookups()[0].GetSplit().GetParts(); p[0].GetBasisPoints() != 50 || p[1].GetBasisPoints() != 0 {
+		t.Fatalf("split = %v", p)
+	}
+	site := snap.GetSites()[0]
+	if c := site.GetCompression(); c.GetMinLength() != 20 || c.GetEncodings()[0] != snapshotv1.Compression_ENCODING_ZSTD ||
+		c.GetStatic() != snapshotv1.Compression_STATIC_ON || c.GetProxied()[0] != snapshotv1.Compression_PROXIED_ANY {
+		t.Fatalf("site compression = %v", c)
+	}
+	for _, r := range site.GetRoutes() {
+		c := r.GetCompression()
+		switch r.GetId() {
+		case "rt_api":
+			// The closest policy wins whole.
+			if c.GetMinLength() != 1024 || c.GetBrotliLevel() != 4 || !c.GetVary() || c.GetStatic() != snapshotv1.Compression_STATIC_UNSPECIFIED {
+				t.Fatalf("api compression = %v", c)
+			}
+		case "rt_root":
+			if c.GetEncodings()[1] != snapshotv1.Compression_ENCODING_GZIP {
+				t.Fatalf("root compression = %v", c)
+			}
+		}
+	}
+
+	cfg.Lookups[1].Spec.Source = "$backend"
+	_, err = Compile(cfg, 1)
+	wantPaths(t, err, "lookups[lk_backend].spec")
+	cfg.Lookups[1].Spec.Source = ""
+	cfg.Lookups[2].Spec.Variable = "country"
+	_, err = Compile(cfg, 1)
+	wantPaths(t, err, "lookups[lk_country].spec.variable")
+}
+
+func TestValidateLookupsAndCompression(t *testing.T) {
+	bad := []model.LookupSpec{
+		{Type: model.LookupMap, Map: &model.MapTable{}},
+		{Type: model.LookupMap, Source: "$host", Map: &model.MapTable{Entries: []model.MapEntry{{Key: "A"}, {Key: "a"}}}},
+		{Type: model.LookupMap, Source: "$host", Map: &model.MapTable{Entries: []model.MapEntry{{Match: "glob", Key: "a"}}}},
+		{Type: model.LookupGeo, Geo: &model.GeoTable{Entries: []model.GeoEntry{{Network: "10.0.0.0/33"}}}},
+		{Type: model.LookupSplit, Source: "$host", Split: &model.SplitClients{Buckets: []model.SplitBucket{{Percent: "*"}, {Percent: "1%"}}}},
+		{Type: model.LookupSplit, Source: "$host", Split: &model.SplitClients{Buckets: []model.SplitBucket{{Percent: "60%"}, {Percent: "50%"}}}},
+		{Type: model.LookupSplit, Source: "$host", Split: &model.SplitClients{Buckets: []model.SplitBucket{{Percent: "0.125%"}}}},
+		{Type: model.LookupGeo, Variable: "Bad-Name", Geo: &model.GeoTable{}},
+		{Type: model.LookupGeo, Map: &model.MapTable{}},
+	}
+	for i, sp := range bad {
+		if es := model.Validate(&model.Lookup{Meta: meta("lk_x", "x"), Spec: sp}); len(es) == 0 {
+			t.Errorf("lookup case %d: no error", i)
+		}
+	}
+	big := uint32(12)
+	badC := []model.CompressionPolicy{
+		{},
+		{Encodings: []string{"deflate"}},
+		{Encodings: []string{"gzip", "gzip"}},
+		{Encodings: []string{"gzip"}, GzipLevel: 10},
+		{Encodings: []string{"br"}, BrotliLevel: &big},
+		{Encodings: []string{"gzip"}, Proxied: []string{"sometimes"}},
+		{Static: "maybe"},
+		{Encodings: []string{"gzip"}, Types: []string{"html"}},
+	}
+	for i, c := range badC {
+		sp := model.PolicySpec{Type: model.PolicyCompression, Compression: &c}
+		if es := model.Validate(&model.Policy{Meta: meta("pol_x", "x"), Spec: sp}); len(es) == 0 {
+			t.Errorf("compression case %d: no error", i)
+		}
+	}
+	for s, want := range map[string]uint32{"20%": 2000, "0.5%": 50, "0.25%": 25, "100%": 10000} {
+		if n, ok := model.ParsePercent(s); !ok || n != want {
+			t.Errorf("ParsePercent(%q) = %d %v", s, n, ok)
+		}
+	}
+}

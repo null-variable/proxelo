@@ -102,6 +102,7 @@ func (c *compiler) compile(cfg model.Config, revision uint64) *snapshotv1.Snapsh
 	policies := newIndex(c, "policies", cfg.Policies)
 
 	snap := &snapshotv1.Snapshot{Revision: revision}
+	snap.Lookups = c.lookups(newIndex(c, "lookups", cfg.Lookups))
 
 	// Certificates not issued yet (ACME) have no chain and are left out;
 	// references to them are dropped until they are.
@@ -194,6 +195,7 @@ func (c *compiler) compile(cfg model.Config, revision uint64) *snapshotv1.Snapsh
 		out.ResponseHeaders = eff.response
 		out.AccessLog = eff.log
 		out.RealIp = realIP(st.sitePolicies)
+		out.Compression = compression(st.sitePolicies)
 		out.Rewrites = st.rewrites(s.Spec.Rewrite)
 		if r := s.Spec.Return; r != nil {
 			out.Return = &snapshotv1.ReturnAction{Status: r.Status, Text: r.Text}
@@ -509,6 +511,7 @@ func (st *site) route(r *model.Route, pols []*model.Policy) *snapshotv1.Route {
 	eff := st.effective(pols)
 	out.ResponseHeaders, out.RequestHeaders, out.AccessLog = eff.response, eff.request, eff.log
 	out.Access, out.Bandwidth = eff.access, eff.bandwidth
+	out.Compression = compression(pols)
 
 	a := r.Spec.Action
 	switch {

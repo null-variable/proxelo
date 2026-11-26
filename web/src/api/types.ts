@@ -102,7 +102,7 @@ export interface Resource {
   spec: any;
 }
 
-export type Kind = "sites" | "routes" | "listeners" | "upstreams" | "certificates" | "policies";
+export type Kind = "sites" | "routes" | "listeners" | "upstreams" | "certificates" | "policies" | "lookups";
 
 export const KINDS: Record<Kind, { label: string; one: string }> = {
   sites: { label: "Sites", one: "site" },
@@ -111,6 +111,7 @@ export const KINDS: Record<Kind, { label: string; one: string }> = {
   upstreams: { label: "Upstreams", one: "upstream" },
   certificates: { label: "Certificates", one: "certificate" },
   policies: { label: "Policies", one: "policy" },
+  lookups: { label: "Lookup tables", one: "lookup table" },
 };
 
 export function isKind(s: string): s is Kind {
@@ -130,6 +131,10 @@ export const TEMPLATES: Record<Kind, Partial<Resource>> = {
   policies: {
     name: "security-headers",
     spec: { type: "headers", headers: { response: { set: { "Strict-Transport-Security": "max-age=31536000" } } } },
+  },
+  lookups: {
+    name: "mobile",
+    spec: { type: "map", source: "$http_user_agent", map: { entries: [{ match: "regexCI", key: "mobile|android|iphone", value: "1" }], default: "0" } },
   },
 };
 

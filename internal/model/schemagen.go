@@ -65,6 +65,7 @@ func main() {
 	kinds := map[string]string{
 		"listeners": "ListenerSpec", "sites": "SiteSpec", "routes": "RouteSpec",
 		"upstreams": "UpstreamSpec", "certificates": "CertificateSpec", "policies": "PolicySpec",
+		"lookups": "LookupSpec",
 	}
 	out := doc{
 		Schema:  "https://json-schema.org/draft/2020-12/schema",

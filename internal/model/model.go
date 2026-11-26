@@ -7,6 +7,7 @@ package model
 //go:generate go run schemagen.go
 
 import (
+	"strings"
 	"time"
 
 	"github.com/oklog/ulid/v2"
@@ -58,10 +59,11 @@ var (
 	UpstreamKind    = Kind{Plural: "upstreams", IDPrefix: "up", New: func() Resource { return &Upstream{} }}
 	CertificateKind = Kind{Plural: "certificates", IDPrefix: "cert", New: func() Resource { return &Certificate{} }}
 	PolicyKind      = Kind{Plural: "policies", IDPrefix: "pol", New: func() Resource { return &Policy{} }}
+	LookupKind      = Kind{Plural: "lookups", IDPrefix: "lk", New: func() Resource { return &Lookup{} }}
 )
 
 // Kinds lists every resource kind in a fixed order.
-var Kinds = []Kind{ListenerKind, SiteKind, RouteKind, UpstreamKind, CertificateKind, PolicyKind}
+var Kinds = []Kind{ListenerKind, SiteKind, RouteKind, UpstreamKind, CertificateKind, PolicyKind, LookupKind}
 
 // KindByPlural finds a kind by its collection name.
 func KindByPlural(plural string) (Kind, bool) {
@@ -536,6 +538,7 @@ const (
 	PolicyBasicAuth   PolicyType = "basicAuth"
 	PolicyForwardAuth PolicyType = "forwardAuth"
 	PolicyRealIP      PolicyType = "realIp"
+	PolicyCompression PolicyType = "compression"
 )
 
 // PolicySpec carries the settings for Type and nothing else.
@@ -550,6 +553,7 @@ type PolicySpec struct {
 	BasicAuth   *BasicAuthPolicy   `json:"basicAuth,omitempty"`
 	ForwardAuth *ForwardAuthPolicy `json:"forwardAuth,omitempty"`
 	RealIP      *RealIPPolicy      `json:"realIp,omitempty"`
+	Compression *CompressionPolicy `json:"compression,omitempty"`
 }
 
 // HeadersPolicy replaces nginx add_header, proxy_set_header and
@@ -693,6 +697,131 @@ type RealIPPolicy struct {
 	Recursive bool `json:"recursive,omitempty"`
 }
 
+// CompressionPolicy is nginx gzip, gzip_static and gunzip, plus brotli and
+// zstd. The closest policy applies.
+type CompressionPolicy struct {
+	// Dynamic encodings in order of preference: "gzip", "br", "zstd". The
+	// first one the client accepts is used. Empty: none, only static and
+	// gunzip apply.
+	Encodings []string `json:"encodings,omitempty"`
+	// Media types encoded besides text/html, or "*" for any (nginx
+	// gzip_types).
+	Types []string `json:"types,omitempty"`
+	// Responses shorter than this are sent as is, such as "1k" (nginx
+	// gzip_min_length). Empty: 20 bytes.
+	MinLength string `json:"minLength,omitempty"`
+	// gzip 1-9 (default 1), br 0-11 (default 6), zstd 1-22 (default 3).
+	GzipLevel   uint32  `json:"gzipLevel,omitempty"`
+	BrotliLevel *uint32 `json:"brotliLevel,omitempty"`
+	ZstdLevel   uint32  `json:"zstdLevel,omitempty"`
+	// Encode responses to requests with Via when one of these holds (nginx
+	// gzip_proxied): "expired", "no-cache", "no-store", "private",
+	// "no_last_modified", "no_etag", "auth", "any". Empty: never.
+	Proxied []string `json:"proxied,omitempty"`
+	// Send Vary: Accept-Encoding (nginx gzip_vary).
+	Vary bool `json:"vary,omitempty"`
+	// Serve file.gz next to a static file: "on" to clients that accept
+	// gzip, "always" to all (nginx gzip_static).
+	Static string `json:"static,omitempty"`
+	// Decode gzip responses for clients that do not accept gzip (nginx
+	// gunzip).
+	Gunzip bool `json:"gunzip,omitempty"`
+	// Also encode for HTTP/1.0 clients (nginx gzip_http_version 1.0).
+	HTTP10 bool `json:"http10,omitempty"`
+	// PCRE2 pattern; clients whose User-Agent matches get plain responses
+	// (nginx gzip_disable).
+	Disable string `json:"disable,omitempty"`
+}
+
+// Lookup defines a variable computed from others: nginx map, geo or
+// split_clients. Its name is the variable, usable as $name in every template
+// of the configuration.
+type Lookup struct {
+	Meta
+	Spec LookupSpec `json:"spec"`
+}
+
+type LookupType string
+
+const (
+	LookupMap   LookupType = "map"
+	LookupGeo   LookupType = "geo"
+	LookupSplit LookupType = "split"
+)
+
+// LookupSpec carries the table for Type and nothing else.
+type LookupSpec struct {
+	Type LookupType `json:"type"`
+	// Variable name without '$': lowercase letters, digits and '_'. Empty:
+	// the resource name with '-' as '_'.
+	Variable string `json:"variable,omitempty"`
+	// Template looked up, such as "$http_user_agent". geo: an address,
+	// $remote_addr when empty.
+	Source string        `json:"source,omitempty"`
+	Map    *MapTable     `json:"map,omitempty"`
+	Geo    *GeoTable     `json:"geo,omitempty"`
+	Split  *SplitClients `json:"split,omitempty"`
+}
+
+// MapTable is nginx map. Exact keys compare case-insensitively and win;
+// regexes are then tried in order.
+type MapTable struct {
+	Entries []MapEntry `json:"entries"`
+	// Value when nothing matches, a template. Empty: an empty value.
+	Default string `json:"default,omitempty"`
+	// Keys may be "*.example.com", ".example.com" or "www.example.*" (nginx
+	// map hostnames).
+	Hostnames bool `json:"hostnames,omitempty"`
+}
+
+type MapMatch string
+
+const (
+	MapExact   MapMatch = "exact"
+	MapRegex   MapMatch = "regex"
+	MapRegexCI MapMatch = "regexCI"
+)
+
+type MapEntry struct {
+	// Empty: exact.
+	Match MapMatch `json:"match,omitempty"`
+	Key   string   `json:"key"`
+	// A template; a regex's groups are $1..$9.
+	Value string `json:"value"`
+}
+
+// GeoTable is nginx geo: the longest network that contains the address wins.
+type GeoTable struct {
+	Entries []GeoEntry `json:"entries"`
+	Default string     `json:"default,omitempty"`
+}
+
+type GeoEntry struct {
+	// CIDR or address.
+	Network string `json:"network"`
+	Value   string `json:"value"`
+}
+
+// SplitClients is nginx split_clients: the source's hash picks a bucket by
+// percentage.
+type SplitClients struct {
+	Buckets []SplitBucket `json:"buckets"`
+}
+
+type SplitBucket struct {
+	// Such as "0.5%" or "20%"; "*" takes the rest and must come last.
+	Percent string `json:"percent"`
+	Value   string `json:"value"`
+}
+
+// VariableName is the variable a lookup defines.
+func (l *Lookup) VariableName() string {
+	if l.Spec.Variable != "" {
+		return l.Spec.Variable
+	}
+	return strings.ReplaceAll(l.Name, "-", "_")
+}
+
 // Config is the full set of resources compiled into one snapshot.
 type Config struct {
 	Listeners    []*Listener    `json:"listeners,omitempty"`
@@ -701,6 +830,7 @@ type Config struct {
 	Upstreams    []*Upstream    `json:"upstreams,omitempty"`
 	Certificates []*Certificate `json:"certificates,omitempty"`
 	Policies     []*Policy      `json:"policies,omitempty"`
+	Lookups      []*Lookup      `json:"lookups,omitempty"`
 }
 
 // Of returns the resources of kind.
@@ -724,6 +854,8 @@ func (c *Config) Of(kind Kind) []Resource {
 		add(len(c.Certificates), func(i int) Resource { return c.Certificates[i] })
 	case PolicyKind.Plural:
 		add(len(c.Policies), func(i int) Resource { return c.Policies[i] })
+	case LookupKind.Plural:
+		add(len(c.Lookups), func(i int) Resource { return c.Lookups[i] })
 	}
 	return out
 }
@@ -743,6 +875,8 @@ func (c *Config) Add(r Resource) {
 		c.Certificates = append(c.Certificates, r)
 	case *Policy:
 		c.Policies = append(c.Policies, r)
+	case *Lookup:
+		c.Lookups = append(c.Lookups, r)
 	default:
 		panic("model: unknown resource type")
 	}

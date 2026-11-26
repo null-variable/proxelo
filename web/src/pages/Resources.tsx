@@ -1,5 +1,5 @@
 // Resource lists and editors: Sites, Routes, Listeners, Upstreams,
-// Certificates, Policies. Editors are generated from the schema, with a Raw
+// Certificates, Policies, Lookup tables. Editors are generated from the schema, with a Raw
 // JSON tab.
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
@@ -80,6 +80,8 @@ function summary(kind: Kind, r: Resource, refs: Refs | undefined): ReactNode {
       return certStatus(r);
     case "policies":
       return s.type;
+    case "lookups":
+      return <span className="mono">${s.variable || r.name.replaceAll("-", "_")} ← {s.type === "geo" ? s.source || "$remote_addr" : s.source}</span>;
   }
 }
 
@@ -294,6 +296,7 @@ export function ResourceEdit({ kind, id }: { kind: Kind; id: string }) {
             onClick={() => setDoc({ ...doc, enabled: doc.enabled === false ? undefined : false })} />
         </div>
       </Card>
+      {kind === "lookups" && canEdit && view === "form" && <LookupImport spec={doc.spec ?? {}} onChange={(spec) => setDoc({ ...doc, spec })} />}
       <Card title="Specification">
         {view === "form" ? (
           <fieldset className="fieldset-plain" disabled={!canEdit}>
@@ -370,6 +373,75 @@ function SiteRoutes({ site, refs }: { site: Draft; refs: Refs | undefined }) {
           </table>
         </div>
       )}
+    </Card>
+  );
+}
+
+// Columns of each lookup table type, in CSV order.
+const LOOKUP_COLUMNS: Record<string, { list: string; cols: string[] }> = {
+  map: { list: "entries", cols: ["key", "value", "match"] },
+  geo: { list: "entries", cols: ["network", "value"] },
+  split: { list: "buckets", cols: ["percent", "value"] },
+};
+
+// parseCSV reads RFC 4180 CSV: quoted fields may hold commas, quotes ("")
+// and line breaks.
+export function parseCSV(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let f = "";
+  let quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i]!;
+    if (quoted) {
+      if (c === '"' && text[i + 1] === '"') { f += '"'; i++; }
+      else if (c === '"') quoted = false;
+      else f += c;
+    } else if (c === '"' && f === "") quoted = true;
+    else if (c === ",") { row.push(f); f = ""; }
+    else if (c === "\n" || c === "\r") {
+      if (c === "\r" && text[i + 1] === "\n") i++;
+      row.push(f); f = "";
+      if (row.some((x) => x !== "")) rows.push(row);
+      row = [];
+    } else f += c;
+  }
+  row.push(f);
+  if (row.some((x) => x !== "")) rows.push(row);
+  return rows;
+}
+
+// LookupImport replaces or extends a lookup table's rows from CSV. A first
+// row naming the columns sets their order.
+function LookupImport({ spec, onChange }: { spec: Record<string, any>; onChange: (spec: Record<string, any>) => void }) {
+  const [text, setText] = useState("");
+  const [append, setAppend] = useState(false);
+  const t = LOOKUP_COLUMNS[spec.type as string];
+  if (!t) return null;
+  const run = () => {
+    const rows = parseCSV(text);
+    let cols = t.cols;
+    if (rows[0] && rows[0].every((h) => t.cols.includes(h.trim()))) cols = rows.shift()!.map((h) => h.trim());
+    const items = rows.map((r) => Object.fromEntries(cols.flatMap((c, i) => (r[i] ? [[c, r[i]]] : []))));
+    const table = spec[spec.type] ?? {};
+    onChange({ ...spec, [spec.type]: { ...table, [t.list]: [...(append ? table[t.list] ?? [] : []), ...items] } });
+    toast(`Imported ${items.length} row${items.length === 1 ? "" : "s"}`);
+    setText("");
+  };
+  return (
+    <Card title="Import CSV">
+      <div className="stack">
+        <Field id="lookup-csv" label="Rows" hint={`Columns: ${t.cols.join(", ")}. A header row may name them in another order.`}>
+          <textarea id="lookup-csv" className="input mono" rows={5} value={text} onChange={(e) => setText(e.target.value)} spellCheck={false} />
+        </Field>
+        <div className="row">
+          <label className="row small">
+            <input type="checkbox" checked={append} onChange={(e) => setAppend(e.target.checked)} /> Append to existing rows
+          </label>
+          <span className="grow" />
+          <button type="button" className="btn btn--sm" disabled={!text.trim()} onClick={run}>Import</button>
+        </div>
+      </div>
     </Card>
   );
 }

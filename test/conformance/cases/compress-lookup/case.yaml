@@ -1,0 +1,26 @@
+directives: [gzip, gzip_vary, gzip_types, gzip_static, gzip_min_length, map, geo, split_clients]
+requests:
+  - {target: /a.html, headers: {Host: example.com, Accept-Encoding: gzip}}
+  - {method: HEAD, target: /a.html, headers: {Host: example.com, Accept-Encoding: gzip}}
+  - {target: /a.html, headers: {Host: example.com}}
+  - {target: /a.html, headers: {Host: example.com, Accept-Encoding: "br, gzip;q=0.5"}}
+  - {target: /a.html, headers: {Host: example.com, Accept-Encoding: "gzip;q=0"}}
+  - {target: /a.html, headers: {Host: example.com, Accept-Encoding: gzip, Range: bytes=0-9}}
+  - {target: /a.html, headers: {Host: example.com, Accept-Encoding: gzip, Via: 1.1 cache}}
+  - {target: /b.html, headers: {Host: example.com, Accept-Encoding: gzip}}
+  - {target: /b.html, headers: {Host: example.com}}
+  - {target: /s.css, headers: {Host: example.com, Accept-Encoding: gzip}}
+  - {target: /css/s.css, headers: {Host: example.com, Accept-Encoding: gzip}}
+  - {target: /missing, headers: {Host: example.com, Accept-Encoding: gzip}}
+  - {target: /up/x, headers: {Host: example.com, Accept-Encoding: gzip}}
+  - {target: /up/x, headers: {Host: example.com}}
+  - {target: /up/x, headers: {Host: example.com, Accept-Encoding: gzip, X-Echo-Status: "500"}}
+  - {target: /lk/, headers: {Host: example.com}}
+  - {target: /lk/, headers: {Host: example.com, X-Kind: api, X-Ip: 10.1.2.3, X-User: alice}}
+  - {target: /lk/, headers: {Host: example.com, X-Kind: API, X-Ip: 10.9.9.9, X-User: bob}}
+  - {target: /lk/, headers: {Host: example.com, X-Kind: web, X-Ip: "2001:db8::1", X-User: carol}}
+  - {target: /lk/, headers: {Host: example.com, X-Kind: admin-x, X-Ip: bogus, X-User: dave}}
+  - {target: /lk/, headers: {Host: example.com, X-Kind: "", X-User: erin}}
+  # Responses that close the connection are encoded too.
+  - {target: /missing, headers: {Host: example.com, Accept-Encoding: gzip, Connection: close}}
+  - {target: /a.html, headers: {Host: example.com, Accept-Encoding: gzip, Connection: close}}

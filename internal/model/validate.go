@@ -85,6 +85,8 @@ func Validate(r Resource) FieldErrors {
 		r.Spec.validate(&es)
 	case *Policy:
 		r.Spec.validate(&es)
+	case *Lookup:
+		r.Spec.validate(&es, r.VariableName())
 	}
 	return es
 }
@@ -163,6 +165,7 @@ func (s *PolicySpec) validate(es *FieldErrors) {
 		PolicyBasicAuth:   s.BasicAuth != nil,
 		PolicyForwardAuth: s.ForwardAuth != nil,
 		PolicyRealIP:      s.RealIP != nil,
+		PolicyCompression: s.Compression != nil,
 	}
 	for _, t := range slices.Sorted(maps.Keys(set)) {
 		if set[t] && t != s.Type {
@@ -284,7 +287,179 @@ func (s *PolicySpec) validate(es *FieldErrors) {
 		if r.Header != "" && !headerNameRE.MatchString(r.Header) {
 			es.add("spec.realIp.header", "must be a header name")
 		}
+	case PolicyCompression:
+		s.Compression.validate(es)
 	}
+}
+
+// CompressionEncodings are the dynamic encodings by token.
+var CompressionEncodings = []string{"gzip", "br", "zstd"}
+
+// CompressionProxied are the gzip_proxied flags.
+var CompressionProxied = []string{"expired", "no-cache", "no-store", "private", "no_last_modified", "no_etag", "auth", "any"}
+
+func (c *CompressionPolicy) validate(es *FieldErrors) {
+	seen := map[string]bool{}
+	for i, e := range c.Encodings {
+		p := fmt.Sprintf("spec.compression.encodings[%d]", i)
+		if !slices.Contains(CompressionEncodings, e) {
+			es.add(p, "must be one of %s", strings.Join(CompressionEncodings, ", "))
+		}
+		if seen[e] {
+			es.add(p, "duplicate encoding %q", e)
+		}
+		seen[e] = true
+	}
+	for i, t := range c.Types {
+		if t != "*" && (!strings.Contains(t, "/") || strings.ContainsAny(t, " ;,\r\n")) {
+			es.add(fmt.Sprintf("spec.compression.types[%d]", i), "must be a media type such as \"text/css\" or \"*\"")
+		}
+	}
+	if c.MinLength != "" {
+		if n, err := ParseSize(c.MinLength); err != nil || n > math.MaxUint32 {
+			es.add("spec.compression.minLength", "must be a size such as \"1k\"")
+		}
+	}
+	if c.GzipLevel > 9 {
+		es.add("spec.compression.gzipLevel", "must be 1-9")
+	}
+	if c.BrotliLevel != nil && *c.BrotliLevel > 11 {
+		es.add("spec.compression.brotliLevel", "must be 0-11")
+	}
+	if c.ZstdLevel > 22 {
+		es.add("spec.compression.zstdLevel", "must be 1-22")
+	}
+	for i, f := range c.Proxied {
+		if !slices.Contains(CompressionProxied, f) {
+			es.add(fmt.Sprintf("spec.compression.proxied[%d]", i), "must be one of %s", strings.Join(CompressionProxied, ", "))
+		}
+	}
+	switch c.Static {
+	case "", "on", "always":
+	default:
+		es.add("spec.compression.static", "must be \"on\" or \"always\"")
+	}
+	checkOneLine(es, "spec.compression.disable", c.Disable)
+	if len(c.Encodings) == 0 && c.Static == "" && !c.Gunzip {
+		es.add("spec.compression", "needs encodings, static or gunzip")
+	}
+}
+
+var variableRE = regexp.MustCompile(`^[a-z0-9_]{1,63}$`)
+
+func (s *LookupSpec) validate(es *FieldErrors, variable string) {
+	if !variableRE.MatchString(variable) {
+		es.add("spec.variable", "must be 1-63 lowercase letters, digits or '_'")
+	}
+	checkOneLine(es, "spec.source", s.Source)
+	set := map[LookupType]bool{LookupMap: s.Map != nil, LookupGeo: s.Geo != nil, LookupSplit: s.Split != nil}
+	for _, t := range []LookupType{LookupMap, LookupGeo, LookupSplit} {
+		if set[t] && t != s.Type {
+			es.add("spec."+string(t), "must be empty when type is %q", s.Type)
+		}
+	}
+	if _, known := set[s.Type]; !known {
+		es.add("spec.type", "must be %q, %q or %q", LookupMap, LookupGeo, LookupSplit)
+		return
+	}
+	if !set[s.Type] {
+		es.add("spec."+string(s.Type), "is required when type is %q", s.Type)
+		return
+	}
+	if s.Type != LookupGeo && s.Source == "" {
+		es.add("spec.source", "is required for %s", s.Type)
+	}
+	switch s.Type {
+	case LookupMap:
+		checkOneLine(es, "spec.map.default", s.Map.Default)
+		exact := map[string]bool{}
+		for i, e := range s.Map.Entries {
+			p := fmt.Sprintf("spec.map.entries[%d]", i)
+			switch e.Match {
+			case "", MapExact:
+				k := strings.ToLower(e.Key)
+				if exact[k] {
+					es.add(p+".key", "duplicate key %q", e.Key)
+				}
+				exact[k] = true
+			case MapRegex, MapRegexCI:
+				if e.Key == "" {
+					es.add(p+".key", "must not be empty")
+				}
+			default:
+				es.add(p+".match", "must be %q, %q or %q", MapExact, MapRegex, MapRegexCI)
+			}
+			checkOneLine(es, p+".key", e.Key)
+			checkOneLine(es, p+".value", e.Value)
+		}
+	case LookupGeo:
+		checkOneLine(es, "spec.geo.default", s.Geo.Default)
+		seen := map[netip.Prefix]bool{}
+		for i, e := range s.Geo.Entries {
+			p := fmt.Sprintf("spec.geo.entries[%d]", i)
+			n, ok := ParseNetwork(e.Network)
+			if !ok {
+				es.add(p+".network", "must be a CIDR or an address")
+			} else if seen[n] {
+				es.add(p+".network", "duplicate network %s", n)
+			}
+			seen[n] = true
+			checkOneLine(es, p+".value", e.Value)
+		}
+	case LookupSplit:
+		if len(s.Split.Buckets) == 0 {
+			es.add("spec.split.buckets", "at least one bucket is required")
+		}
+		var sum uint64
+		for i, b := range s.Split.Buckets {
+			p := fmt.Sprintf("spec.split.buckets[%d]", i)
+			if b.Percent == "*" {
+				if i != len(s.Split.Buckets)-1 {
+					es.add(p+".percent", "\"*\" must be the last bucket")
+				}
+			} else if n, ok := ParsePercent(b.Percent); !ok || n == 0 {
+				es.add(p+".percent", "must be a percentage such as \"20%%\" or \"0.5%%\", or \"*\"")
+			} else {
+				sum += uint64(n)
+			}
+			checkOneLine(es, p+".value", b.Value)
+		}
+		if sum > 10000 {
+			es.add("spec.split.buckets", "percentages must not exceed 100%%")
+		}
+	}
+}
+
+// ParseNetwork parses a CIDR or a single address, masked.
+func ParseNetwork(s string) (netip.Prefix, bool) {
+	if p, err := netip.ParsePrefix(s); err == nil {
+		return p.Masked(), true
+	}
+	a, err := netip.ParseAddr(s)
+	if err != nil {
+		return netip.Prefix{}, false
+	}
+	return netip.PrefixFrom(a, a.BitLen()), true
+}
+
+// ParsePercent parses "20%" or "0.25%" into basis points, two decimals as
+// nginx split_clients.
+func ParsePercent(s string) (uint32, bool) {
+	n, ok := strings.CutSuffix(s, "%")
+	if !ok || n == "" {
+		return 0, false
+	}
+	whole, frac, _ := strings.Cut(n, ".")
+	if len(frac) > 2 || whole == "" {
+		return 0, false
+	}
+	frac += strings.Repeat("0", 2-len(frac))
+	w, err1 := strconv.ParseUint(whole, 10, 32)
+	f, err2 := strconv.ParseUint(frac, 10, 32)
+	if err1 != nil || err2 != nil || w > 100 {
+		return 0, false
+	}
+	return uint32(w*100 + f), true
 }
 
 func quotedList(ts []PolicyType) string {

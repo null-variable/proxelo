@@ -15,7 +15,7 @@ interface NavItem {
   instance?: boolean;
 }
 
-const RESOURCE_NAV: Kind[] = ["sites", "routes", "upstreams", "certificates", "policies", "listeners"];
+const RESOURCE_NAV: Kind[] = ["sites", "routes", "upstreams", "certificates", "policies", "lookups", "listeners"];
 
 const NAV: { group: string; items: NavItem[] }[] = [
   { group: "Overview", items: [{ to: "/", label: "Dashboard" }, { to: "/nodes", label: "Nodes", instance: true }] },

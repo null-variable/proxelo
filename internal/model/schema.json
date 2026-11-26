@@ -226,6 +226,85 @@
         "status"
       ]
     },
+    "CompressionPolicy": {
+      "type": "object",
+      "description": "CompressionPolicy is nginx gzip, gzip_static and gunzip, plus brotli and zstd. The closest policy applies.",
+      "properties": {
+        "brotliLevel": {
+          "type": "integer",
+          "minimum": 0,
+          "x-nullable": true
+        },
+        "disable": {
+          "type": "string",
+          "description": "PCRE2 pattern; clients whose User-Agent matches get plain responses (nginx gzip_disable)."
+        },
+        "encodings": {
+          "type": "array",
+          "description": "Dynamic encodings in order of preference: \"gzip\", \"br\", \"zstd\". The first one the client accepts is used. Empty: none, only static and gunzip apply.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "gunzip": {
+          "type": "boolean",
+          "description": "Decode gzip responses for clients that do not accept gzip (nginx gunzip)."
+        },
+        "gzipLevel": {
+          "type": "integer",
+          "description": "gzip 1-9 (default 1), br 0-11 (default 6), zstd 1-22 (default 3).",
+          "minimum": 0
+        },
+        "http10": {
+          "type": "boolean",
+          "description": "Also encode for HTTP/1.0 clients (nginx gzip_http_version 1.0)."
+        },
+        "minLength": {
+          "type": "string",
+          "description": "Responses shorter than this are sent as is, such as \"1k\" (nginx gzip_min_length). Empty: 20 bytes."
+        },
+        "proxied": {
+          "type": "array",
+          "description": "Encode responses to requests with Via when one of these holds (nginx gzip_proxied): \"expired\", \"no-cache\", \"no-store\", \"private\", \"no_last_modified\", \"no_etag\", \"auth\", \"any\". Empty: never.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "static": {
+          "type": "string",
+          "description": "Serve file.gz next to a static file: \"on\" to clients that accept gzip, \"always\" to all (nginx gzip_static)."
+        },
+        "types": {
+          "type": "array",
+          "description": "Media types encoded besides text/html, or \"*\" for any (nginx gzip_types).",
+          "items": {
+            "type": "string"
+          }
+        },
+        "vary": {
+          "type": "boolean",
+          "description": "Send Vary: Accept-Encoding (nginx gzip_vary)."
+        },
+        "zstdLevel": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "x-order": [
+        "encodings",
+        "types",
+        "minLength",
+        "gzipLevel",
+        "brotliLevel",
+        "zstdLevel",
+        "proxied",
+        "vary",
+        "static",
+        "gunzip",
+        "http10",
+        "disable"
+      ]
+    },
     "ConnLimitPolicy": {
       "type": "object",
       "description": "ConnLimitPolicy is nginx limit_conn_zone with limit_conn: requests in progress per key.",
@@ -331,6 +410,48 @@
       ],
       "required": [
         "upstream"
+      ]
+    },
+    "GeoEntry": {
+      "type": "object",
+      "properties": {
+        "network": {
+          "type": "string",
+          "description": "CIDR or address."
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "x-order": [
+        "network",
+        "value"
+      ],
+      "required": [
+        "network",
+        "value"
+      ]
+    },
+    "GeoTable": {
+      "type": "object",
+      "description": "GeoTable is nginx geo: the longest network that contains the address wins.",
+      "properties": {
+        "default": {
+          "type": "string"
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GeoEntry"
+          }
+        }
+      },
+      "x-order": [
+        "entries",
+        "default"
+      ],
+      "required": [
+        "entries"
       ]
     },
     "HeaderOps": {
@@ -629,6 +750,109 @@
         "ciphers"
       ]
     },
+    "LookupSpec": {
+      "type": "object",
+      "description": "LookupSpec carries the table for Type and nothing else.",
+      "properties": {
+        "geo": {
+          "$ref": "#/$defs/GeoTable",
+          "x-nullable": true
+        },
+        "map": {
+          "$ref": "#/$defs/MapTable",
+          "x-nullable": true
+        },
+        "source": {
+          "type": "string",
+          "description": "Template looked up, such as \"$http_user_agent\". geo: an address, $remote_addr when empty."
+        },
+        "split": {
+          "$ref": "#/$defs/SplitClients",
+          "x-nullable": true
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "map",
+            "geo",
+            "split"
+          ]
+        },
+        "variable": {
+          "type": "string",
+          "description": "Variable name without '$': lowercase letters, digits and '_'. Empty: the resource name with '-' as '_'."
+        }
+      },
+      "x-order": [
+        "type",
+        "variable",
+        "source",
+        "map",
+        "geo",
+        "split"
+      ],
+      "required": [
+        "type"
+      ]
+    },
+    "MapEntry": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "match": {
+          "type": "string",
+          "description": "Empty: exact.",
+          "enum": [
+            "exact",
+            "regex",
+            "regexCI"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "description": "A template; a regex's groups are $1..$9."
+        }
+      },
+      "x-order": [
+        "match",
+        "key",
+        "value"
+      ],
+      "required": [
+        "key",
+        "value"
+      ]
+    },
+    "MapTable": {
+      "type": "object",
+      "description": "MapTable is nginx map. Exact keys compare case-insensitively and win; regexes are then tried in order.",
+      "properties": {
+        "default": {
+          "type": "string",
+          "description": "Value when nothing matches, a template. Empty: an empty value."
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MapEntry"
+          }
+        },
+        "hostnames": {
+          "type": "boolean",
+          "description": "Keys may be \"*.example.com\", \".example.com\" or \"www.example.*\" (nginx map hostnames)."
+        }
+      },
+      "x-order": [
+        "entries",
+        "default",
+        "hostnames"
+      ],
+      "required": [
+        "entries"
+      ]
+    },
     "Match": {
       "type": "object",
       "description": "Match selects requests by path (nginx location) and, optionally, by conditions checked after the path. Routes with the same path in one block are tried in order with their conditions, then the one without.",
@@ -735,6 +959,10 @@
           "$ref": "#/$defs/BasicAuthPolicy",
           "x-nullable": true
         },
+        "compression": {
+          "$ref": "#/$defs/CompressionPolicy",
+          "x-nullable": true
+        },
         "connLimit": {
           "$ref": "#/$defs/ConnLimitPolicy",
           "x-nullable": true
@@ -770,7 +998,8 @@
             "ipAccess",
             "basicAuth",
             "forwardAuth",
-            "realIp"
+            "realIp",
+            "compression"
           ]
         }
       },
@@ -784,7 +1013,8 @@
         "ipAccess",
         "basicAuth",
         "forwardAuth",
-        "realIp"
+        "realIp",
+        "compression"
       ],
       "required": [
         "type"
@@ -1153,6 +1383,44 @@
         "listeners"
       ]
     },
+    "SplitBucket": {
+      "type": "object",
+      "properties": {
+        "percent": {
+          "type": "string",
+          "description": "Such as \"0.5%\" or \"20%\"; \"*\" takes the rest and must come last."
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "x-order": [
+        "percent",
+        "value"
+      ],
+      "required": [
+        "percent",
+        "value"
+      ]
+    },
+    "SplitClients": {
+      "type": "object",
+      "description": "SplitClients is nginx split_clients: the source's hash picks a bucket by percentage.",
+      "properties": {
+        "buckets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SplitBucket"
+          }
+        }
+      },
+      "x-order": [
+        "buckets"
+      ],
+      "required": [
+        "buckets"
+      ]
+    },
     "StaticAction": {
       "type": "object",
       "properties": {
@@ -1417,6 +1685,7 @@
   "x-kinds": {
     "certificates": "CertificateSpec",
     "listeners": "ListenerSpec",
+    "lookups": "LookupSpec",
     "policies": "PolicySpec",
     "routes": "RouteSpec",
     "sites": "SiteSpec",

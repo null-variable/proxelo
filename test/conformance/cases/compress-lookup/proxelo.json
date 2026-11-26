@@ -1,0 +1,41 @@
+{
+  "listeners": [
+    {"id": "lst_main", "name": "main", "spec": {"address": "127.0.0.1:18480", "defaultSite": "site_main"}}
+  ],
+  "sites": [
+    {"id": "site_main", "name": "main", "spec": {"listeners": ["lst_main"],
+      "hostnames": [{"type": "exact", "value": "example.com"}],
+      "routes": ["rt_lk", "rt_up", "rt_css", "rt_root"], "policies": ["pol_gzip"]}}
+  ],
+  "routes": [
+    {"id": "rt_lk", "name": "lk", "spec": {"match": {"path": {"type": "prefix", "value": "/lk/"}},
+      "action": {"type": "return", "return": {"status": 200, "text": "kind=$kind tier=$tier net=$net xnet=$xnet bucket=$bucket\n"}}}},
+    {"id": "rt_up", "name": "up", "spec": {"match": {"path": {"type": "prefix", "value": "/up/"}},
+      "action": {"type": "proxy", "proxy": {"upstream": "up_backend"}}}},
+    {"id": "rt_css", "name": "css", "spec": {"match": {"path": {"type": "prefix", "value": "/css/"}}, "policies": ["pol_gzip_css"],
+      "rewrite": [{"regex": "^/css/(.*)$", "replacement": "/$1", "flag": "break"}],
+      "action": {"type": "static", "static": {"root": "/srv/www"}}}},
+    {"id": "rt_root", "name": "root", "spec": {"match": {"path": {"type": "prefix", "value": "/"}},
+      "action": {"type": "static", "static": {"root": "/srv/www"}}}}
+  ],
+  "upstreams": [
+    {"id": "up_backend", "name": "backend", "spec": {"targets": [{"address": "127.0.0.1:18481"}]}}
+  ],
+  "policies": [
+    {"id": "pol_gzip", "name": "gzip", "spec": {"type": "compression", "compression": {
+      "encodings": ["gzip"], "types": ["text/plain"], "vary": true, "static": "on"}}},
+    {"id": "pol_gzip_css", "name": "gzip-css", "spec": {"type": "compression", "compression": {
+      "encodings": ["gzip"], "types": ["text/css"], "vary": true, "static": "on"}}}
+  ],
+  "lookups": [
+    {"id": "lk_kind", "name": "kind", "spec": {"type": "map", "source": "$http_x_kind", "map": {"default": "other", "entries": [
+      {"key": "api", "value": "is-api"}, {"match": "regex", "key": "^w(.*)$", "value": "w-$1"}, {"match": "regexCI", "key": "^ADMIN", "value": "admin"}]}}},
+    {"id": "lk_tier", "name": "tier", "spec": {"type": "map", "source": "$kind", "map": {"default": "low", "entries": [{"key": "is-api", "value": "high"}]}}},
+    {"id": "lk_net", "name": "net", "spec": {"type": "geo", "geo": {"default": "far", "entries": [
+      {"network": "127.0.0.0/8", "value": "local"}, {"network": "127.0.0.1", "value": "me"}]}}},
+    {"id": "lk_xnet", "name": "xnet", "spec": {"type": "geo", "source": "$http_x_ip", "geo": {"default": "none", "entries": [
+      {"network": "10.0.0.0/8", "value": "ten"}, {"network": "10.1.0.0/16", "value": "ten-one"}, {"network": "2001:db8::/32", "value": "doc6"}]}}},
+    {"id": "lk_bucket", "name": "bucket", "spec": {"type": "split", "source": "$http_x_user", "split": {"buckets": [
+      {"percent": "10%", "value": "a"}, {"percent": "50.5%", "value": "b"}, {"percent": "*", "value": "c"}]}}}
+  ]
+}
