@@ -100,6 +100,7 @@ func Handler(st *store.Store, d Distributor, dep *deploy.Manager, sim Simulator,
 	mux.HandleFunc("POST /api/v1/changesets/{id}/apply", a.requireAny(op, a.apply))
 	mux.HandleFunc("POST /api/v1/changesets/{id}/import", a.require(ed, a.importBundle))
 	mux.HandleFunc("GET /api/v1/export", a.require(v, a.export))
+	mux.HandleFunc("POST /api/v1/import/nginx", a.require(ed, a.importNginx))
 
 	mux.HandleFunc("GET /api/v1/revisions", a.requireAny(v, a.revisions))
 	mux.HandleFunc("GET /api/v1/revisions/{rev}", a.requireAny(v, a.revision))

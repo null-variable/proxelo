@@ -90,6 +90,20 @@ admin port. Rollback to any revision is a new revision, so history is linear;
 the newest 500 and every tagged revision are kept. `GET /api/v1/export` writes
 a YAML bundle (keys left out) that `POST /changesets/{id}/import` loads back.
 
+### Importing from nginx
+
+`POST /api/v1/import/nginx` takes `nginx -T` output, or a `.tar`, `.tar.gz` or
+`.zip` of the configuration directory (certificates, htpasswd and map/geo
+include files are read from it), and opens a change set holding the converted
+resources: servers become listeners and sites, locations routes, upstream
+blocks upstreams, `stream` servers streams, and directive groups (headers,
+allow/deny, limits, auth, logging, gzip, real IP) policies, with nginx's
+inheritance of array directives kept. The response carries a report with
+every directive, its file and line, and one of four classes: converted,
+converted with a note, replaced by a built-in behavior, or unsupported.
+`?dryRun=true` returns the report and the resources without a change set.
+The console's Changes page uploads and previews the report.
+
 ### Admin access
 
 On first start, with no account, the control plane prints a one-time setup
@@ -165,6 +179,7 @@ control plane is down and reconnects when it is back.
 | `POST /api/v1/changesets/{id}/validate` | Errors and warnings |
 | `POST /api/v1/changesets/{id}/apply` | `{"mode": "confirm"\|"direct", "confirmTimeout": 120}` |
 | `POST /api/v1/changesets/{id}/import`, `GET /api/v1/export` | YAML or JSON bundle |
+| `POST /api/v1/import/nginx` | nginx configuration into a new change set, with the conversion report |
 | `GET /api/v1/revisions[/{rev}]` | Revision history (status, author, guard), or one revision with its resources |
 | `POST /api/v1/revisions/{rev}/confirm`, `/rollback`, `PUT .../tag` | Commit-confirm, rollback (`0` empties), retention tag |
 | `GET /api/v1/revisions/{rev}/snapshot` | Compiled snapshot (protobuf, includes keys; admin) |
@@ -209,7 +224,7 @@ PROXELO_API=127.0.0.1:9443 bun run dev   # dev server proxying /api to a running
 | Dashboard | 5-minute traffic, 5xx and upstream failure rates, node sync, certificates expiring within 30 days, recent revisions, pending-confirmation banner |
 | Sites, Routes, Upstreams, Certificates, Policies, Listeners | Lists with search; editors generated from `/api/v1/schema` (reference fields become pickers) with a Raw JSON tab; server field errors shown at the field; site route tree with nginx match badges |
 | Topology | The configuration as a request-flow diagram, filterable by group; drag a node onto another (valid targets light up) or use the side panel to connect listener → site, site → route, route → child route or upstream, remove connections, attach or detach certificates and policies, add resources and upstream targets, all into the active change set; a traffic overlay sizes edges by recent requests and colors them by 5xx share; targets a proxy reports down are red; export as SVG, PNG, Mermaid, Graphviz DOT or JSON |
-| Changes | Change sets (the active one is the draft every edit goes to), resource and effective diff, validate with safety findings, apply with commit-confirm, import, export, discard; revisions with confirm and rollback |
+| Changes | Change sets (the active one is the draft every edit goes to), resource and effective diff, validate with safety findings, apply with commit-confirm, import (bundle or nginx configuration with its conversion report), export, discard; revisions with confirm and rollback |
 | Simulator | One request against the latest revision, side by side with the active change set |
 | Nodes, Settings | Proxy sync state and the targets each proxy has taken out; password, TOTP, API tokens, groups with members and domains, users and the audit log |
 
@@ -252,6 +267,7 @@ upgraded one end up identical.
 | `internal/acme` | ACME issuance and renewal |
 | `internal/topology` | Request-flow graph of a configuration, its traffic overlay and its Mermaid and DOT rendering |
 | `internal/simulate` | Resident `proxelo-proxy sim` helper for dry-loads and simulation |
+| `internal/importer/nginx` | nginx configuration parser and converter, with the conversion report |
 | `internal/ui` | Serves the embedded web console build |
 | `web` | Web console source (Vite + React + TypeScript, bun) |
 | `examples` | Sample resource files |

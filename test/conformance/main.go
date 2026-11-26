@@ -5,8 +5,8 @@
 // A case is a directory under cases/ with nginx.conf (the server blocks, put
 // inside an http block), proxelo.json (the same configuration as Proxelo
 // resources), case.yaml (requests and the directives they exercise) and
-// optionally a www/ tree served as static files. Until the nginx importer
-// exists the resources are written by hand.
+// optionally a www/ tree served as static files. With -import the proxy
+// serves the importer's conversion of nginx.conf instead of proxelo.json.
 //
 //	go run ./test/conformance -proxy ../proxelo-proxy/target/release/proxelo-proxy
 //
@@ -24,6 +24,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"net/http"
 	"os"
@@ -40,6 +41,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/null-variable/proxelo/internal/compile"
+	"github.com/null-variable/proxelo/internal/importer/nginx"
 	"github.com/null-variable/proxelo/internal/model"
 	"github.com/null-variable/proxelo/test/conformance/coverage"
 )
@@ -67,6 +69,9 @@ type config struct {
 	// A local nginx binary to run instead of the container. It must be the
 	// version in nginxImage, built with the modules the cases use.
 	nginxBin string
+	// Convert the case's nginx.conf with the importer instead of reading
+	// proxelo.json.
+	imported bool
 }
 
 func main() {
@@ -77,6 +82,7 @@ func main() {
 	flag.StringVar(&c.report, "report", "", "also write the Markdown report to this file")
 	flag.StringVar(&c.only, "case", "", "run only this case")
 	flag.BoolVar(&c.keep, "keep", false, "keep the work directory")
+	flag.BoolVar(&c.imported, "import", false, "serve the importer's conversion of nginx.conf instead of proxelo.json")
 	flag.StringVar(&c.nginxBin, "nginx", "", "run this nginx binary instead of the "+nginxImage+" container")
 	flag.Parse()
 	if c.proxyBin == "" {
@@ -275,7 +281,7 @@ func runCase(ctx context.Context, c config, k *Case, work string, up *echo) (Cas
 	nginxAnswers := sendAll(ctx, k.Requests, up)
 	ngx.stop()
 
-	px, err := runProxy(ctx, c.proxyBin, k, work, www)
+	px, err := runProxy(ctx, c.proxyBin, k, work, www, c.imported)
 	if err != nil {
 		return CaseResult{}, err
 	}
@@ -427,23 +433,10 @@ func (p proxyServer) stop() {
 // runProxy compiles the case's resources with the control plane compiler and
 // serves them. "/srv/www" in roots is replaced with the case's www/ tree, the
 // directory nginx sees at that path.
-func runProxy(ctx context.Context, bin string, k *Case, work, www string) (server, error) {
-	raw, err := os.ReadFile(filepath.Join(k.Dir, "proxelo.json"))
+func runProxy(ctx context.Context, bin string, k *Case, work, www string, imported bool) (server, error) {
+	cfg, err := caseConfig(k, www, imported)
 	if err != nil {
 		return nil, err
-	}
-	if www != "" {
-		abs, err := filepath.Abs(www)
-		if err != nil {
-			return nil, err
-		}
-		raw = bytes.ReplaceAll(raw, []byte(`"/srv/www`), []byte(`"`+abs))
-	}
-	var cfg model.Config
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&cfg); err != nil {
-		return nil, fmt.Errorf("proxelo.json: %w", err)
 	}
 	snap, err := compile.Compile(cfg, 1)
 	if err != nil {
@@ -676,4 +669,67 @@ func cmpOr(a, b string) string {
 		return a
 	}
 	return b
+}
+
+// caseConfig reads the case's proxelo.json, or with imported converts its
+// nginx.conf inside the harness's http block. Paths under /srv/www point at
+// www.
+func caseConfig(k *Case, www string, imported bool) (model.Config, error) {
+	abs := ""
+	if www != "" {
+		var err error
+		if abs, err = filepath.Abs(www); err != nil {
+			return model.Config{}, err
+		}
+	}
+	if imported {
+		conf, err := os.ReadFile(filepath.Join(k.Dir, "nginx.conf"))
+		if err != nil {
+			return model.Config{}, err
+		}
+		files := nginx.Files{
+			"/etc/nginx/nginx.conf": nginxMain,
+			"/etc/nginx/case.conf":  string(conf),
+		}
+		if www != "" {
+			_ = filepath.WalkDir(www, func(p string, d fs.DirEntry, err error) error {
+				if err == nil && !d.IsDir() {
+					if b, err := os.ReadFile(p); err == nil {
+						rel, _ := filepath.Rel(www, p)
+						files["/srv/www/"+filepath.ToSlash(rel)] = string(b)
+					}
+				}
+				return nil
+			})
+		}
+		tree, err := nginx.Parse(files, "/etc/nginx/nginx.conf")
+		if err != nil {
+			return model.Config{}, err
+		}
+		cfg, _ := nginx.Convert(tree, files)
+		raw, err := json.Marshal(cfg)
+		if err != nil {
+			return model.Config{}, err
+		}
+		if abs != "" {
+			raw = bytes.ReplaceAll(raw, []byte(`"/srv/www`), []byte(`"`+abs))
+		}
+		var out model.Config
+		err = json.Unmarshal(raw, &out)
+		return out, err
+	}
+	raw, err := os.ReadFile(filepath.Join(k.Dir, "proxelo.json"))
+	if err != nil {
+		return model.Config{}, err
+	}
+	if abs != "" {
+		raw = bytes.ReplaceAll(raw, []byte(`"/srv/www`), []byte(`"`+abs))
+	}
+	var cfg model.Config
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&cfg); err != nil {
+		return model.Config{}, fmt.Errorf("proxelo.json: %w", err)
+	}
+	return cfg, nil
 }

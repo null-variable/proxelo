@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -407,9 +408,25 @@ func (a *api) importBundle(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, httpError{status: http.StatusUnprocessableEntity, msg: "apiVersion: must be " + bundleVersion})
 		return
 	}
+	cs := r.PathValue("id")
+	if err := a.importConfig(r.Context(), cs, b.Resources); err != nil {
+		a.fail(w, err)
+		return
+	}
+	css, err := a.st.ChangeSet(r.Context(), cs)
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, css)
+}
+
+// importConfig validates cfg and makes change set cs hold exactly it.
+// Resources without an ID get one.
+func (a *api) importConfig(ctx context.Context, cs string, cfg model.Config) error {
 	var es model.FieldErrors
 	for _, k := range model.Kinds {
-		for _, res := range b.Resources.Of(k) {
+		for _, res := range cfg.Of(k) {
 			m := res.Common()
 			p := fmt.Sprintf("%s[%s]", k.Plural, m.ID)
 			if m.ID == "" {
@@ -428,32 +445,22 @@ func (a *api) importBundle(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err := es.Err(); err != nil {
-		a.fail(w, err)
-		return
+		return err
 	}
-	cs := r.PathValue("id")
-	if err := a.st.Import(r.Context(), cs, b.Resources); err != nil {
-		a.fail(w, err)
-		return
+	if err := a.st.Import(ctx, cs, cfg); err != nil {
+		return err
 	}
 	// Certificates whose key came from the store are checked now.
-	for _, c := range b.Resources.Certificates {
-		got, err := a.st.Get(r.Context(), cs, model.CertificateKind, c.ID)
+	for _, c := range cfg.Certificates {
+		got, err := a.st.Get(ctx, cs, model.CertificateKind, c.ID)
 		if err != nil {
-			a.fail(w, err)
-			return
+			return err
 		}
 		if fe := model.Validate(got); len(fe) > 0 {
-			a.fail(w, prefix(fe, "certificates["+c.ID+"]"))
-			return
+			return prefix(fe, "certificates["+c.ID+"]")
 		}
 	}
-	css, err := a.st.ChangeSet(r.Context(), cs)
-	if err != nil {
-		a.fail(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, css)
+	return nil
 }
 
 func prefix(es model.FieldErrors, p string) model.FieldErrors {

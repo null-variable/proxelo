@@ -629,13 +629,14 @@ var headerNameRE = regexp.MustCompile("^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
 
 // Headers a policy may not change: framing and connection management are the
 // proxy's.
-var reservedHeaders = []string{"connection", "content-length", "transfer-encoding", "keep-alive", "upgrade", "te", "trailer", "proxy-connection"}
+// ReservedHeaders are hop-by-hop and framing headers the proxy sets itself.
+var ReservedHeaders = []string{"connection", "content-length", "transfer-encoding", "keep-alive", "upgrade", "te", "trailer", "proxy-connection"}
 
 func checkHeaderName(es *FieldErrors, path, name string) {
 	switch {
 	case !headerNameRE.MatchString(name):
 		es.add(path, "must be a header name")
-	case slices.Contains(reservedHeaders, strings.ToLower(name)):
+	case slices.Contains(ReservedHeaders, strings.ToLower(name)):
 		es.add(path, "%q is managed by the proxy", name)
 	}
 }

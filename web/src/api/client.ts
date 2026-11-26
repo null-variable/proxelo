@@ -47,8 +47,11 @@ interface Options {
 async function send(method: string, path: string, body: unknown, opts: Options): Promise<Response> {
   const headers: Record<string, string> = {};
   if (method !== "GET" && csrf) headers["X-CSRF-Token"] = csrf;
-  let payload: string | undefined;
-  if (typeof body === "string") {
+  let payload: string | Blob | undefined;
+  if (body instanceof Blob) {
+    payload = body;
+    headers["Content-Type"] = opts.contentType ?? "application/octet-stream";
+  } else if (typeof body === "string") {
     payload = body;
     headers["Content-Type"] = opts.contentType ?? "application/yaml";
   } else if (body !== undefined) {

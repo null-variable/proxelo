@@ -145,6 +145,7 @@ from one engine.
 |---|---|
 | `internal/model` | Resource types, field validation, JSON Schema generator |
 | `internal/compile` | Resources to snapshot; golden tests in `testdata/` |
+| `internal/importer/nginx` | nginx configuration (`nginx -T` or archive) to resources, with a per-directive conversion report |
 | `internal/store` | SQLite: head, change sets, revisions, accounts, sessions, tokens, audit log, versioned migrations |
 | `internal/diff` | Field diff, three-way merge, effective snapshot diff |
 | `internal/lint` | Warnings and admin-access safety checks |

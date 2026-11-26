@@ -75,18 +75,28 @@ var gatewayProtocols = map[model.GatewayProtocol]snapshotv1.GatewayAction_Protoc
 
 // gateway compiles g: the protocol's standard params unless left out, then
 // g's own, a param of the same name replacing the standard one in place.
+// DefaultParams is the standard param set of a protocol, which every
+// gateway sends unless NoDefaultParams.
+func DefaultParams(p model.GatewayProtocol) []model.GatewayParam {
+	std := fastcgiParams
+	switch p {
+	case model.GatewayUwsgi:
+		std = uwsgiParams
+	case model.GatewaySCGI:
+		std = scgiParams
+	}
+	out := make([]model.GatewayParam, len(std))
+	for i, q := range std {
+		out[i] = model.GatewayParam{Name: q[0], Value: q[1], IfNotEmpty: q[2] != ""}
+	}
+	return out
+}
+
 func gateway(g *model.GatewayAction, pa *snapshotv1.ProxyAction) *snapshotv1.GatewayAction {
 	var params []*snapshotv1.GatewayParam
 	if !g.NoDefaultParams {
-		std := fastcgiParams
-		switch g.Protocol {
-		case model.GatewayUwsgi:
-			std = uwsgiParams
-		case model.GatewaySCGI:
-			std = scgiParams
-		}
-		for _, p := range std {
-			params = append(params, &snapshotv1.GatewayParam{Name: p[0], Value: p[1], IfNotEmpty: p[2] != ""})
+		for _, p := range DefaultParams(g.Protocol) {
+			params = append(params, &snapshotv1.GatewayParam{Name: p.Name, Value: p.Value, IfNotEmpty: p.IfNotEmpty})
 		}
 	}
 	for _, p := range g.Params {

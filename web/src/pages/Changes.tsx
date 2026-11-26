@@ -29,13 +29,17 @@ function ChangeSetList() {
   const navigate = useNavigate();
   const list = useQuery({ queryKey: ["changesets"], queryFn: () => api.get<Items<ChangeSet>>("/changesets") });
   const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
   const items = list.data?.items ?? [];
   return (
     <div className="stack">
       {app.canAny("editor") && (
         <div className="row row--between">
           <span />
-          <button className="btn btn--primary" onClick={() => setCreating(true)}>New change set</button>
+          <div className="row">
+            <button className="btn" onClick={() => setImporting(true)}>Import nginx config</button>
+            <button className="btn btn--primary" onClick={() => setCreating(true)}>New change set</button>
+          </div>
         </div>
       )}
       <ErrorBanner error={list.error} />
@@ -65,6 +69,15 @@ function ChangeSetList() {
           </table>
         </div>
       )}
+      {importing && (
+        <NginxImport
+          onClose={() => setImporting(false)}
+          onCreated={(c) => {
+            app.setChangeSet(c.id);
+            app.refresh();
+          }}
+        />
+      )}
       {creating && (
         <NewChangeSet
           onClose={() => setCreating(false)}
@@ -77,6 +90,118 @@ function ChangeSetList() {
         />
       )}
     </div>
+  );
+}
+
+interface ReportEntry {
+  file: string;
+  line: number;
+  directive: string;
+  class: "converted" | "convertedWithNote" | "replaced" | "unsupported";
+  note?: string;
+}
+
+interface ImportReport {
+  entries: ReportEntry[];
+  counts: Partial<Record<ReportEntry["class"], number>>;
+}
+
+const reportClasses: { id: ReportEntry["class"]; label: string; tone: Tone }[] = [
+  { id: "converted", label: "Converted", tone: "success" },
+  { id: "convertedWithNote", label: "Converted with note", tone: "info" },
+  { id: "replaced", label: "Replaced", tone: "warning" },
+  { id: "unsupported", label: "Unsupported", tone: "danger" },
+];
+
+// NginxImport uploads nginx -T output or an archive of the configuration
+// directory. The preview converts only; Import opens a change set holding
+// the converted resources.
+function NginxImport({ onClose, onCreated }: { onClose: () => void; onCreated: (c: ChangeSet) => void }) {
+  const navigate = useNavigate();
+  const [file, setFile] = useState<Blob | null>(null);
+  const [text, setText] = useState("");
+  const [msg, setMsg] = useState("");
+  const [report, setReport] = useState<ImportReport | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<unknown>(null);
+  const [shown, setShown] = useState<ReportEntry["class"] | "notes">("notes");
+  const body = file ?? (text ? new Blob([text], { type: "text/plain" }) : null);
+  const run = async (dryRun: boolean) => {
+    if (!body) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const q = dryRun ? "?dryRun=true" : `?message=${encodeURIComponent(msg)}`;
+      const out = await request<{ report: ImportReport; changeSet?: ChangeSet }>("POST", `/import/nginx${q}`, body);
+      setReport(out.report);
+      if (out.changeSet) {
+        toast("nginx configuration imported");
+        onCreated(out.changeSet);
+        void navigate({ to: "/changes/$id", params: { id: out.changeSet.id } });
+        onClose();
+        return;
+      }
+    } catch (e) {
+      setErr(e);
+    }
+    setBusy(false);
+  };
+  const entries = (report?.entries ?? []).filter((e) => shown === "notes" ? e.class !== "converted" : e.class === shown);
+  return (
+    <Dialog title="Import nginx configuration" wide onClose={onClose}
+      text="Upload nginx -T output or a .tar, .tar.gz or .zip of the configuration directory. The import opens a new change set that replaces the configuration; review its diff before applying."
+      actions={<>
+        <button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btn" disabled={busy || !body} onClick={() => run(true)}>Preview report</button>
+        <button className="btn btn--primary" disabled={busy || !body} onClick={() => run(false)}>Import</button>
+      </>}>
+      <div className="stack">
+        <ErrorBanner error={err} />
+        <input type="file" accept=".conf,.txt,.tar,.tgz,.gz,.zip" aria-label="nginx configuration file" onChange={(e) => {
+          const f = e.target.files?.[0] ?? null;
+          setFile(f);
+          setReport(null);
+          if (f) setText("");
+        }} />
+        {!file && (
+          <textarea className="code" aria-label="nginx -T output" spellCheck={false} value={text}
+            onChange={(e) => { setText(e.target.value); setReport(null); }}
+            placeholder={"# configuration file /etc/nginx/nginx.conf:\nevents {}\nhttp { ... }"} />
+        )}
+        <Field id="imp-msg" label="Change set message" hint="Defaults to the imported file name.">
+          <input id="imp-msg" className="input" value={msg} onChange={(e) => setMsg(e.target.value)} placeholder="Import from nginx" />
+        </Field>
+        {report && (
+          <div className="stack">
+            <div className="row">
+              {reportClasses.map((c) => (
+                <button key={c.id} className="btn btn--ghost btn--sm" aria-pressed={shown === c.id} onClick={() => setShown(c.id)}>
+                  <Status tone={c.tone}>{c.label}</Status> {report.counts[c.id] ?? 0}
+                </button>
+              ))}
+              <button className="btn btn--ghost btn--sm" aria-pressed={shown === "notes"} onClick={() => setShown("notes")}>All but converted</button>
+            </div>
+            {entries.length === 0 ? <p className="muted small">Nothing in this class.</p> : (
+              <div className="data-table-wrap">
+                <table className="data-table">
+                  <thead><tr><th>Location</th><th>Directive</th><th>Class</th><th>Note</th></tr></thead>
+                  <tbody>
+                    {entries.map((e, i) => (
+                      <tr key={i}>
+                        <td className="mono nowrap">{e.file}:{e.line}</td>
+                        <td className="mono">{e.directive}</td>
+                        <td>{reportClasses.find((c) => c.id === e.class)?.label}</td>
+                        <td className="small">{e.note}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </Dialog>
   );
 }
 

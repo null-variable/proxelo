@@ -48,7 +48,7 @@ Each directory under `cases/` is one case:
 | File | Contents |
 |---|---|
 | `nginx.conf` | `server` and `upstream` blocks, placed inside an `http` block |
-| `proxelo.json` | The same configuration as Proxelo resources (until the nginx importer exists) |
+| `proxelo.json` | The same configuration as Proxelo resources, written by hand |
 | `case.yaml` | `directives` it exercises, `requests` to send, and response headers to `ignore` |
 | `www/` | Optional files, served at `/srv/www` |
 
@@ -82,6 +82,10 @@ status from the echo (401 with a Basic challenge), so cases can make the
 upstream refuse, as a forward auth check does. The
 report (stdout, and `-report file`) lists every differing request and the
 directive coverage.
+
+`-import` serves the nginx importer's conversion of each case's
+`nginx.conf` instead of `proxelo.json`, which tests the importer against
+nginx itself.
 
 Without Docker, `-nginx path/to/sbin/nginx` runs a local build of the same
 nginx version instead; it needs the modules the cases use
