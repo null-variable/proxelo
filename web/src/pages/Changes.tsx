@@ -32,7 +32,7 @@ function ChangeSetList() {
   const items = list.data?.items ?? [];
   return (
     <div className="stack">
-      {app.can("editor") && (
+      {app.canAny("editor") && (
         <div className="row row--between">
           <span />
           <button className="btn btn--primary" onClick={() => setCreating(true)}>New change set</button>
@@ -180,9 +180,9 @@ export function ChangeSetDetail({ id }: { id: string }) {
       >
         {app.changeset !== c.id && <button className="btn" onClick={() => app.setChangeSet(c.id)}>Make active</button>}
         <button className="btn" onClick={exportCurrent} title="Download the current configuration as a bundle">Export current</button>
-        {app.can("editor") && <button className="btn" onClick={() => setDialog("import")}>Import</button>}
+        {app.canAny("editor") && <button className="btn" onClick={() => setDialog("import")}>Import</button>}
         <button className="btn" disabled={busy} onClick={validate}>Validate</button>
-        {app.can("operator") && (
+        {app.canAny("operator") && (
           <button className="btn btn--primary" disabled={busy || c.items.length === 0 || !!app.pending} onClick={() => setDialog("apply")}>Apply</button>
         )}
       </PageHeader>
@@ -224,7 +224,7 @@ export function ChangeSetDetail({ id }: { id: string }) {
           />
         );
       })}
-      {app.can("editor") && (
+      {app.canAny("editor") && (
         <div className="danger-zone card__body">
           <SettingRow title="Discard change set" text="Deletes every edit in it. The served configuration is not affected.">
             <button className="btn btn--destructive" onClick={() => setDialog("discard")}>Discard</button>
@@ -423,7 +423,7 @@ export function PendingBanner({ rev }: { rev: Revision }) {
         <div className="strong">Revision {rev.revision} is waiting for confirmation</div>
         <div className="small">It reverts automatically {timeAgo(rev.confirmBy)} unless confirmed.{rev.guard && ` Guard: ${rev.guard}`}</div>
       </div>
-      {app.can("operator") && (
+      {app.canAny("operator") && (
         <div className="row">
           <button className="btn btn--sm" disabled={busy} onClick={() => act("rollback")}>Roll back</button>
           <button className="btn btn--primary btn--sm" disabled={busy} onClick={() => act("confirm")}>Confirm</button>
@@ -442,7 +442,7 @@ function Revisions() {
       <ErrorBanner error={revs.error} />
       {revs.isPending ? <Loading /> : (
         <div className="data-table-wrap">
-          <RevisionTable items={revs.data?.items ?? []} actions={app.can("operator")} />
+          <RevisionTable items={revs.data?.items ?? []} actions={app.canAny("operator")} />
         </div>
       )}
     </div>

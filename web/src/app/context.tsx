@@ -16,7 +16,11 @@ export interface AppState {
   changesets: ChangeSet[];
   pending: Revision | undefined;
   setChangeSet: (id: string) => void;
-  can: (role: Role) => boolean;
+  // Whether the principal has role on resources of group ("" or undefined:
+  // ungrouped).
+  can: (role: Role, group?: string) => boolean;
+  // Whether the principal has role anywhere, instance or group.
+  canAny: (role: Role) => boolean;
   // Runs fn with the active change set, asking to open one first.
   withChangeSet: (fn: (cs: string) => void) => void;
   // Invalidates every query after a write.
@@ -60,7 +64,11 @@ export function AppProvider({ me, onLogout, askChangeSet, children }: { me: Me; 
     changesets: list,
     pending: revs.data?.items.find((r) => r.status === "pending"),
     setChangeSet,
-    can: (role) => ROLE_RANK[me.role] >= ROLE_RANK[role],
+    can: (role, group) => {
+      const g = group ? me.groupRoles?.[group] : undefined;
+      return Math.max(ROLE_RANK[me.role], g ? ROLE_RANK[g] : -1) >= ROLE_RANK[role];
+    },
+    canAny: (role) => Math.max(ROLE_RANK[me.role], ...Object.values(me.groupRoles ?? {}).map((r) => ROLE_RANK[r])) >= ROLE_RANK[role],
     withChangeSet: (fn) => (active ? fn(active) : askChangeSet((id) => {
       setChangeSet(id);
       void qc.invalidateQueries();

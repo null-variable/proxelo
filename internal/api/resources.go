@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/null-variable/proxelo/internal/auth"
 	"github.com/null-variable/proxelo/internal/model"
 	"github.com/null-variable/proxelo/internal/store"
 )
@@ -22,7 +23,7 @@ func writeChangeSet(r *http.Request) (string, error) {
 	return cs, nil
 }
 
-func (a *api) list(w http.ResponseWriter, r *http.Request) {
+func (a *api) list(w http.ResponseWriter, r *http.Request, ac *access) {
 	k, err := kindOf(r)
 	if err != nil {
 		a.fail(w, err)
@@ -33,20 +34,25 @@ func (a *api) list(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
-	out := make([]model.Resource, len(items))
-	for i, it := range items {
-		out[i] = model.Redacted(it)
+	out := make([]model.Resource, 0, len(items))
+	for _, it := range items {
+		if ac.canRead(k.Plural, it) {
+			out = append(out, model.Redacted(it))
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": out})
 }
 
-func (a *api) get(w http.ResponseWriter, r *http.Request) {
+func (a *api) get(w http.ResponseWriter, r *http.Request, ac *access) {
 	k, err := kindOf(r)
 	if err != nil {
 		a.fail(w, err)
 		return
 	}
 	res, err := a.st.Get(r.Context(), changeSetParam(r), k, r.PathValue("id"))
+	if err == nil && !ac.canRead(k.Plural, res) {
+		err = store.ErrNotFound
+	}
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -55,7 +61,7 @@ func (a *api) get(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, model.Redacted(res))
 }
 
-func (a *api) create(w http.ResponseWriter, r *http.Request) {
+func (a *api) create(w http.ResponseWriter, r *http.Request, ac *access) {
 	k, err := kindOf(r)
 	if err != nil {
 		a.fail(w, err)
@@ -80,6 +86,10 @@ func (a *api) create(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
+	if err := a.mayWrite(r, ac, cs, nil, res); err != nil {
+		a.fail(w, err)
+		return
+	}
 	model.Prepare(res)
 	if err := a.st.Create(r.Context(), cs, k, res); err != nil {
 		a.fail(w, err)
@@ -92,17 +102,17 @@ func (a *api) create(w http.ResponseWriter, r *http.Request) {
 
 // patch applies a JSON merge patch (RFC 7396) to the resource as the change
 // set sees it.
-func (a *api) patch(w http.ResponseWriter, r *http.Request) {
-	a.update(w, r, true)
+func (a *api) patch(w http.ResponseWriter, r *http.Request, ac *access) {
+	a.update(w, r, ac, true)
 }
 
 // put replaces the resource. An uploaded certificate without keyPem keeps
 // the stored key, which reads never return.
-func (a *api) put(w http.ResponseWriter, r *http.Request) {
-	a.update(w, r, false)
+func (a *api) put(w http.ResponseWriter, r *http.Request, ac *access) {
+	a.update(w, r, ac, false)
 }
 
-func (a *api) update(w http.ResponseWriter, r *http.Request, merge bool) {
+func (a *api) update(w http.ResponseWriter, r *http.Request, ac *access, merge bool) {
 	k, err := kindOf(r)
 	if err != nil {
 		a.fail(w, err)
@@ -125,6 +135,9 @@ func (a *api) update(w http.ResponseWriter, r *http.Request, merge bool) {
 	}
 	id := r.PathValue("id")
 	cur, err := a.st.Get(r.Context(), cs, k, id)
+	if err == nil && !ac.canRead(k.Plural, cur) {
+		err = store.ErrNotFound
+	}
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -166,6 +179,10 @@ func (a *api) update(w http.ResponseWriter, r *http.Request, merge bool) {
 		a.fail(w, err)
 		return
 	}
+	if err := a.mayWrite(r, ac, cs, cur, res); err != nil {
+		a.fail(w, err)
+		return
+	}
 	model.Prepare(res)
 	if err := a.st.Update(r.Context(), cs, k, id, version, res); err != nil {
 		a.fail(w, err)
@@ -195,13 +212,24 @@ func mergePatch(target, patch any) any {
 	return t
 }
 
-func (a *api) delete(w http.ResponseWriter, r *http.Request) {
+func (a *api) delete(w http.ResponseWriter, r *http.Request, ac *access) {
 	k, err := kindOf(r)
 	if err != nil {
 		a.fail(w, err)
 		return
 	}
 	cs, err := writeChangeSet(r)
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	cur, err := a.st.Get(r.Context(), cs, k, r.PathValue("id"))
+	if err == nil && !ac.canRead(k.Plural, cur) {
+		err = store.ErrNotFound
+	}
+	if err == nil {
+		err = a.mayWrite(r, ac, cs, cur, nil)
+	}
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -254,7 +282,7 @@ func parseRevision(r *http.Request) (uint64, error) {
 	return n, nil
 }
 
-func (a *api) revisions(w http.ResponseWriter, r *http.Request) {
+func (a *api) revisions(w http.ResponseWriter, r *http.Request, _ *access) {
 	revs, err := a.st.Revisions(r.Context())
 	if err != nil {
 		a.fail(w, err)
@@ -300,11 +328,24 @@ func (a *api) snapshot(w http.ResponseWriter, r *http.Request) {
 	w.Write(rev.Snapshot)
 }
 
-func (a *api) confirm(w http.ResponseWriter, r *http.Request) {
+// confirm keeps a pending revision. Instance operators confirm any; group
+// operators the ones they applied.
+func (a *api) confirm(w http.ResponseWriter, r *http.Request, ac *access) {
 	n, err := parseRevision(r)
 	if err != nil {
 		a.fail(w, err)
 		return
+	}
+	if !ac.in("").Allows(auth.Operator) {
+		rev, err := a.st.Revision(r.Context(), n)
+		if err != nil {
+			a.fail(w, err)
+			return
+		}
+		if rev.Author != ac.p.user.Name {
+			a.fail(w, httpError{status: http.StatusForbidden, msg: "group operators confirm only the revisions they applied"})
+			return
+		}
 	}
 	rev, err := a.dep.Confirm(r.Context(), n, who(r).name())
 	if err != nil {

@@ -5,7 +5,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { api, APIError, type FieldError } from "../api/client";
-import { KINDS, TEMPLATES, type Items, type Kind, type Resource } from "../api/types";
+import { KINDS, TEMPLATES, type Group, type Items, type Kind, type Resource } from "../api/types";
 import { useApp } from "../app/context";
 import { Card, DeleteDialog, Empty, ErrorBanner, Field, Loading, PageHeader, Status, Tabs, timeAgo, toast, toastError } from "../components/ui";
 import { SchemaForm, type Refs } from "../form/SchemaForm";
@@ -29,6 +29,10 @@ export function useRefs(cs: string) {
       return Object.fromEntries(ALL_KINDS.map((k, i) => [k, lists[i]!.items]));
     },
   });
+}
+
+export function useGroups() {
+  return useQuery({ queryKey: ["groups"], queryFn: () => api.get<Items<Group>>("/groups") });
 }
 
 export function refName(refs: Refs | undefined, kind: Kind, id: string): string | undefined {
@@ -91,7 +95,7 @@ export function ResourceList({ kind }: { kind: Kind }) {
   return (
     <div className="stack">
       <PageHeader title={meta.label} sub={app.changeset ? <>Showing change set <span className="mono">{app.changeset}</span>.</> : "Showing the current configuration."}>
-        {app.can("editor") && (
+        {app.canAny("editor") && (
           <button className="btn btn--primary" onClick={() => app.withChangeSet(() => void navigate({ to: "/$kind/$id", params: { kind, id: "new" } }))}>
             Create {meta.one}
           </button>
@@ -165,7 +169,13 @@ export function ResourceEdit({ kind, id }: { kind: Kind; id: string }) {
   const [banner, setBanner] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const canEdit = app.can("editor");
+  const groups = useGroups();
+  // Editable when the principal is an editor where the resource is now
+  // (new resources: anywhere); the server checks the target group too.
+  const canEdit = isNew ? app.canAny("editor") : app.can("editor", loaded.data?.group);
+  const writable = (groups.data?.items ?? []).filter((g) => app.can("editor", g.id));
+  // Group-only members create inside a group they can write.
+  const groupOf = (d: Draft) => d.group ?? (isNew && !app.can("editor") ? writable[0]?.id : undefined);
 
   useEffect(() => {
     if (!loaded.data) return;
@@ -198,8 +208,9 @@ export function ResourceEdit({ kind, id }: { kind: Kind; id: string }) {
 
   const save = () =>
     app.withChangeSet(async (cs) => {
-      const body = view === "raw" ? fromRaw() : doc;
-      if (!body) return;
+      const draft = view === "raw" ? fromRaw() : doc;
+      if (!draft) return;
+      const body = { ...draft, group: groupOf(draft) };
       setBusy(true);
       setErrors([]);
       setBanner(null);
@@ -265,6 +276,13 @@ export function ResourceEdit({ kind, id }: { kind: Kind; id: string }) {
           </Field>
           <Field id="res-desc" label="Description">
             <input id="res-desc" className="input" value={doc.description ?? ""} disabled={!canEdit} onChange={(e) => setDoc({ ...doc, description: e.target.value || undefined })} />
+          </Field>
+          <Field id="res-group" label="Group" error={errors.find((e) => e.path === "group")?.message}
+            hint="Members of the group and its parents get their group role on this resource.">
+            <select id="res-group" className="input" value={groupOf(doc) ?? ""} disabled={!canEdit} onChange={(e) => setDoc({ ...doc, group: e.target.value || undefined })}>
+              {(app.can("editor") || !groupOf(doc)) && <option value="">No group</option>}
+              {(groups.data?.items ?? []).filter((g) => g.id === doc.group || writable.includes(g)).map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+            </select>
           </Field>
         </div>
         <div className="setting-row mt">

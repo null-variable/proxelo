@@ -46,7 +46,7 @@ flowchart LR
 ## Resources
 
 Users edit six kinds of resources. Each has an immutable ID with a kind
-prefix (`site_…`, `rt_…`), a name, optional labels and description, an
+prefix (`site_…`, `rt_…`), a name, optional labels, description and group, an
 `enabled` flag and a `spec`. Resources refer to each other by ID, so renaming
 never breaks a reference.
 
@@ -150,6 +150,7 @@ from one engine.
 | `internal/lint` | Warnings and admin-access safety checks |
 | `internal/deploy` | Apply, commit-confirm timer, traffic guard, rollback |
 | `internal/distrib` | gRPC stream to proxies: snapshots, ACME challenges, acks, traffic counters |
+| `internal/topology` | Request-flow graph and its Mermaid and DOT rendering |
 | `internal/simulate` | The resident `proxelo-proxy sim` helper |
 | `internal/acme` | ACME issuance and renewal |
 | `internal/api`, `internal/auth`, `internal/admin`, `internal/breakglass` | REST API, credentials and roles, admin listener, local recovery socket |
@@ -188,6 +189,12 @@ flowchart TD
 - The admin API listens on loopback unless `-admin-allow` lists client
   networks. Sessions are HttpOnly SameSite=Strict cookies with a CSRF token;
   API tokens are hashed and can be limited to networks.
+- Roles are per instance and per group. A grouped resource answers to the
+  higher of the two; groups nest and members inherit downward. Group members
+  see only their groups' resources (plus shared listeners and certificates),
+  cannot reference resources outside them, and their sites stay inside the
+  group's domains. Applying needs operator on every group a change set
+  touches.
 - Private keys are stored by the control plane, sent to proxies inside
   snapshots, and never returned by the API.
 - The control socket is a Unix socket created 0660 in a 0750 directory, so

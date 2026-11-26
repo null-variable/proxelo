@@ -14,10 +14,13 @@ import (
 
 // Meta holds the fields every resource has.
 type Meta struct {
-	ID          string            `json:"id"`
-	Name        string            `json:"name"`
-	Labels      map[string]string `json:"labels,omitempty"`
-	Description string            `json:"description,omitempty"`
+	ID     string            `json:"id"`
+	Name   string            `json:"name"`
+	Labels map[string]string `json:"labels,omitempty"`
+	// Group ID; members of the group and its ancestors get their group
+	// role on the resource. Empty: only instance roles apply.
+	Group       string `json:"group,omitempty"`
+	Description string `json:"description,omitempty"`
 	// Enabled false keeps the resource stored but leaves it out of snapshots.
 	// Nil means enabled.
 	Enabled         *bool     `json:"enabled,omitempty"`
@@ -532,4 +535,53 @@ func (c *Config) Add(r Resource) {
 	default:
 		panic("model: unknown resource type")
 	}
+}
+
+// Ref is a reference from one resource to another by ID.
+type Ref struct {
+	Kind string
+	ID   string
+	// The field that holds it, for example "spec.listeners".
+	Field string
+}
+
+// Refs lists the references r makes, in field order.
+func Refs(r Resource) []Ref {
+	var out []Ref
+	add := func(k Kind, field string, ids ...string) {
+		for _, id := range ids {
+			if id != "" {
+				out = append(out, Ref{Kind: k.Plural, ID: id, Field: field})
+			}
+		}
+	}
+	pages := func(field string, eps []ErrorPage) {
+		for _, ep := range eps {
+			add(RouteKind, field, ep.Route)
+		}
+	}
+	switch r := r.(type) {
+	case *Listener:
+		add(SiteKind, "spec.defaultSite", r.Spec.DefaultSite)
+		if r.Spec.TLS != nil {
+			add(CertificateKind, "spec.tls.defaultCertificate", r.Spec.TLS.DefaultCertificate)
+		}
+	case *Site:
+		add(ListenerKind, "spec.listeners", r.Spec.Listeners...)
+		add(RouteKind, "spec.routes", r.Spec.Routes...)
+		add(CertificateKind, "spec.certificates", r.Spec.Certificates...)
+		add(PolicyKind, "spec.policies", r.Spec.Policies...)
+		pages("spec.errorPages", r.Spec.ErrorPages)
+	case *Route:
+		add(RouteKind, "spec.children", r.Spec.Children...)
+		add(PolicyKind, "spec.policies", r.Spec.Policies...)
+		pages("spec.errorPages", r.Spec.ErrorPages)
+		if p := r.Spec.Action.Proxy; p != nil {
+			add(UpstreamKind, "spec.action.proxy.upstream", p.Upstream)
+		}
+		if s := r.Spec.Action.Static; s != nil && s.TryFiles != nil {
+			add(RouteKind, "spec.action.static.tryFiles.route", s.TryFiles.Route)
+		}
+	}
+	return out
 }

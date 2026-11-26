@@ -12,6 +12,7 @@ import (
 	"go.yaml.in/yaml/v3"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/null-variable/proxelo/internal/auth"
 	"github.com/null-variable/proxelo/internal/deploy"
 	"github.com/null-variable/proxelo/internal/diff"
 	"github.com/null-variable/proxelo/internal/lint"
@@ -21,7 +22,7 @@ import (
 
 func uintParamValue(s string) (uint64, error) { return strconv.ParseUint(s, 10, 64) }
 
-func (a *api) changesets(w http.ResponseWriter, r *http.Request) {
+func (a *api) changesets(w http.ResponseWriter, r *http.Request, _ *access) {
 	css, err := a.st.ChangeSets(r.Context())
 	if err != nil {
 		a.fail(w, err)
@@ -30,7 +31,7 @@ func (a *api) changesets(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": css})
 }
 
-func (a *api) createChangeSet(w http.ResponseWriter, r *http.Request) {
+func (a *api) createChangeSet(w http.ResponseWriter, r *http.Request, _ *access) {
 	var req struct {
 		Message string `json:"message"`
 	}
@@ -47,7 +48,7 @@ func (a *api) createChangeSet(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, cs)
 }
 
-func (a *api) changeset(w http.ResponseWriter, r *http.Request) {
+func (a *api) changeset(w http.ResponseWriter, r *http.Request, _ *access) {
 	cs, err := a.st.ChangeSet(r.Context(), r.PathValue("id"))
 	if err != nil {
 		a.fail(w, err)
@@ -56,7 +57,11 @@ func (a *api) changeset(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, cs)
 }
 
-func (a *api) deleteChangeSet(w http.ResponseWriter, r *http.Request) {
+func (a *api) deleteChangeSet(w http.ResponseWriter, r *http.Request, ac *access) {
+	if err := a.requireItems(r, ac, r.PathValue("id"), auth.Editor); err != nil {
+		a.fail(w, err)
+		return
+	}
 	if err := a.st.DeleteChangeSet(r.Context(), r.PathValue("id")); err != nil {
 		a.fail(w, err)
 		return
@@ -138,8 +143,12 @@ func redactEffective(es []diff.Effective) []diff.Effective {
 
 // diff returns the resource diff and, when the change set compiles, the
 // effective diff of compiled behavior against the latest revision.
-func (a *api) diff(w http.ResponseWriter, r *http.Request) {
+func (a *api) diff(w http.ResponseWriter, r *http.Request, ac *access) {
 	cs := r.PathValue("id")
+	if err := a.requireItems(r, ac, cs, auth.Viewer); err != nil {
+		a.fail(w, err)
+		return
+	}
 	res, err := a.resourceDiffs(r, cs)
 	if err != nil {
 		a.fail(w, err)
@@ -211,7 +220,11 @@ func (a *api) check(r *http.Request, cs string) (validation, error) {
 	return v, nil
 }
 
-func (a *api) validate(w http.ResponseWriter, r *http.Request) {
+func (a *api) validate(w http.ResponseWriter, r *http.Request, ac *access) {
+	if err := a.requireItems(r, ac, r.PathValue("id"), auth.Viewer); err != nil {
+		a.fail(w, err)
+		return
+	}
 	v, err := a.check(r, r.PathValue("id"))
 	if err != nil {
 		a.fail(w, err)
@@ -252,8 +265,12 @@ func (m applyMode) timeout(def time.Duration) (time.Duration, error) {
 	return d, nil
 }
 
-func (a *api) apply(w http.ResponseWriter, r *http.Request) {
+func (a *api) apply(w http.ResponseWriter, r *http.Request, ac *access) {
 	cs := r.PathValue("id")
+	if err := a.requireItems(r, ac, cs, auth.Operator); err != nil {
+		a.fail(w, err)
+		return
+	}
 	var req applyMode
 	if err := a.decode(r, &req); err != nil {
 		a.fail(w, err)

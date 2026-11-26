@@ -82,8 +82,21 @@ cookies with a CSRF token (`X-CSRF-Token` on every write), 30 min idle and 24 h
 absolute expiry. API tokens (`Authorization: Bearer <token>`) carry a role up
 to their creator's, an expiry and optional client networks, and are stored
 hashed. Roles: owner, admin, operator (apply, confirm, rollback), editor
-(change sets), viewer. The admin API stays on loopback unless `-admin-allow`
-lists client networks.
+(change sets), viewer, and guest (signs in, reaches only its groups). The
+admin API stays on loopback unless `-admin-allow` lists client networks.
+
+Groups scope resources to teams and domains. A resource's `group` field puts
+it in a group; groups nest, and each member holds a group role (viewer,
+editor, operator or admin) that also applies in every subgroup. On a grouped
+resource a principal acts with the higher of its instance role and its group
+role; API tokens cap both. A group can list domains (`shop.example` covers
+the name and everything under it): its sites may only serve hostnames inside
+them, and a subgroup's domains stay inside its parent's. Members read the
+ungrouped listeners and certificates their sites attach to, cannot reference
+anything else outside their groups, apply only change sets whose resources
+are all in groups where they are operators, and confirm only the revisions
+they applied. Group admins manage members up to their own role and create
+subgroups; a group's domains are changed from its parent.
 
 Every change, login, failure and recovery is written to an append-only audit
 log whose entries are hash-chained (`GET /api/v1/audit`, `/audit/verify`).
@@ -140,6 +153,8 @@ control plane is down and reconnects when it is back.
 | `POST /api/v1/simulate` | Run requests (`{"requests":[{"method","target","headers","remoteAddr","listener"}]}`) against the latest or a given `revision`, and with `"changeset"` against that change set as it would apply; returns site, route, rewritten URI, upstream or file, status and a trace |
 | `/api/v1/auth/{status,setup,login,logout,me,password,totp/*,tokens}` | Accounts, 2FA, API tokens; `status` tells whether setup is pending, `me` returns the session CSRF token |
 | `/api/v1/users`, `GET /api/v1/audit[/verify]` | Account management and audit log (admin) |
+| `GET/POST /api/v1/groups`, `PATCH/DELETE /groups/{id}`, `PUT /groups/{id}/members`, `DELETE /groups/{id}/members/{user}` | Groups, their domains and member roles; the list returns the caller's effective role per group |
+| `GET /api/v1/topology[?changeset=][&format=json\|mermaid\|dot]` | Request-flow graph (listener → site → route → upstream → target) of the resources the caller can read, as JSON or a Mermaid or Graphviz diagram |
 
 Validation errors return `422` with field paths such as
 `routes[rt_...].spec.action.proxy.upstream`.
@@ -172,9 +187,10 @@ PROXELO_API=127.0.0.1:9443 bun run dev   # dev server proxying /api to a running
 |---|---|
 | Dashboard | 5-minute traffic, 5xx and upstream failure rates, node sync, certificates expiring within 30 days, recent revisions, pending-confirmation banner |
 | Sites, Routes, Upstreams, Certificates, Policies, Listeners | Lists with search; editors generated from `/api/v1/schema` (reference fields become pickers) with a Raw JSON tab; server field errors shown at the field; site route tree with nginx match badges |
+| Topology | The configuration as a request-flow diagram, filterable by group; drag from a node's handle (or use the side panel) to connect listener → site, site → route, route → child route or upstream, remove connections, add resources and upstream targets, all into the active change set; export as SVG, PNG, Mermaid, Graphviz DOT or JSON |
 | Changes | Change sets (the active one is the draft every edit goes to), resource and effective diff, validate with safety findings, apply with commit-confirm, import, export, discard; revisions with confirm and rollback |
 | Simulator | One request against the latest revision, side by side with the active change set |
-| Nodes, Settings | Proxy sync state; password, TOTP, API tokens, users and the audit log |
+| Nodes, Settings | Proxy sync state; password, TOTP, API tokens, groups with members and domains, users and the audit log |
 
 Light and dark modes follow the system and can be switched. Pages are laid
 out for 390px phones and up. The editors render from `GET /api/v1/schema`, so
@@ -208,11 +224,12 @@ upgraded one end up identical.
 | `internal/deploy` | Apply, commit-confirm timer, guard, rollback |
 | `internal/diff` | Field diff, three-way merge, effective snapshot diff |
 | `internal/lint` | Validation warnings and admin-access safety checks |
-| `internal/auth` | Argon2id, TOTP, roles |
+| `internal/auth` | Argon2id, TOTP, instance and group roles |
 | `internal/admin` | Admin listener with allowlist and rebinding |
 | `internal/breakglass` | Local recovery socket |
 | `internal/distrib` | Snapshot and ACME challenge distribution to proxies over the control socket |
 | `internal/acme` | ACME issuance and renewal |
+| `internal/topology` | Request-flow graph of a configuration and its Mermaid and DOT rendering |
 | `internal/simulate` | Resident `proxelo-proxy sim` helper for dry-loads and simulation |
 | `internal/ui` | Serves the embedded web console build |
 | `web` | Web console source (Vite + React + TypeScript, bun) |

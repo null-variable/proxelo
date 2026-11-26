@@ -173,17 +173,38 @@ const (
 	// Edits change sets; applying needs an operator.
 	Editor Role = "editor"
 	Viewer Role = "viewer"
+	// Signs in but reaches only the groups the account is a member of.
+	Guest Role = "guest"
 )
 
-var ranks = map[Role]int{Viewer: 1, Editor: 2, Operator: 3, Admin: 4, Owner: 5}
+var ranks = map[Role]int{Guest: 1, Viewer: 2, Editor: 3, Operator: 4, Admin: 5, Owner: 6}
 
 // ParseRole rejects unknown roles.
 func ParseRole(s string) (Role, error) {
 	r := Role(s)
 	if ranks[r] == 0 {
-		return "", errors.New(`must be "owner", "admin", "operator", "editor" or "viewer"`)
+		return "", errors.New(`must be "owner", "admin", "operator", "editor", "viewer" or "guest"`)
 	}
 	return r, nil
+}
+
+// ParseGroupRole accepts the roles a group can grant: "viewer" (read),
+// "editor" (write to change sets), "operator" (apply) and "admin" (manage
+// members and subgroups).
+func ParseGroupRole(s string) (Role, error) {
+	switch r := Role(s); r {
+	case Viewer, Editor, Operator, Admin:
+		return r, nil
+	}
+	return "", errors.New(`must be "admin", "operator", "editor" or "viewer"`)
+}
+
+// Higher returns the more privileged of r and o.
+func (r Role) Higher(o Role) Role {
+	if ranks[o] > ranks[r] {
+		return o
+	}
+	return r
 }
 
 // Allows reports whether r has at least the privileges of min.

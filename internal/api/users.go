@@ -249,8 +249,9 @@ func (a *api) tokens(w http.ResponseWriter, r *http.Request) {
 }
 
 // createToken issues an API token for the caller. Its role is capped at the
-// caller's; the secret is shown once.
-func (a *api) createToken(w http.ResponseWriter, r *http.Request) {
+// caller's highest, instance or group: on each resource the token gets the
+// lower of its role and the caller's there. The secret is shown once.
+func (a *api) createToken(w http.ResponseWriter, r *http.Request, ac *access) {
 	var req struct {
 		Name      string   `json:"name"`
 		Role      string   `json:"role"`
@@ -270,14 +271,14 @@ func (a *api) createToken(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, httpError{status: http.StatusUnprocessableEntity, msg: "name: must be 1-64 lowercase letters, digits, '.', '_' or '-'"})
 		return
 	}
-	role := p.role
+	role := ac.highest()
 	if req.Role != "" {
 		rr, err := auth.ParseRole(req.Role)
 		if err != nil {
 			a.fail(w, httpError{status: http.StatusUnprocessableEntity, msg: "role: " + err.Error()})
 			return
 		}
-		role = rr.Lower(p.role)
+		role = rr.Lower(ac.highest())
 	}
 	for i, c := range req.CIDRs {
 		if _, err := netip.ParsePrefix(c); err != nil {

@@ -2,16 +2,17 @@
 import { useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
-import { ROLE_RANK, ROLES, type AuditEntry, type Items, type Role, type Token, type User } from "../api/types";
+import { GROUP_ROLES, ROLE_RANK, ROLES, type AuditEntry, type Group, type Items, type Role, type Token, type User } from "../api/types";
 import { useApp } from "../app/context";
 import { Card, Dialog, Empty, ErrorBanner, Field, Loading, PageHeader, SettingRow, Status, fmtTime, timeAgo, toast, toastError } from "../components/ui";
 
-type Tab = "account" | "tokens" | "users" | "audit";
+type Tab = "account" | "tokens" | "groups" | "users" | "audit";
 
 export function Settings() {
   const app = useApp();
   const [tab, setTab] = useState<Tab>("account");
   const tabs: { id: Tab; label: string }[] = [{ id: "account", label: "Account" }, { id: "tokens", label: "API tokens" }];
+  if (app.canAny("viewer")) tabs.push({ id: "groups", label: "Groups" });
   if (app.can("admin")) tabs.push({ id: "users", label: "Users" }, { id: "audit", label: "Audit log" });
   return (
     <div className="stack">
@@ -27,6 +28,7 @@ export function Settings() {
         <div className="stack">
           {tab === "account" && <Account />}
           {tab === "tokens" && <Tokens />}
+          {tab === "groups" && <Groups />}
           {tab === "users" && <Users />}
           {tab === "audit" && <Audit />}
         </div>
@@ -339,6 +341,142 @@ function Audit() {
             </tbody>
           </table>
         </div>
+      )}
+    </Card>
+  );
+}
+
+// Groups: a tree of groups, each bounded to domains, whose members' roles
+// apply to the group's resources and every subgroup's.
+function Groups() {
+  const app = useApp();
+  const list = useQuery({ queryKey: ["groups"], queryFn: () => api.get<Items<Group>>("/groups") });
+  const dir = useQuery({ queryKey: ["directory"], queryFn: () => api.get<Items<{ id: string; name: string }>>("/directory"), enabled: app.canAny("admin") });
+  const [form, setForm] = useState<{ id?: string; name: string; parent: string; description: string; domains: string } | null>(null);
+  const [deleting, setDeleting] = useState<Group | null>(null);
+  const [member, setMember] = useState<Record<string, { user: string; role: Role }>>({});
+  const { busy, run } = useAction();
+  const items = list.data?.items ?? [];
+  const byID = new Map(items.map((g) => [g.id, g]));
+  const userName = (id: string) => dir.data?.items.find((u) => u.id === id)?.name ?? (id === app.me.user.id ? app.me.user.name : id);
+  const depth = (g: Group): number => (g.parent && byID.has(g.parent) ? 1 + depth(byID.get(g.parent)!) : 0);
+  const path = (g: Group): string => (g.parent && byID.has(g.parent) ? path(byID.get(g.parent)!) + " / " : "") + g.name;
+  // Parents first, children right below them.
+  const ordered: Group[] = [];
+  const walk = (parent: string | undefined) =>
+    items.filter((g) => (g.parent || undefined) === parent || (parent === undefined && g.parent && !byID.has(g.parent))).forEach((g) => {
+      ordered.push(g);
+      walk(g.id);
+    });
+  walk(undefined);
+  const roleIn = (id: string) => (app.can("admin") ? "admin" : app.me.groupRoles[id]);
+  const isAdmin = (id: string) => app.can("admin", id);
+
+  const act = (fn: () => Promise<unknown>, msg: string) =>
+    run(async () => {
+      await fn();
+      toast(msg);
+      await list.refetch();
+    });
+  const domains = (s: string) => s.split(/[\s,]+/).filter(Boolean);
+  const save = () => {
+    if (!form) return;
+    const body = { name: form.name, parent: form.parent, description: form.description, domains: domains(form.domains) };
+    void act(() => (form.id ? api.patch(`/groups/${form.id}`, body) : api.post("/groups", body)), `Group ${form.name} saved`).then(() => setForm(null));
+  };
+
+  return (
+    <Card title="Groups" flush actions={app.can("admin") && <button className="btn btn--sm" onClick={() => setForm({ name: "", parent: "", description: "", domains: "" })}>Add group</button>}>
+      <div className="card__body muted small">
+        Group members get their role (viewer, editor, operator, admin) on the group's resources and those of every subgroup. Sites of a group with domains may only serve hostnames inside them.
+      </div>
+      {list.error && <div className="card__body"><ErrorBanner error={list.error} /></div>}
+      {list.isPending ? <div className="card__body"><Loading /></div> : ordered.length === 0 ? <div className="card__body"><Empty title="No groups" text="Groups scope resources to teams or domains." /></div> : (
+        <div className="stack card__body">
+          {ordered.map((g) => {
+            const m = member[g.id] ?? { user: "", role: "viewer" as Role };
+            return (
+              <div key={g.id} className="group-row" style={{ marginLeft: depth(g) * 20 }}>
+                <div className="row row--between">
+                  <div>
+                    <b>{path(g)}</b>{roleIn(g.id) && <> <span className="badge badge--outline">{roleIn(g.id)}</span></>}
+                    <div className="muted small">{g.domains.length ? g.domains.join(", ") : g.parent ? "Domains of the parent group" : "Any domain"}{g.description ? ` · ${g.description}` : ""}</div>
+                  </div>
+                  {isAdmin(g.id) && (
+                    <div className="row">
+                      <button className="btn btn--sm" onClick={() => setForm({ name: "", parent: g.id, description: "", domains: "" })}>Add subgroup</button>
+                      <button className="btn btn--sm" onClick={() => setForm({ id: g.id, name: g.name, parent: g.parent ?? "", description: g.description ?? "", domains: g.domains.join(", ") })}>Edit</button>
+                      <button className="btn btn--danger-text btn--sm" onClick={() => setDeleting(g)}>Delete</button>
+                    </div>
+                  )}
+                </div>
+                <table className="data-table mt">
+                  <tbody>
+                    {g.members.map((mm) => (
+                      <tr key={mm.user}>
+                        <td>{userName(mm.user)}</td>
+                        <td>
+                          {isAdmin(g.id) ? (
+                            <select className="input input--sm" aria-label={`Role of ${userName(mm.user)} in ${g.name}`} value={mm.role} disabled={busy}
+                              onChange={(e) => act(() => api.put(`/groups/${g.id}/members`, { user: userName(mm.user), role: e.target.value }), `${userName(mm.user)} is now ${e.target.value} in ${g.name}`)}>
+                              {GROUP_ROLES.filter((r) => app.can(r, g.id)).map((r) => <option key={r} value={r}>{r}</option>)}
+                            </select>
+                          ) : mm.role}
+                        </td>
+                        <td className="row-actions">
+                          {(isAdmin(g.id) || mm.user === app.me.user.id) && (
+                            <button className="btn btn--danger-text btn--sm" disabled={busy} onClick={() => act(() => api.del(`/groups/${g.id}/members/${mm.user}`), `${userName(mm.user)} removed from ${g.name}`)}>
+                              {mm.user === app.me.user.id ? "Leave" : "Remove"}
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                    {g.members.length === 0 && <tr><td className="muted" colSpan={3}>No direct members{g.parent ? "; members of parent groups apply" : ""}.</td></tr>}
+                  </tbody>
+                </table>
+                {isAdmin(g.id) && (
+                  <form className="row mt member-form" onSubmit={(e) => { e.preventDefault(); void act(() => api.put(`/groups/${g.id}/members`, m), `${m.user} added to ${g.name}`).then(() => setMember({ ...member, [g.id]: { user: "", role: "viewer" } })); }}>
+                    <select className="input input--sm grow" aria-label={`Add member to ${g.name}`} value={m.user} onChange={(e) => setMember({ ...member, [g.id]: { ...m, user: e.target.value } })} required>
+                      <option value="">Add member…</option>
+                      {(dir.data?.items ?? []).filter((u) => !g.members.some((x) => x.user === u.id)).map((u) => <option key={u.id} value={u.name}>{u.name}</option>)}
+                    </select>
+                    <select className="input input--sm" aria-label="Role" value={m.role} onChange={(e) => setMember({ ...member, [g.id]: { ...m, role: e.target.value as Role } })}>
+                      {GROUP_ROLES.filter((r) => app.can(r, g.id)).map((r) => <option key={r} value={r}>{r}</option>)}
+                    </select>
+                    <button className="btn btn--sm" disabled={busy || !m.user}>Add</button>
+                  </form>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {form && (
+        <Dialog title={form.id ? `Edit group ${form.name}` : form.parent ? `Add subgroup of ${byID.get(form.parent)?.name}` : "Add group"} onClose={() => setForm(null)}>
+          <form className="stack" onSubmit={(e) => { e.preventDefault(); save(); }}>
+            <Field id="gr-n" label="Name">
+              <input id="gr-n" className="input" autoComplete="off" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+            </Field>
+            <Field id="gr-d" label="Description">
+              <input id="gr-d" className="input" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+            </Field>
+            <Field id="gr-dm" label="Domains" hint={form.parent ? "Inside the parent's domains. Empty: the parent's." : "Comma-separated, for example shop.example; each covers its subdomains. Empty: any."}>
+              <input id="gr-dm" className="input mono" value={form.domains} disabled={!!form.id && !app.can("admin", form.parent || undefined)} onChange={(e) => setForm({ ...form, domains: e.target.value })} />
+            </Field>
+            <div className="dialog__actions">
+              <button type="button" className="btn" onClick={() => setForm(null)}>Cancel</button>
+              <button className="btn btn--primary" disabled={busy}>Save</button>
+            </div>
+          </form>
+        </Dialog>
+      )}
+      {deleting && (
+        <Dialog title={`Delete group ${deleting.name}`} text="Only groups without subgroups or resources can be deleted." onClose={() => setDeleting(null)}
+          actions={<>
+            <button className="btn" onClick={() => setDeleting(null)}>Cancel</button>
+            <button className="btn btn--destructive" disabled={busy} onClick={() => act(() => api.del(`/groups/${deleting.id}`), `${deleting.name} deleted`).then(() => setDeleting(null))}>Delete</button>
+          </>} />
       )}
     </Card>
   );

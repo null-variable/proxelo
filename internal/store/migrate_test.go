@@ -55,7 +55,7 @@ func TestMigrateLegacy(t *testing.T) {
 
 	var v int
 	st.db.QueryRow(`PRAGMA user_version`).Scan(&v)
-	if v != SchemaVersion() || len(logs) != 2 {
+	if v != SchemaVersion() || len(logs) != SchemaVersion() {
 		t.Fatalf("version %d, logs %q", v, logs)
 	}
 	baks, _ := filepath.Glob(filepath.Join(dir, "old.db.v1-*.bak"))

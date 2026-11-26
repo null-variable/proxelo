@@ -1,0 +1,174 @@
+@use "mixins" as *;
+
+// Topology diagram: an SVG canvas with a side panel.
+.topo {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 16px;
+  align-items: start;
+
+  // The diagram needs the width; the panel moves below it.
+  @media (max-width: 1599px) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  &__canvas {
+    overflow: auto;
+    padding: 0;
+    background: var(--px-canvas);
+  }
+
+  &__svg {
+    display: block;
+
+    font-family: var(--font-sans);
+    touch-action: none;
+  }
+
+  &__col {
+    fill: var(--px-text-subtle);
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  &__add {
+    cursor: pointer;
+
+    rect {
+      fill: var(--px-control);
+      stroke: var(--px-line);
+    }
+
+    text {
+      fill: var(--px-text-default);
+      font-size: 14px;
+    }
+
+    &:hover rect,
+    &:focus-visible rect {
+      stroke: var(--px-focus);
+    }
+  }
+
+  &__edge {
+    fill: none;
+    stroke: var(--px-text-placeholder);
+    stroke-width: 1.5;
+
+    &--on {
+      stroke: var(--px-text-link);
+      stroke-width: 2.5;
+    }
+
+    &--drag {
+      stroke: var(--px-text-link);
+      stroke-dasharray: 5 4;
+      pointer-events: none;
+    }
+  }
+
+  &__arrow {
+    fill: var(--px-text-placeholder);
+  }
+
+  &__hit {
+    fill: none;
+    stroke: transparent;
+    stroke-width: 12;
+    cursor: pointer;
+  }
+
+  &__node {
+    cursor: pointer;
+    outline: none;
+
+    --accent: var(--px-badge-neutral);
+
+    &--listeners { --accent: var(--px-badge-blue); }
+    &--sites { --accent: var(--px-badge-purple); }
+    &--routes { --accent: var(--px-badge-teal); }
+    &--upstreams { --accent: var(--px-badge-green); }
+    &--targets { --accent: var(--px-warning); }
+
+    &--off {
+      opacity: 0.5;
+
+      .topo__box {
+        stroke-dasharray: 4 3;
+      }
+    }
+
+    &:hover .topo__box,
+    &:focus-visible .topo__box {
+      stroke: var(--px-interact);
+    }
+
+    &--sel .topo__box {
+      stroke: var(--px-focus);
+      stroke-width: 1.5;
+    }
+  }
+
+  &__box {
+    fill: var(--px-base);
+    stroke: var(--px-line);
+  }
+
+  &__accent {
+    fill: var(--accent);
+  }
+
+  &__name {
+    fill: var(--px-text-strong);
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  &__detail {
+    fill: var(--px-text-subtle);
+    font-family: var(--font-mono);
+    font-size: 11px;
+  }
+
+  &__group {
+    fill: var(--accent);
+    font-size: 10px;
+    font-weight: 600;
+  }
+
+  &__handle {
+    fill: var(--px-base);
+    stroke: var(--accent);
+    stroke-width: 2;
+    cursor: crosshair;
+
+    &:hover {
+      fill: var(--accent);
+    }
+  }
+
+  &__panel {
+    position: sticky;
+    top: calc(var(--topbar-h) + 16px);
+
+    @media (max-width: 1599px) {
+      position: static;
+    }
+  }
+
+  &__links {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+
+    li {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: var(--text-sm);
+    }
+  }
+}

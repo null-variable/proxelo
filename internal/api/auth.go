@@ -32,6 +32,8 @@ const (
 type principal struct {
 	user *store.User
 	role auth.Role
+	// Upper bound on group roles: the token's role, owner for sessions.
+	cap auth.Role
 	// "session" or "token".
 	via string
 	// The session's CSRF token, for a reloaded UI to recover it.
@@ -83,7 +85,7 @@ func (a *api) authenticate(r *http.Request) (*principal, error) {
 		}
 		a.st.TokenUsed(ctx, t)
 		role := auth.Role(t.Role).Lower(auth.Role(u.Role))
-		return &principal{user: u, role: role, via: "token"}, nil
+		return &principal{user: u, role: role, cap: auth.Role(t.Role), via: "token"}, nil
 	}
 	c, err := r.Cookie(sessionCookie)
 	if err != nil {
@@ -106,7 +108,7 @@ func (a *api) authenticate(r *http.Request) (*principal, error) {
 	if err != nil {
 		return nil, errUnauthenticated
 	}
-	return &principal{user: u, role: auth.Role(u.Role), via: "session", csrf: se.CSRF}, nil
+	return &principal{user: u, role: auth.Role(u.Role), cap: auth.Owner, via: "session", csrf: se.CSRF}, nil
 }
 
 var errUnauthenticated = httpError{status: http.StatusUnauthorized, msg: "authentication required"}
@@ -302,9 +304,9 @@ func (a *api) logout(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (a *api) me(w http.ResponseWriter, r *http.Request) {
+func (a *api) me(w http.ResponseWriter, r *http.Request, ac *access) {
 	p := who(r)
-	out := map[string]any{"user": p.user, "role": p.role, "via": p.via}
+	out := map[string]any{"user": p.user, "role": p.role, "via": p.via, "groupRoles": ac.groupRoles()}
 	if p.csrf != "" {
 		out["csrfToken"] = p.csrf
 	}

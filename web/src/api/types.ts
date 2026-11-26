@@ -1,10 +1,12 @@
 // Shapes of the control plane API (internal/api, internal/store).
 import type { FieldError } from "./client";
 
-export type Role = "viewer" | "editor" | "operator" | "admin" | "owner";
+export type Role = "guest" | "viewer" | "editor" | "operator" | "admin" | "owner";
 
-export const ROLE_RANK: Record<Role, number> = { viewer: 0, editor: 1, operator: 2, admin: 3, owner: 4 };
+export const ROLE_RANK: Record<Role, number> = { guest: 0, viewer: 1, editor: 2, operator: 3, admin: 4, owner: 5 };
 export const ROLES = Object.keys(ROLE_RANK) as Role[];
+// Roles a group grants its members.
+export const GROUP_ROLES: Role[] = ["viewer", "editor", "operator", "admin"];
 
 export interface User {
   id: string;
@@ -19,6 +21,43 @@ export interface Me {
   role: Role;
   via: "session" | "token";
   csrfToken?: string;
+  // Effective role per group ID, inherited from parent groups.
+  groupRoles: Record<string, Role>;
+}
+
+export interface Member {
+  user: string;
+  role: Role;
+}
+
+export interface Group {
+  id: string;
+  name: string;
+  parent?: string;
+  description?: string;
+  domains: string[];
+  members: Member[];
+  createdAt: string;
+}
+
+export interface GraphNode {
+  id: string;
+  kind: Kind | "targets";
+  name: string;
+  group?: string;
+  detail?: string;
+  disabled?: boolean;
+}
+
+export interface GraphEdge {
+  from: string;
+  to: string;
+  field: string;
+}
+
+export interface Graph {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
 }
 
 export interface Token {
@@ -46,6 +85,7 @@ export interface Resource {
   name: string;
   description?: string;
   labels?: Record<string, string>;
+  group?: string;
   enabled?: boolean;
   resourceVersion: number;
   createdAt: string;

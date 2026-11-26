@@ -222,3 +222,17 @@ fieldset.card {
     max-width: 160px;
   }
 }
+
+.group-row {
+  padding: 12px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-ring);
+}
+
+.member-form {
+  flex-wrap: nowrap;
+
+  .input {
+    width: auto;
+  }
+}

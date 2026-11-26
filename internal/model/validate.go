@@ -68,6 +68,9 @@ func Validate(r Resource) FieldErrors {
 			es.add("labels", "keys must not be empty")
 		}
 	}
+	if m.Group != "" && !strings.HasPrefix(m.Group, "grp_") {
+		es.add("group", "must be a group ID")
+	}
 	switch r := r.(type) {
 	case *Listener:
 		r.Spec.validate(&es)
@@ -139,7 +142,7 @@ func (s *CertificateSpec) validate(es *FieldErrors) {
 			es.add("spec.domains", "at least one domain is required")
 		}
 		for i, d := range s.Domains {
-			if !isHostname(d) || strings.HasPrefix(d, ".") {
+			if !IsHostname(d) || strings.HasPrefix(d, ".") {
 				es.add(fmt.Sprintf("spec.domains[%d]", i), "must be a lowercase hostname")
 			}
 		}
@@ -231,7 +234,7 @@ func (s *SiteSpec) validate(es *FieldErrors) {
 		p := fmt.Sprintf("spec.hostnames[%d]", i)
 		switch h.Type {
 		case HostExact:
-			if !isHostname(h.Value) {
+			if !IsHostname(h.Value) {
 				es.add(p+".value", "must be a lowercase hostname")
 			}
 		case HostWildcard:
@@ -484,7 +487,8 @@ func checkHostPort(addr string) string {
 	return ""
 }
 
-func isHostname(s string) bool {
+// IsHostname reports whether s is a lowercase DNS name.
+func IsHostname(s string) bool {
 	return s != "" && s == strings.ToLower(s) && !strings.ContainsAny(s, " \t/:*")
 }
 
@@ -493,11 +497,11 @@ func isHostname(s string) bool {
 func isWildcard(s string) bool {
 	switch {
 	case strings.HasPrefix(s, "*."):
-		return isHostname(s[2:])
+		return IsHostname(s[2:])
 	case strings.HasSuffix(s, ".*"):
-		return isHostname(s[:len(s)-2])
+		return IsHostname(s[:len(s)-2])
 	case strings.HasPrefix(s, "."):
-		return isHostname(s[1:])
+		return IsHostname(s[1:])
 	}
 	return false
 }
