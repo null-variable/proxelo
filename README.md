@@ -90,6 +90,18 @@ admin port. Rollback to any revision is a new revision, so history is linear;
 the newest 500 and every tagged revision are kept. `GET /api/v1/export` writes
 a YAML bundle (keys left out) that `POST /changesets/{id}/import` loads back.
 
+### Live Tap
+
+`GET /api/v1/tap` streams the requests proxies finish that match its filter,
+as server-sent events, for up to 30 minutes. The control plane sends proxies
+the union of the open taps' filters; each proxy matches finished requests
+against it, samples, caps itself at 100 events a second (the rest are
+counted as dropped) and sends batches four times a second, so unmatched
+traffic never leaves the proxy. Events carry the site, route, client, method,
+host, URI, status, duration, last upstream and its status, bytes sent, and
+the request headers asked for; credentials headers cannot be asked for and
+bodies are never captured. Group members tap only sites they can read.
+
 ### Importing from nginx
 
 `POST /api/v1/import/nginx` takes `nginx -T` output, or a `.tar`, `.tar.gz` or
@@ -132,6 +144,16 @@ members list only those revisions, and change sets they opened or whose
 resources they can all read. Instance-wide views (nodes, fleet traffic) need
 an instance role. Group admins manage members up to their own role and create
 subgroups; a group's domains are changed from its parent.
+
+Single sign-on with an OpenID Connect provider (Google Workspace, Keycloak,
+Entra ID or any with discovery) is set by an owner in Settings or with
+`PUT /api/v1/settings/oidc`: issuer, client ID and secret, the callback URL
+`/api/v1/auth/oidc/callback`, group-to-role mappings and a role for users in
+no mapped group (empty refuses them), optionally limited to email domains.
+The login uses the authorization code flow with PKCE and a nonce. The first
+sign-in creates an account without a password, bound to the issuer and
+subject; every sign-in sets its role from the mappings (the highest mapped
+role wins; the last owner keeps its role). Local accounts keep working.
 
 Every change, login, failure and recovery is written to an append-only audit
 log whose entries are hash-chained (`GET /api/v1/audit`, `/audit/verify`).
@@ -187,7 +209,9 @@ control plane is down and reconnects when it is back.
 | `GET /api/v1/traffic?window=5m` | Requests, 5xx, upstream attempts and failures summed over every proxy (window up to 15m) |
 | `GET /api/v1/schema` | JSON Schema of every resource spec, generated from `internal/model` (`go generate ./internal/model`) |
 | `POST /api/v1/simulate` | Run requests (`{"requests":[{"method","target","headers","remoteAddr","listener"}]}`) against the latest or a given `revision`, and with `"changeset"` against that change set as it would apply; returns site, route, rewritten URI, upstream or file, status and a trace |
-| `/api/v1/auth/{status,setup,login,logout,me,password,totp/*,tokens}` | Accounts, 2FA, API tokens; `status` tells whether setup is pending, `me` returns the session CSRF token |
+| `/api/v1/auth/{status,setup,login,logout,me,password,totp/*,tokens}` | Accounts, 2FA, API tokens; `status` tells whether setup is pending and whether single sign-on is on, `me` returns the session CSRF token |
+| `GET /api/v1/auth/oidc/{start,callback}`, `GET`/`PUT /api/v1/settings/oidc` | OpenID Connect sign-in and its settings (owner) |
+| `GET /api/v1/tap?site=&route=&cidr=&sample=&header=` | Live Tap: matching requests as server-sent events |
 | `/api/v1/users`, `GET /api/v1/audit[/verify]` | Account management and audit log (admin) |
 | `GET/POST /api/v1/groups`, `PATCH/DELETE /groups/{id}`, `PUT /groups/{id}/members`, `DELETE /groups/{id}/members/{user}` | Groups, their domains and member roles; the list returns the caller's effective role per group |
 | `GET /api/v1/topology[?changeset=][&format=json\|mermaid\|dot][&traffic=5m]` | Request-flow graph (listener → site → route → upstream → target) of the resources the caller can read, as JSON or a Mermaid or Graphviz diagram; `traffic` (up to 15m) adds request and 5xx counts per node and edge |
@@ -225,8 +249,9 @@ PROXELO_API=127.0.0.1:9443 bun run dev   # dev server proxying /api to a running
 | Sites, Routes, Upstreams, Certificates, Policies, Listeners | Lists with search; editors generated from `/api/v1/schema` (reference fields become pickers) with a Raw JSON tab; server field errors shown at the field; site route tree with nginx match badges |
 | Topology | The configuration as a request-flow diagram, filterable by group; drag a node onto another (valid targets light up) or use the side panel to connect listener → site, site → route, route → child route or upstream, remove connections, attach or detach certificates and policies, add resources and upstream targets, all into the active change set; a traffic overlay sizes edges by recent requests and colors them by 5xx share; targets a proxy reports down are red; export as SVG, PNG, Mermaid, Graphviz DOT or JSON |
 | Changes | Change sets (the active one is the draft every edit goes to), resource and effective diff, validate with safety findings, apply with commit-confirm, import (bundle or nginx configuration with its conversion report), export, discard; revisions with confirm and rollback |
+| Live Tap | Requests as proxies finish them, filtered by site, route and client CIDR with sampling: status, timing, chosen upstream and selected request headers (never credentials or bodies) |
 | Simulator | One request against the latest revision, side by side with the active change set |
-| Nodes, Settings | Proxy sync state and the targets each proxy has taken out; password, TOTP, API tokens, groups with members and domains, users and the audit log |
+| Nodes, Settings | Proxy sync state and the targets each proxy has taken out; password, TOTP, API tokens, groups with members and domains, users, single sign-on and the audit log |
 
 Light and dark modes follow the system and can be switched. Pages are laid
 out for 390px phones and up. The editors render from `GET /api/v1/schema`, so

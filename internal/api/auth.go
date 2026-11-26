@@ -1,6 +1,7 @@
 package api
 
 import (
+	"cmp"
 	"context"
 	"crypto/subtle"
 	"errors"
@@ -184,7 +185,11 @@ func (a *api) authStatus(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"setupRequired": err == nil})
+	out := map[string]any{"setupRequired": err == nil}
+	if s, err := a.oidcSettings(r.Context()); err == nil && s.Enabled {
+		out["sso"] = map[string]any{"label": cmp.Or(s.Label, "Sign in with single sign-on"), "url": "/api/v1/auth/oidc/start"}
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // setup creates the first owner with the setup token printed at first

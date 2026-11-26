@@ -34,6 +34,7 @@ var migrations = []migration{
 	{"change sets, revision lifecycle, accounts and audit log", migrateChangeSets},
 	{"groups and group members", migrateGroups},
 	{"groups each revision touched", migrateRevisionGroups},
+	{"single sign-on identities", migrateSSO},
 }
 
 // SchemaVersion is the version this binary migrates databases to.

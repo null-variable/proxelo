@@ -106,6 +106,8 @@ type Distributor struct {
 	challenges *distribv1.Challenges
 	chVersion  uint64
 	nodes      map[string]*node
+
+	taps taps
 }
 
 // published is a snapshot as sent: the exact bytes the hash covers.
@@ -122,6 +124,8 @@ type node struct {
 	wake chan struct{}
 	// Challenge set version last sent on this connection.
 	sentChallenges uint64
+	// ID of the tap filter last sent; "" for none (an empty filter).
+	sentTap string
 	// replaced is closed when a newer connection takes over the node ID.
 	replaced chan struct{}
 }
@@ -264,7 +268,17 @@ func (d *Distributor) sendLoop(ctx context.Context, stream distribv1.Distributio
 				ch = &distribv1.Challenges{}
 			}
 		}
+		sentTap := n.sentTap
 		d.mu.Unlock()
+		if tf := d.tapFilter(); tf.GetId() != sentTap {
+			resp := &distribv1.SyncResponse{Kind: &distribv1.SyncResponse_Tap{Tap: tf}}
+			if err := stream.Send(resp); err != nil {
+				return err
+			}
+			d.mu.Lock()
+			n.sentTap = tf.GetId()
+			d.mu.Unlock()
+		}
 
 		// Challenges go first: a snapshot may add a site whose certificate
 		// is being issued.
@@ -311,9 +325,13 @@ func (d *Distributor) recvLoop(stream distribv1.DistributionService_SyncServer, 
 			d.record(n, st)
 			continue
 		}
+		if ev := req.GetTapEvents(); ev != nil {
+			d.deliver(n.status.NodeID, ev)
+			continue
+		}
 		ack := req.GetAck()
 		if ack == nil {
-			return status.Error(codes.InvalidArgument, "expected ack or stats")
+			return status.Error(codes.InvalidArgument, "expected ack, stats or tap events")
 		}
 		d.mu.Lock()
 		if ack.GetApplied() {

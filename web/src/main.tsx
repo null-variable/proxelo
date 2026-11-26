@@ -9,7 +9,7 @@ import type { Me } from "./api/types";
 import { AppProvider } from "./app/context";
 import { router } from "./app/router";
 import { Loading } from "./components/ui";
-import { Login, Setup } from "./pages/Auth";
+import { Login, Setup, type AuthStatus } from "./pages/Auth";
 import { NewChangeSet } from "./pages/Changes";
 import "./styles/main.scss";
 
@@ -34,7 +34,7 @@ function Root() {
   });
   const status = useQuery({
     queryKey: ["auth-status"],
-    queryFn: () => api.get<{ setupRequired: boolean }>("/auth/status"),
+    queryFn: () => api.get<AuthStatus>("/auth/status"),
     enabled: me.data === null,
   });
   const [ask, setAsk] = useState<((cs: string) => void) | null>(null);
@@ -65,7 +65,7 @@ function Root() {
   if (me.isPending) return <div className="auth"><Loading /></div>;
   if (!me.data) {
     if (status.isPending) return <div className="auth"><Loading /></div>;
-    return status.data?.setupRequired ? <Setup onDone={signedIn} /> : <Login onDone={signedIn} />;
+    return status.data?.setupRequired ? <Setup onDone={signedIn} /> : <Login onDone={signedIn} sso={status.data?.sso} />;
   }
   return (
     <AppProvider me={me.data} onLogout={logout} askChangeSet={(then) => setAsk(() => then)}>

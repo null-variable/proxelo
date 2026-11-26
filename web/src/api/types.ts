@@ -13,7 +13,24 @@ export interface User {
   name: string;
   role: Role;
   totpEnabled: boolean;
+  // "issuer|subject" of a single sign-on account.
+  sso?: string;
   createdAt: string;
+}
+
+export interface OIDCSettings {
+  enabled: boolean;
+  issuer: string;
+  clientId: string;
+  clientSecret?: string;
+  redirectUrl: string;
+  label?: string;
+  scopes?: string[];
+  nameClaim?: string;
+  groupsClaim?: string;
+  mappings?: { group: string; role: Role }[];
+  defaultRole?: Role | "";
+  domains?: string[];
 }
 
 export interface Me {

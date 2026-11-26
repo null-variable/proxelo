@@ -12,11 +12,13 @@ import (
 
 // User is a local admin account. Password holds an encoded hash.
 type User struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Role        string    `json:"role"`
-	TOTPEnabled bool      `json:"totpEnabled"`
-	CreatedAt   time.Time `json:"createdAt"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Role        string `json:"role"`
+	TOTPEnabled bool   `json:"totpEnabled"`
+	// "issuer|subject" of a single sign-on account, which has no password.
+	SSO       string    `json:"sso,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
 
 	Password    string    `json:"-"`
 	TOTPSecret  string    `json:"-"`
@@ -25,12 +27,12 @@ type User struct {
 	LockedUntil time.Time `json:"-"`
 }
 
-const userCols = `id, name, role, password, totp_secret, totp_enabled, totp_last, failures, locked_until, created_at`
+const userCols = `id, name, role, password, totp_secret, totp_enabled, totp_last, failures, locked_until, sso, created_at`
 
 func scanUser(row interface{ Scan(...any) error }) (*User, error) {
 	u := &User{}
 	var locked, created string
-	if err := row.Scan(&u.ID, &u.Name, &u.Role, &u.Password, &u.TOTPSecret, &u.TOTPEnabled, &u.TOTPLast, &u.Failures, &locked, &created); err != nil {
+	if err := row.Scan(&u.ID, &u.Name, &u.Role, &u.Password, &u.TOTPSecret, &u.TOTPEnabled, &u.TOTPLast, &u.Failures, &locked, &u.SSO, &created); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -373,4 +375,59 @@ func (s *Store) DeleteToken(ctx context.Context, user, id string) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+func migrateSSO(ctx context.Context, tx *sql.Tx) error {
+	return execAll(ctx, tx,
+		`ALTER TABLE users ADD COLUMN sso TEXT NOT NULL DEFAULT ''`,
+		`CREATE UNIQUE INDEX users_sso ON users (sso) WHERE sso != ''`,
+	)
+}
+
+// UserBySSO returns the account of a single sign-on identity.
+func (s *Store) UserBySSO(ctx context.Context, sso string) (*User, error) {
+	return scanUser(s.db.QueryRowContext(ctx, `SELECT `+userCols+` FROM users WHERE sso = ?`, sso))
+}
+
+// SSOLogin returns the account of identity sso, creating it named name
+// with role when absent. With sync the role of an existing account is set
+// to role too, as group mappings decide it; the last owner keeps its role.
+func (s *Store) SSOLogin(ctx context.Context, sso, name, role string, sync bool) (*User, bool, error) {
+	var out *User
+	created := false
+	err := s.tx(ctx, func(tx *sql.Tx) error {
+		u, err := scanUser(tx.QueryRowContext(ctx, `SELECT `+userCols+` FROM users WHERE sso = ?`, sso))
+		switch {
+		case errors.Is(err, ErrNotFound):
+			u = &User{ID: "usr_" + ulid.Make().String(), Name: name, Role: role, SSO: sso, CreatedAt: s.now()}
+			_, err := tx.ExecContext(ctx, `INSERT INTO users (id, name, role, password, sso, created_at) VALUES (?, ?, ?, '', ?, ?)`,
+				u.ID, u.Name, u.Role, u.SSO, formatTime(u.CreatedAt))
+			if errorsContains(err, "UNIQUE constraint failed: users.name") {
+				return ErrNameTaken
+			}
+			out, created = u, true
+			return err
+		case err != nil:
+			return err
+		}
+		if sync && u.Role != role {
+			if u.Role == "owner" {
+				var owners int
+				if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM users WHERE role = 'owner'`).Scan(&owners); err != nil {
+					return err
+				}
+				if owners == 1 {
+					out = u
+					return nil
+				}
+			}
+			if _, err := tx.ExecContext(ctx, `UPDATE users SET role = ? WHERE id = ?`, role, u.ID); err != nil {
+				return err
+			}
+			u.Role = role
+		}
+		out = u
+		return nil
+	})
+	return out, created, err
 }

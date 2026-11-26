@@ -20,7 +20,7 @@ const RESOURCE_NAV: Kind[] = ["sites", "routes", "upstreams", "certificates", "p
 const NAV: { group: string; items: NavItem[] }[] = [
   { group: "Overview", items: [{ to: "/", label: "Dashboard" }, { to: "/nodes", label: "Nodes", instance: true }] },
   { group: "Configuration", items: [{ to: "/topology", label: "Topology" }, ...RESOURCE_NAV.map((k) => ({ to: `/${k}`, label: KINDS[k].label }))] },
-  { group: "Operate", items: [{ to: "/changes", label: "Changes", badge: true }, { to: "/simulator", label: "Simulator" }] },
+  { group: "Operate", items: [{ to: "/changes", label: "Changes", badge: true }, { to: "/tap", label: "Live Tap" }, { to: "/simulator", label: "Simulator" }] },
   { group: "Settings", items: [{ to: "/settings", label: "Settings" }] },
 ];
 

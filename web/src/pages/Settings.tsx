@@ -1,19 +1,20 @@
-// Settings: account (password, TOTP), API tokens, users and the audit log.
+// Settings: account (password, TOTP), API tokens, users, single sign-on and
+// the audit log.
 import { useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
-import { GROUP_ROLES, ROLE_RANK, ROLES, type AuditEntry, type Group, type Items, type Role, type Token, type User } from "../api/types";
+import { GROUP_ROLES, ROLE_RANK, ROLES, type AuditEntry, type Group, type Items, type OIDCSettings, type Role, type Token, type User } from "../api/types";
 import { useApp } from "../app/context";
 import { Card, Dialog, Empty, ErrorBanner, Field, Loading, PageHeader, SettingRow, Status, fmtTime, timeAgo, toast, toastError } from "../components/ui";
 
-type Tab = "account" | "tokens" | "groups" | "users" | "audit";
+type Tab = "account" | "tokens" | "groups" | "users" | "sso" | "audit";
 
 export function Settings() {
   const app = useApp();
   const [tab, setTab] = useState<Tab>("account");
   const tabs: { id: Tab; label: string }[] = [{ id: "account", label: "Account" }, { id: "tokens", label: "API tokens" }];
   if (app.canAny("viewer")) tabs.push({ id: "groups", label: "Groups" });
-  if (app.can("admin")) tabs.push({ id: "users", label: "Users" }, { id: "audit", label: "Audit log" });
+  if (app.can("admin")) tabs.push({ id: "users", label: "Users" }, { id: "sso", label: "Single sign-on" }, { id: "audit", label: "Audit log" });
   return (
     <div className="stack">
       <PageHeader title="Settings" />
@@ -30,6 +31,7 @@ export function Settings() {
           {tab === "tokens" && <Tokens />}
           {tab === "groups" && <Groups />}
           {tab === "users" && <Users />}
+          {tab === "sso" && <SSO />}
           {tab === "audit" && <Audit />}
         </div>
       </div>
@@ -266,7 +268,10 @@ function Users() {
                 const locked = u.role === "owner" && app.me.role !== "owner";
                 return (
                   <tr key={u.id}>
-                    <td>{u.name}{u.id === app.me.user.id && <> <span className="badge badge--info">You</span></>}</td>
+                    <td>
+                      {u.name}{u.id === app.me.user.id && <> <span className="badge badge--info">You</span></>}
+                      {u.sso && <> <span className="badge badge--outline" title={u.sso}>SSO</span></>}
+                    </td>
                     <td>
                       <select className="input input--sm" aria-label={`Role of ${u.name}`} value={u.role} disabled={locked || busy}
                         onChange={(e) => act(() => api.patch(`/users/${u.id}`, { role: e.target.value }), `${u.name} is now ${e.target.value}`)}>
@@ -313,6 +318,100 @@ function Users() {
             <button className="btn btn--destructive" disabled={busy} onClick={() => act(() => api.del(`/users/${deleting.id}`), `${deleting.name} deleted`).then(() => setDeleting(null))}>Delete</button>
           </>} />
       )}
+    </Card>
+  );
+}
+
+const ssoEmpty: OIDCSettings = { enabled: false, issuer: "", clientId: "", redirectUrl: "", mappings: [], defaultRole: "" };
+
+// SSO edits the OpenID Connect settings. Only owners save them: they decide
+// who becomes what.
+function SSO() {
+  const app = useApp();
+  const q = useQuery({ queryKey: ["settings", "oidc"], queryFn: () => api.get<{ settings: OIDCSettings; clientSecretSet: boolean }>("/settings/oidc") });
+  const [f, setF] = useState<OIDCSettings | null>(null);
+  const [err, setErr] = useState<unknown>(null);
+  const { busy, run } = useAction();
+  const s = f ?? (q.data ? { ...ssoEmpty, ...q.data.settings, mappings: q.data.settings.mappings ?? [] } : null);
+  const owner = app.me.role === "owner";
+  if (!s) return <Card title="Single sign-on">{q.error ? <ErrorBanner error={q.error} /> : <Loading />}</Card>;
+  const set = (patch: Partial<OIDCSettings>) => setF({ ...s, ...patch });
+  const maps = s.mappings ?? [];
+  const callback = `${window.location.origin}/api/v1/auth/oidc/callback`;
+  const save = (e: FormEvent) => {
+    e.preventDefault();
+    setErr(null);
+    void run(async () => {
+      try {
+        await api.put("/settings/oidc", { ...s, defaultRole: s.defaultRole || undefined, scopes: s.scopes?.length ? s.scopes : undefined, domains: s.domains?.length ? s.domains : undefined });
+        toast("Single sign-on saved");
+        setF(null);
+        await q.refetch();
+      } catch (e2) {
+        setErr(e2);
+      }
+    });
+  };
+  const list = (v: string) => v.split(/[\s,]+/).filter(Boolean);
+  return (
+    <Card title="Single sign-on">
+      <form className="stack" onSubmit={save}>
+        <p className="muted">Sign in with an OpenID Connect provider such as Google Workspace, Keycloak or Entra ID. Accounts are created at first sign-in; the provider's groups decide the role at every sign-in.</p>
+        <ErrorBanner error={err} />
+        <SettingRow title="Enabled" text="Shows the sign-on button on the login page. Local accounts keep working.">
+          <input type="checkbox" aria-label="Enabled" checked={s.enabled} disabled={!owner} onChange={(e) => set({ enabled: e.target.checked })} />
+        </SettingRow>
+        <Field id="sso-i" label="Issuer URL" hint="The provider's discovery document is read from here.">
+          <input id="sso-i" className="input mono" value={s.issuer} disabled={!owner} onChange={(e) => set({ issuer: e.target.value })} placeholder="https://accounts.google.com" />
+        </Field>
+        <Field id="sso-c" label="Client ID">
+          <input id="sso-c" className="input mono" value={s.clientId} disabled={!owner} onChange={(e) => set({ clientId: e.target.value })} />
+        </Field>
+        <Field id="sso-s" label="Client secret" hint={q.data?.clientSecretSet ? "Stored. Leave empty to keep it." : "Empty for public clients."}>
+          <input id="sso-s" className="input mono" type="password" autoComplete="off" value={s.clientSecret ?? ""} disabled={!owner} onChange={(e) => set({ clientSecret: e.target.value })} />
+        </Field>
+        <Field id="sso-r" label="Redirect URL" hint={`Register it with the provider. For this console: ${callback}`}>
+          <input id="sso-r" className="input mono" value={s.redirectUrl} disabled={!owner} onChange={(e) => set({ redirectUrl: e.target.value })} placeholder={callback} />
+        </Field>
+        <Field id="sso-l" label="Button label">
+          <input id="sso-l" className="input" value={s.label ?? ""} disabled={!owner} onChange={(e) => set({ label: e.target.value })} placeholder="Sign in with single sign-on" />
+        </Field>
+        <Field id="sso-gc" label="Groups claim" hint="Claim with the user's groups, from the ID token or userinfo.">
+          <input id="sso-gc" className="input mono" value={s.groupsClaim ?? ""} disabled={!owner} onChange={(e) => set({ groupsClaim: e.target.value })} placeholder="groups" />
+        </Field>
+        <Field id="sso-nc" label="Name claim" hint="Account name; preferred_username, then email, by default.">
+          <input id="sso-nc" className="input mono" value={s.nameClaim ?? ""} disabled={!owner} onChange={(e) => set({ nameClaim: e.target.value })} placeholder="preferred_username" />
+        </Field>
+        <Field id="sso-sc" label="Extra scopes" hint="Besides openid. Default: profile email.">
+          <input id="sso-sc" className="input mono" value={(s.scopes ?? []).join(" ")} disabled={!owner} onChange={(e) => set({ scopes: list(e.target.value) })} placeholder="profile email groups" />
+        </Field>
+        <Field id="sso-d" label="Allowed email domains" hint="Comma-separated. Empty: any.">
+          <input id="sso-d" className="input mono" value={(s.domains ?? []).join(", ")} disabled={!owner} onChange={(e) => set({ domains: list(e.target.value) })} placeholder="example.com" />
+        </Field>
+        <div className="field">
+          <span className="field__label">Group to role</span>
+          <span className="field__hint">The highest role of the user's mapped groups applies.</span>
+          {maps.map((m, i) => (
+            <div className="row mt" key={i}>
+              <input className="input input--sm grow mono" aria-label={`Group ${i + 1}`} value={m.group} disabled={!owner}
+                onChange={(e) => set({ mappings: maps.map((x, j) => j === i ? { ...x, group: e.target.value } : x) })} />
+              <select className="input input--sm" aria-label={`Role ${i + 1}`} value={m.role} disabled={!owner}
+                onChange={(e) => set({ mappings: maps.map((x, j) => j === i ? { ...x, role: e.target.value as Role } : x) })}>
+                {ROLES.filter((r) => r !== "guest").map((r) => <option key={r} value={r}>{r}</option>)}
+              </select>
+              {owner && <button type="button" className="btn btn--danger-text btn--sm" onClick={() => set({ mappings: maps.filter((_, j) => j !== i) })}>Remove</button>}
+            </div>
+          ))}
+          {owner && <div className="mt"><button type="button" className="btn btn--sm" onClick={() => set({ mappings: [...maps, { group: "", role: "viewer" }] })}>Add mapping</button></div>}
+        </div>
+        <Field id="sso-dr" label="Role without a mapped group">
+          <select id="sso-dr" className="input" value={s.defaultRole ?? ""} disabled={!owner} onChange={(e) => set({ defaultRole: e.target.value as Role | "" })}>
+            <option value="">Refuse sign-in</option>
+            {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+          </select>
+        </Field>
+        {owner ? <div><button className="btn btn--primary" disabled={busy}>Save</button></div> : <p className="muted small">Only owners change single sign-on.</p>}
+      </form>
     </Card>
   );
 }

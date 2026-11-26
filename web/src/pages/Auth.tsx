@@ -22,10 +22,20 @@ async function login(name: string, password: string, code?: string): Promise<voi
   setCSRF(out.csrfToken);
 }
 
-export function Login({ onDone }: { onDone: () => void }) {
+export interface AuthStatus {
+  setupRequired: boolean;
+  sso?: { label: string; url: string };
+}
+
+export function Login({ onDone, sso }: { onDone: () => void; sso?: AuthStatus["sso"] }) {
   const [f, setF] = useState({ name: "", password: "", code: "" });
   const [needCode, setNeedCode] = useState(false);
-  const [err, setErr] = useState<unknown>(null);
+  // A failed single sign-on comes back with ?sso_error=.
+  const [err, setErr] = useState<unknown>(() => {
+    const e = new URLSearchParams(window.location.search).get("sso_error");
+    if (e) window.history.replaceState(null, "", window.location.pathname);
+    return e ? new Error(`Single sign-on failed: ${e}`) : null;
+  });
   const [busy, setBusy] = useState(false);
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -56,6 +66,7 @@ export function Login({ onDone }: { onDone: () => void }) {
           </Field>
         )}
         <button className="btn btn--primary btn--block" disabled={busy}>Log in</button>
+        {sso && <a className="btn btn--block" href={sso.url}>{sso.label}</a>}
         <p className="muted small">Locked out? Run <span className="mono">proxelo admin reset-password</span> on the control host.</p>
       </form>
     </AuthCard>

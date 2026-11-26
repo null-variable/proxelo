@@ -9,6 +9,7 @@ import { Nodes } from "../pages/Nodes";
 import { ResourceEdit, ResourceList } from "../pages/Resources";
 import { Settings } from "../pages/Settings";
 import { Simulator } from "../pages/Simulator";
+import { Tap } from "../pages/Tap";
 import { Topology } from "../pages/Topology";
 import { Shell } from "./Shell";
 
@@ -25,6 +26,7 @@ const root = createRootRoute({ component: Shell, notFoundComponent: NotFound });
 const dashboard = createRoute({ getParentRoute: () => root, path: "/", component: Dashboard });
 const nodes = createRoute({ getParentRoute: () => root, path: "/nodes", component: Nodes });
 const simulator = createRoute({ getParentRoute: () => root, path: "/simulator", component: Simulator });
+const tap = createRoute({ getParentRoute: () => root, path: "/tap", component: Tap });
 const topology = createRoute({ getParentRoute: () => root, path: "/topology", component: Topology });
 const settings = createRoute({ getParentRoute: () => root, path: "/settings", component: Settings });
 
@@ -66,7 +68,7 @@ const resource = createRoute({
 });
 
 export const router = createRouter({
-  routeTree: root.addChildren([dashboard, nodes, simulator, topology, settings, changes, changeSet, resources, resource]),
+  routeTree: root.addChildren([dashboard, nodes, simulator, tap, topology, settings, changes, changeSet, resources, resource]),
   scrollRestoration: true,
 });
 

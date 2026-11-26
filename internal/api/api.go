@@ -67,6 +67,10 @@ func Handler(st *store.Store, d Distributor, dep *deploy.Manager, sim Simulator,
 	mux.HandleFunc("POST /api/v1/auth/setup", a.setup)
 	mux.HandleFunc("POST /api/v1/auth/login", a.login)
 	mux.HandleFunc("POST /api/v1/auth/logout", a.require(g, a.logout))
+	mux.HandleFunc("GET /api/v1/auth/oidc/start", a.oidcStart)
+	mux.HandleFunc("GET /api/v1/auth/oidc/callback", a.oidcCallback)
+	mux.HandleFunc("GET /api/v1/settings/oidc", a.require(adm, a.getOIDC))
+	mux.HandleFunc("PUT /api/v1/settings/oidc", a.require(auth.Owner, a.putOIDC))
 	mux.HandleFunc("GET /api/v1/auth/me", a.requireAny(g, a.me))
 	mux.HandleFunc("POST /api/v1/auth/password", a.require(g, a.changePassword))
 	mux.HandleFunc("POST /api/v1/auth/totp/setup", a.require(g, a.totpSetup))
@@ -110,6 +114,7 @@ func Handler(st *store.Store, d Distributor, dep *deploy.Manager, sim Simulator,
 	mux.HandleFunc("PUT /api/v1/revisions/{rev}/tag", a.require(op, a.tag))
 	mux.HandleFunc("GET /api/v1/nodes", a.require(v, a.nodes))
 	mux.HandleFunc("GET /api/v1/traffic", a.require(v, a.traffic))
+	mux.HandleFunc("GET /api/v1/tap", a.requireAny(v, a.tap))
 	mux.HandleFunc("GET /api/v1/schema", a.requireAny(v, func(w http.ResponseWriter, r *http.Request, _ *access) {
 		w.Header().Set("Content-Type", "application/schema+json")
 		w.Write(model.SchemaJSON)
@@ -134,6 +139,7 @@ type api struct {
 	adminAddr     string
 	secureCookies bool
 	log           *slog.Logger
+	oidc          oidcClient
 }
 
 // changed kicks ACME after a certificate reaches the head.
