@@ -259,7 +259,8 @@ var kindTitle = map[string]string{
 // fallbacks.
 var flow = map[string]bool{
 	"spec.listeners": true, "spec.routes": true, "spec.children": true,
-	"spec.action.proxy.upstream": true, "spec.targets": true,
+	"spec.action.proxy.upstream": true, "spec.action.gateway.upstream": true,
+	"spec.action.memcached.upstream": true, "spec.action.grpc.upstream": true, "spec.targets": true,
 }
 
 func byKind(g Graph, kind string) []Node {
@@ -364,7 +365,8 @@ func AddTraffic(g *Graph, counts Counts) {
 			for _, s := range sites {
 				t = sum(t, subtree(s, e.To, map[string]bool{}))
 			}
-		case "spec.action.proxy.upstream":
+		case "spec.action.proxy.upstream", "spec.action.gateway.upstream",
+			"spec.action.memcached.upstream", "spec.action.grpc.upstream":
 			t = nodeOwn[e.From]
 		case "spec.targets":
 			t, _ = counts("targets", e.From+"/"+g.Nodes[idx[e.To]].Name)

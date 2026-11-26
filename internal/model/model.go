@@ -275,6 +275,10 @@ const (
 	ActionStatic ActionType = "static"
 	ActionProxy  ActionType = "proxy"
 	ActionReturn ActionType = "return"
+	// FastCGI, uwsgi or SCGI application server.
+	ActionGateway   ActionType = "gateway"
+	ActionMemcached ActionType = "memcached"
+	ActionGrpc      ActionType = "grpc"
 )
 
 // Action carries the settings for Type and nothing else.
@@ -283,6 +287,73 @@ type Action struct {
 	Static *StaticAction `json:"static,omitempty"`
 	Proxy  *ProxyAction  `json:"proxy,omitempty"`
 	Return *ReturnAction `json:"return,omitempty"`
+	// FastCGI, uwsgi or SCGI.
+	Gateway   *GatewayAction   `json:"gateway,omitempty"`
+	Memcached *MemcachedAction `json:"memcached,omitempty"`
+	Grpc      *ProxyAction     `json:"grpc,omitempty"`
+}
+
+// Upstream returns the upstream ID the action sends requests to, if any.
+func (a *Action) Upstream() (string, string) {
+	switch {
+	case a.Proxy != nil:
+		return a.Proxy.Upstream, "spec.action.proxy.upstream"
+	case a.Gateway != nil:
+		return a.Gateway.Upstream, "spec.action.gateway.upstream"
+	case a.Memcached != nil:
+		return a.Memcached.Upstream, "spec.action.memcached.upstream"
+	case a.Grpc != nil:
+		return a.Grpc.Upstream, "spec.action.grpc.upstream"
+	}
+	return "", ""
+}
+
+type GatewayProtocol string
+
+const (
+	GatewayFastCGI GatewayProtocol = "fastcgi"
+	GatewayUwsgi   GatewayProtocol = "uwsgi"
+	GatewaySCGI    GatewayProtocol = "scgi"
+)
+
+// GatewayAction passes requests to an application server (nginx
+// fastcgi_pass, uwsgi_pass, scgi_pass). The request body is read in full
+// first.
+type GatewayAction struct {
+	Protocol GatewayProtocol `json:"protocol"`
+	ProxyAction
+	// Added after the standard set of the protocol (nginx fastcgi_params,
+	// uwsgi_params, scgi_params); a param of the same name replaces the
+	// standard one. Values are templates.
+	Params []GatewayParam `json:"params,omitempty"`
+	// Leave out the standard set.
+	NoDefaultParams bool `json:"noDefaultParams,omitempty"`
+	// Do not send request headers as HTTP_* params.
+	NoRequestHeaders bool `json:"noRequestHeaders,omitempty"`
+	// $document_root, an absolute path; SCRIPT_FILENAME of FastCGI is
+	// $document_root$fastcgi_script_name.
+	DocumentRoot string `json:"documentRoot,omitempty"`
+	// Appended to $fastcgi_script_name for a URI ending in "/", for example
+	// "index.php" (fastcgi_index).
+	Index string `json:"index,omitempty"`
+	// PCRE2 with two groups over $uri, the script name and the path info,
+	// for example "^(.+\.php)(/.+)$" (fastcgi_split_path_info).
+	SplitPathInfo string `json:"splitPathInfo,omitempty"`
+}
+
+type GatewayParam struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+	// Skip the param when the value expands to nothing.
+	IfNotEmpty bool `json:"ifNotEmpty,omitempty"`
+}
+
+// MemcachedAction answers GET and HEAD with the value stored under the key
+// (nginx memcached_pass); a missing key is 404.
+type MemcachedAction struct {
+	ProxyAction
+	// Template; empty: $uri.
+	Key string `json:"key,omitempty"`
 }
 
 type StaticAction struct {
@@ -921,8 +992,8 @@ func Refs(r Resource) []Ref {
 		add(RouteKind, "spec.children", r.Spec.Children...)
 		add(PolicyKind, "spec.policies", r.Spec.Policies...)
 		pages("spec.errorPages", r.Spec.ErrorPages)
-		if p := r.Spec.Action.Proxy; p != nil {
-			add(UpstreamKind, "spec.action.proxy.upstream", p.Upstream)
+		if id, field := r.Spec.Action.Upstream(); id != "" {
+			add(UpstreamKind, field, id)
 		}
 		if s := r.Spec.Action.Static; s != nil && s.TryFiles != nil {
 			add(RouteKind, "spec.action.static.tryFiles.route", s.TryFiles.Route)

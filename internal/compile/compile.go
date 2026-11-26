@@ -491,7 +491,6 @@ func (st *site) errorPages(path string, eps []model.ErrorPage) []*snapshotv1.Err
 // route compiles r without its children. pols are the policies that apply to
 // it, outermost first.
 func (st *site) route(r *model.Route, pols []*model.Policy) *snapshotv1.Route {
-	c := st.c
 	m := r.Spec.Match
 	out := &snapshotv1.Route{
 		Id:      r.ID,
@@ -539,31 +538,60 @@ func (st *site) route(r *model.Route, pols []*model.Policy) *snapshotv1.Route {
 			Status: a.Return.Status, Text: a.Return.Text,
 		}}}
 	case a.Type == model.ActionProxy && a.Proxy != nil:
-		path := fmt.Sprintf("routes[%s].spec.action.proxy.upstream", r.ID)
-		ui, ok := st.upstreams.resolve(c, path, "upstream", a.Proxy.Upstream)
-		if !ok {
+		pa := st.proxyAction(r.ID, "proxy", a.Proxy)
+		if pa == nil {
 			return nil
 		}
-		pa := &snapshotv1.ProxyAction{
-			Upstream:         ui,
-			ConnectTimeoutMs: millis(a.Proxy.Timeouts.Connect),
-			SendTimeoutMs:    millis(a.Proxy.Timeouts.Send),
-			ReadTimeoutMs:    millis(a.Proxy.Timeouts.Read),
-		}
-		if rt := a.Proxy.Retry; rt != nil {
-			pa.NextUpstreamTries = rt.Tries
-			if len(rt.On) == 0 {
-				pa.NextUpstream = []snapshotv1.NextUpstream{snapshotv1.NextUpstream_NEXT_UPSTREAM_OFF}
-			}
-			for _, on := range rt.On {
-				pa.NextUpstream = append(pa.NextUpstream, nextUpstream[on])
-			}
-		}
 		out.Action = &snapshotv1.Action{Kind: &snapshotv1.Action_Proxy{Proxy: pa}}
+	case a.Type == model.ActionGrpc && a.Grpc != nil:
+		pa := st.proxyAction(r.ID, "grpc", a.Grpc)
+		if pa == nil {
+			return nil
+		}
+		out.Action = &snapshotv1.Action{Kind: &snapshotv1.Action_Grpc{Grpc: &snapshotv1.GrpcAction{Proxy: pa}}}
+	case a.Type == model.ActionMemcached && a.Memcached != nil:
+		pa := st.proxyAction(r.ID, "memcached", &a.Memcached.ProxyAction)
+		if pa == nil {
+			return nil
+		}
+		out.Action = &snapshotv1.Action{Kind: &snapshotv1.Action_Memcached{Memcached: &snapshotv1.MemcachedAction{
+			Proxy: pa, Key: a.Memcached.Key,
+		}}}
+	case a.Type == model.ActionGateway && a.Gateway != nil:
+		pa := st.proxyAction(r.ID, "gateway", &a.Gateway.ProxyAction)
+		if pa == nil {
+			return nil
+		}
+		out.Action = &snapshotv1.Action{Kind: &snapshotv1.Action_Gateway{Gateway: gateway(a.Gateway, pa)}}
 	default:
 		return nil // reported by model.Validate
 	}
 	return out
+}
+
+// proxyAction compiles the upstream settings of an action named kind.
+func (st *site) proxyAction(routeID, kind string, p *model.ProxyAction) *snapshotv1.ProxyAction {
+	path := fmt.Sprintf("routes[%s].spec.action.%s.upstream", routeID, kind)
+	ui, ok := st.upstreams.resolve(st.c, path, "upstream", p.Upstream)
+	if !ok {
+		return nil
+	}
+	pa := &snapshotv1.ProxyAction{
+		Upstream:         ui,
+		ConnectTimeoutMs: millis(p.Timeouts.Connect),
+		SendTimeoutMs:    millis(p.Timeouts.Send),
+		ReadTimeoutMs:    millis(p.Timeouts.Read),
+	}
+	if rt := p.Retry; rt != nil {
+		pa.NextUpstreamTries = rt.Tries
+		if len(rt.On) == 0 {
+			pa.NextUpstream = []snapshotv1.NextUpstream{snapshotv1.NextUpstream_NEXT_UPSTREAM_OFF}
+		}
+		for _, on := range rt.On {
+			pa.NextUpstream = append(pa.NextUpstream, nextUpstream[on])
+		}
+	}
+	return pa
 }
 
 var nextUpstream = map[string]snapshotv1.NextUpstream{

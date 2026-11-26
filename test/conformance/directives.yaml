@@ -641,15 +641,18 @@ directives:
   - name: fastcgi_pass
     module: ngx_http_fastcgi_module
     contexts: [location, location if]
-    status: missing
+    status: implemented
+    field: Route.spec.action.gateway.upstream (protocol fastcgi)
   - name: fastcgi_index
     module: ngx_http_fastcgi_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.gateway.index
   - name: fastcgi_split_path_info
     module: ngx_http_fastcgi_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.gateway.splitPathInfo
   - name: fastcgi_store
     module: ngx_http_fastcgi_module
     contexts: [http, server, location]
@@ -689,11 +692,13 @@ directives:
   - name: fastcgi_connect_timeout
     module: ngx_http_fastcgi_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.gateway.timeouts.connect
   - name: fastcgi_send_timeout
     module: ngx_http_fastcgi_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.gateway.timeouts.send
   - name: fastcgi_send_lowat
     module: ngx_http_fastcgi_module
     contexts: [http, server, location]
@@ -705,11 +710,13 @@ directives:
   - name: fastcgi_pass_request_headers
     module: ngx_http_fastcgi_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.gateway.noRequestHeaders
   - name: fastcgi_pass_request_body
     module: ngx_http_fastcgi_module
     contexts: [http, server, location]
-    status: missing
+    status: fixed
+    note: "on"
   - name: fastcgi_intercept_errors
     module: ngx_http_fastcgi_module
     contexts: [http, server, location]
@@ -717,7 +724,8 @@ directives:
   - name: fastcgi_read_timeout
     module: ngx_http_fastcgi_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.gateway.timeouts.read
   - name: fastcgi_buffers
     module: ngx_http_fastcgi_module
     contexts: [http, server, location]
@@ -809,11 +817,13 @@ directives:
   - name: fastcgi_next_upstream
     module: ngx_http_fastcgi_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.gateway.retry.on
   - name: fastcgi_next_upstream_tries
     module: ngx_http_fastcgi_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.gateway.retry.tries
   - name: fastcgi_next_upstream_timeout
     module: ngx_http_fastcgi_module
     contexts: [http, server, location]
@@ -821,7 +831,9 @@ directives:
   - name: fastcgi_param
     module: ngx_http_fastcgi_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.gateway.params
+    note: standard set unless noDefaultParams
   - name: fastcgi_pass_header
     module: ngx_http_fastcgi_module
     contexts: [http, server, location]
@@ -841,7 +853,8 @@ directives:
   - name: fastcgi_keep_conn
     module: ngx_http_fastcgi_module
     contexts: [http, server, location]
-    status: missing
+    status: fixed
+    note: "off"
   - name: flv
     module: ngx_http_flv_module
     contexts: [location]
@@ -875,7 +888,9 @@ directives:
   - name: grpc_pass
     module: ngx_http_grpc_module
     contexts: [location, location if]
-    status: missing
+    status: partial
+    field: Route.spec.action.grpc.upstream
+    note: grpc:// only; no grpcs://
   - name: grpc_bind
     module: ngx_http_grpc_module
     contexts: [http, server, location]
@@ -895,11 +910,13 @@ directives:
   - name: grpc_connect_timeout
     module: ngx_http_grpc_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.grpc.timeouts.connect
   - name: grpc_send_timeout
     module: ngx_http_grpc_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.grpc.timeouts.send
   - name: grpc_intercept_errors
     module: ngx_http_grpc_module
     contexts: [http, server, location]
@@ -911,11 +928,14 @@ directives:
   - name: grpc_read_timeout
     module: ngx_http_grpc_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.grpc.timeouts.read
   - name: grpc_next_upstream
     module: ngx_http_grpc_module
     contexts: [http, server, location]
-    status: missing
+    status: partial
+    field: Route.spec.action.grpc.retry.on
+    note: connect failures only
   - name: grpc_next_upstream_tries
     module: ngx_http_grpc_module
     contexts: [http, server, location]
@@ -927,7 +947,8 @@ directives:
   - name: grpc_set_header
     module: ngx_http_grpc_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy headers.request.set
   - name: grpc_pass_header
     module: ngx_http_grpc_module
     contexts: [http, server, location]
@@ -1204,7 +1225,9 @@ directives:
   - name: memcached_pass
     module: ngx_http_memcached_module
     contexts: [location, location if]
-    status: missing
+    status: implemented
+    field: Route.spec.action.memcached.upstream
+    note: key from memcached.key, default $uri
   - name: memcached_bind
     module: ngx_http_memcached_module
     contexts: [http, server, location]
@@ -1216,11 +1239,13 @@ directives:
   - name: memcached_connect_timeout
     module: ngx_http_memcached_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.memcached.timeouts.connect
   - name: memcached_send_timeout
     module: ngx_http_memcached_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.memcached.timeouts.send
   - name: memcached_buffer_size
     module: ngx_http_memcached_module
     contexts: [http, server, location]
@@ -1228,11 +1253,13 @@ directives:
   - name: memcached_read_timeout
     module: ngx_http_memcached_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.memcached.timeouts.read
   - name: memcached_next_upstream
     module: ngx_http_memcached_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.memcached.retry.on
   - name: memcached_next_upstream_tries
     module: ngx_http_memcached_module
     contexts: [http, server, location]
@@ -1655,7 +1682,8 @@ directives:
   - name: scgi_pass
     module: ngx_http_scgi_module
     contexts: [location, location if]
-    status: missing
+    status: implemented
+    field: Route.spec.action.gateway.upstream (protocol scgi)
   - name: scgi_store
     module: ngx_http_scgi_module
     contexts: [http, server, location]
@@ -1695,11 +1723,13 @@ directives:
   - name: scgi_connect_timeout
     module: ngx_http_scgi_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.gateway.timeouts.connect
   - name: scgi_send_timeout
     module: ngx_http_scgi_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.gateway.timeouts.send
   - name: scgi_buffer_size
     module: ngx_http_scgi_module
     contexts: [http, server, location]
@@ -1707,7 +1737,8 @@ directives:
   - name: scgi_pass_request_headers
     module: ngx_http_scgi_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.gateway.noRequestHeaders
   - name: scgi_pass_request_body
     module: ngx_http_scgi_module
     contexts: [http, server, location]
@@ -1719,7 +1750,8 @@ directives:
   - name: scgi_read_timeout
     module: ngx_http_scgi_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.gateway.timeouts.read
   - name: scgi_buffers
     module: ngx_http_scgi_module
     contexts: [http, server, location]
@@ -1811,7 +1843,8 @@ directives:
   - name: scgi_next_upstream
     module: ngx_http_scgi_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.gateway.retry.on
   - name: scgi_next_upstream_tries
     module: ngx_http_scgi_module
     contexts: [http, server, location]
@@ -1823,7 +1856,9 @@ directives:
   - name: scgi_param
     module: ngx_http_scgi_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.gateway.params
+    note: standard set unless noDefaultParams
   - name: scgi_pass_header
     module: ngx_http_scgi_module
     contexts: [http, server, location]
@@ -2209,15 +2244,19 @@ directives:
   - name: uwsgi_pass
     module: ngx_http_uwsgi_module
     contexts: [location, location if]
-    status: missing
+    status: partial
+    field: Route.spec.action.gateway.upstream (protocol uwsgi)
+    note: no uwsgis:// (TLS)
   - name: uwsgi_modifier1
     module: ngx_http_uwsgi_module
     contexts: [http, server, location]
-    status: missing
+    status: fixed
+    note: "0"
   - name: uwsgi_modifier2
     module: ngx_http_uwsgi_module
     contexts: [http, server, location]
-    status: missing
+    status: fixed
+    note: "0"
   - name: uwsgi_store
     module: ngx_http_uwsgi_module
     contexts: [http, server, location]
@@ -2257,11 +2296,13 @@ directives:
   - name: uwsgi_connect_timeout
     module: ngx_http_uwsgi_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.gateway.timeouts.connect
   - name: uwsgi_send_timeout
     module: ngx_http_uwsgi_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.gateway.timeouts.send
   - name: uwsgi_buffer_size
     module: ngx_http_uwsgi_module
     contexts: [http, server, location]
@@ -2269,7 +2310,8 @@ directives:
   - name: uwsgi_pass_request_headers
     module: ngx_http_uwsgi_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.gateway.noRequestHeaders
   - name: uwsgi_pass_request_body
     module: ngx_http_uwsgi_module
     contexts: [http, server, location]
@@ -2281,7 +2323,8 @@ directives:
   - name: uwsgi_read_timeout
     module: ngx_http_uwsgi_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.gateway.timeouts.read
   - name: uwsgi_buffers
     module: ngx_http_uwsgi_module
     contexts: [http, server, location]
@@ -2373,7 +2416,8 @@ directives:
   - name: uwsgi_next_upstream
     module: ngx_http_uwsgi_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.gateway.retry.on
   - name: uwsgi_next_upstream_tries
     module: ngx_http_uwsgi_module
     contexts: [http, server, location]
@@ -2385,7 +2429,9 @@ directives:
   - name: uwsgi_param
     module: ngx_http_uwsgi_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.gateway.params
+    note: standard set unless noDefaultParams
   - name: uwsgi_string
     module: ngx_http_uwsgi_module
     contexts: [http, server, location]

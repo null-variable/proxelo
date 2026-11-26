@@ -37,6 +37,19 @@
       "type": "object",
       "description": "Action carries the settings for Type and nothing else.",
       "properties": {
+        "gateway": {
+          "$ref": "#/$defs/GatewayAction",
+          "description": "FastCGI, uwsgi or SCGI.",
+          "x-nullable": true
+        },
+        "grpc": {
+          "$ref": "#/$defs/ProxyAction",
+          "x-nullable": true
+        },
+        "memcached": {
+          "$ref": "#/$defs/MemcachedAction",
+          "x-nullable": true
+        },
         "proxy": {
           "$ref": "#/$defs/ProxyAction",
           "x-nullable": true
@@ -54,7 +67,10 @@
           "enum": [
             "static",
             "proxy",
-            "return"
+            "return",
+            "gateway",
+            "memcached",
+            "grpc"
           ]
         }
       },
@@ -62,7 +78,10 @@
         "type",
         "static",
         "proxy",
-        "return"
+        "return",
+        "gateway",
+        "memcached",
+        "grpc"
       ],
       "required": [
         "type"
@@ -410,6 +429,99 @@
       ],
       "required": [
         "upstream"
+      ]
+    },
+    "GatewayAction": {
+      "type": "object",
+      "description": "GatewayAction passes requests to an application server (nginx fastcgi_pass, uwsgi_pass, scgi_pass). The request body is read in full first.",
+      "properties": {
+        "documentRoot": {
+          "type": "string",
+          "description": "$document_root, an absolute path; SCRIPT_FILENAME of FastCGI is $document_root$fastcgi_script_name."
+        },
+        "index": {
+          "type": "string",
+          "description": "Appended to $fastcgi_script_name for a URI ending in \"/\", for example \"index.php\" (fastcgi_index)."
+        },
+        "noDefaultParams": {
+          "type": "boolean",
+          "description": "Leave out the standard set."
+        },
+        "noRequestHeaders": {
+          "type": "boolean",
+          "description": "Do not send request headers as HTTP_* params."
+        },
+        "params": {
+          "type": "array",
+          "description": "Added after the standard set of the protocol (nginx fastcgi_params, uwsgi_params, scgi_params); a param of the same name replaces the standard one. Values are templates.",
+          "items": {
+            "$ref": "#/$defs/GatewayParam"
+          }
+        },
+        "protocol": {
+          "type": "string",
+          "enum": [
+            "fastcgi",
+            "uwsgi",
+            "scgi"
+          ]
+        },
+        "retry": {
+          "$ref": "#/$defs/Retry",
+          "x-nullable": true
+        },
+        "splitPathInfo": {
+          "type": "string",
+          "description": "PCRE2 with two groups over $uri, the script name and the path info, for example \"^(.+\\.php)(/.+)$\" (fastcgi_split_path_info)."
+        },
+        "timeouts": {
+          "$ref": "#/$defs/ProxyTimeouts"
+        },
+        "upstream": {
+          "type": "string",
+          "description": "Upstream ID.",
+          "x-ref": "upstreams"
+        }
+      },
+      "x-order": [
+        "protocol",
+        "upstream",
+        "timeouts",
+        "retry",
+        "params",
+        "noDefaultParams",
+        "noRequestHeaders",
+        "documentRoot",
+        "index",
+        "splitPathInfo"
+      ],
+      "required": [
+        "protocol",
+        "upstream"
+      ]
+    },
+    "GatewayParam": {
+      "type": "object",
+      "properties": {
+        "ifNotEmpty": {
+          "type": "boolean",
+          "description": "Skip the param when the value expands to nothing."
+        },
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "x-order": [
+        "name",
+        "value",
+        "ifNotEmpty"
+      ],
+      "required": [
+        "name",
+        "value"
       ]
     },
     "GeoEntry": {
@@ -895,6 +1007,37 @@
       ],
       "required": [
         "path"
+      ]
+    },
+    "MemcachedAction": {
+      "type": "object",
+      "description": "MemcachedAction answers GET and HEAD with the value stored under the key (nginx memcached_pass); a missing key is 404.",
+      "properties": {
+        "key": {
+          "type": "string",
+          "description": "Template; empty: $uri."
+        },
+        "retry": {
+          "$ref": "#/$defs/Retry",
+          "x-nullable": true
+        },
+        "timeouts": {
+          "$ref": "#/$defs/ProxyTimeouts"
+        },
+        "upstream": {
+          "type": "string",
+          "description": "Upstream ID.",
+          "x-ref": "upstreams"
+        }
+      },
+      "x-order": [
+        "upstream",
+        "timeouts",
+        "retry",
+        "key"
+      ],
+      "required": [
+        "upstream"
       ]
     },
     "PassiveHealth": {

@@ -151,6 +151,11 @@ function addID(list: string[] | undefined, id: string): string[] {
   return list?.includes(id) ? list : [...(list ?? []), id];
 }
 
+// isActionEdge: the route's action names this upstream; the form changes it.
+function isActionEdge(field: string): boolean {
+  return /^spec\.action\.(proxy|gateway|memcached|grpc)\.upstream$/.test(field);
+}
+
 // connectPatch is the merge patch that makes l.
 function connectPatch(l: Link_, res: Resource): object {
   const s = res.spec ?? {};
@@ -161,8 +166,12 @@ function connectPatch(l: Link_, res: Resource): object {
       return { spec: { routes: addID(s.routes, l.to.id) } };
     case "routes>routes":
       return { spec: { children: addID(s.children, l.to.id) } };
-    case "routes>upstreams":
-      return { spec: { action: { type: "proxy", static: null, return: null, proxy: { ...(s.action?.proxy ?? {}), upstream: l.to.id } } } };
+    case "routes>upstreams": {
+      // Keep a gateway, memcached or grpc action; anything else becomes proxy.
+      const t = s.action?.type;
+      const kind = t === "gateway" || t === "memcached" || t === "grpc" ? t : "proxy";
+      return { spec: { action: { type: kind, static: null, return: null, [kind]: { ...(s.action?.[kind] ?? {}), upstream: l.to.id } } } };
+    }
   }
   throw new Error("these nodes do not connect");
 }
@@ -179,6 +188,9 @@ function disconnectPatch(e: FlowEdge, res: Resource): object | string {
     case "spec.children":
       return { spec: { children: drop(s.children, e.to) } };
     case "spec.action.proxy.upstream":
+    case "spec.action.gateway.upstream":
+    case "spec.action.memcached.upstream":
+    case "spec.action.grpc.upstream":
       return "A proxy route needs an upstream; connect another upstream or change the action in the route's form.";
     case "spec.targets":
       return { spec: { targets: (s.targets ?? []).filter((_: unknown, i: number) => `${res.id}/${i}` !== e.to) } };
@@ -603,7 +615,7 @@ function NodePanel({ node, view, refs, groupName, editable, ownerEditable, busy,
             {[...inc, ...out].map((e) => (
               <li key={`${e.from}-${e.to}-${e.field}`}>
                 <span className="grow">{e.from === node.id ? `→ ${name(e.to)}` : `← ${name(e.from)}`}</span>
-                {e.field !== "spec.action.proxy.upstream" && ownerEditable(e) && <button className="btn btn--ghost btn--sm" disabled={busy} onClick={() => onDisconnect(e)}>Remove</button>}
+                {!isActionEdge(e.field) && ownerEditable(e) && <button className="btn btn--ghost btn--sm" disabled={busy} onClick={() => onDisconnect(e)}>Remove</button>}
               </li>
             ))}
           </ul>
@@ -636,10 +648,10 @@ function EdgePanel({ edge, view, editable, busy, onDisconnect }: { edge: FlowEdg
       <div className="stack">
         <div>{a.name} → {b.name}</div>
         <div className="muted small mono">{edge.field}</div>
-        {editable && edge.field !== "spec.action.proxy.upstream" && (
+        {editable && !isActionEdge(edge.field) && (
           <div><button className="btn btn--danger-text btn--sm" disabled={busy} onClick={() => onDisconnect(edge)}>Remove connection</button></div>
         )}
-        {edge.field === "spec.action.proxy.upstream" && <p className="muted small">Connect the route to another upstream to replace this one, or change its action in the form.</p>}
+        {isActionEdge(edge.field) && <p className="muted small">Connect the route to another upstream to replace this one, or change its action in the form.</p>}
       </div>
     </Card>
   );

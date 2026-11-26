@@ -58,7 +58,7 @@ function summary(kind: Kind, r: Resource, refs: Refs | undefined): ReactNode {
       return (s.hostnames ?? []).map((h: { value: string }) => h.value).join(", ") || <span className="muted">any host</span>;
     case "routes": {
       const m = s.match?.path;
-      const up = s.action?.proxy?.upstream;
+      const up = s.action?.[s.action?.type]?.upstream;
       return (
         <>
           <span className="mono">{m ? `${PATH_SIGN[m.type] === "prefix" ? "" : PATH_SIGN[m.type] + " "}${m.value}` : ""}</span>{" "}

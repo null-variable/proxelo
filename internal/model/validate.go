@@ -714,7 +714,10 @@ func (s *RouteSpec) validate(es *FieldErrors) {
 	for _, o := range []struct {
 		t   ActionType
 		set bool
-	}{{ActionStatic, a.Static != nil}, {ActionProxy, a.Proxy != nil}, {ActionReturn, a.Return != nil}} {
+	}{
+		{ActionStatic, a.Static != nil}, {ActionProxy, a.Proxy != nil}, {ActionReturn, a.Return != nil},
+		{ActionGateway, a.Gateway != nil}, {ActionMemcached, a.Memcached != nil}, {ActionGrpc, a.Grpc != nil},
+	} {
 		if o.set && o.t != a.Type {
 			es.add("spec.action."+string(o.t), "must be empty when type is %q", a.Type)
 		}
@@ -741,20 +744,25 @@ func (s *RouteSpec) validate(es *FieldErrors) {
 			es.add("spec.action.proxy", "is required when type is %q", a.Type)
 			return
 		}
-		if a.Proxy.Upstream == "" {
-			es.add("spec.action.proxy.upstream", "is required")
+		a.Proxy.validate(es, "spec.action.proxy")
+	case ActionGrpc:
+		if a.Grpc == nil {
+			es.add("spec.action.grpc", "is required when type is %q", a.Type)
+			return
 		}
-		t := a.Proxy.Timeouts
-		checkDuration(es, "spec.action.proxy.timeouts.connect", t.Connect)
-		checkDuration(es, "spec.action.proxy.timeouts.send", t.Send)
-		checkDuration(es, "spec.action.proxy.timeouts.read", t.Read)
-		if r := a.Proxy.Retry; r != nil {
-			for i, on := range r.On {
-				if _, ok := RetryConditions[on]; !ok {
-					es.add(fmt.Sprintf("spec.action.proxy.retry.on[%d]", i), "unknown condition %q", on)
-				}
-			}
+		a.Grpc.validate(es, "spec.action.grpc")
+	case ActionMemcached:
+		if a.Memcached == nil {
+			es.add("spec.action.memcached", "is required when type is %q", a.Type)
+			return
 		}
+		a.Memcached.ProxyAction.validate(es, "spec.action.memcached")
+	case ActionGateway:
+		if a.Gateway == nil {
+			es.add("spec.action.gateway", "is required when type is %q", a.Type)
+			return
+		}
+		a.Gateway.validate(es, "spec.action.gateway")
 	case ActionReturn:
 		if a.Return == nil {
 			es.add("spec.action.return", "is required when type is %q", a.Type)
@@ -762,7 +770,51 @@ func (s *RouteSpec) validate(es *FieldErrors) {
 		}
 		a.Return.validate(es, "spec.action.return")
 	default:
-		es.add("spec.action.type", "must be %q, %q or %q", ActionStatic, ActionProxy, ActionReturn)
+		es.add("spec.action.type", "must be one of %q, %q, %q, %q, %q, %q",
+			ActionStatic, ActionProxy, ActionReturn, ActionGateway, ActionMemcached, ActionGrpc)
+	}
+}
+
+func (p *ProxyAction) validate(es *FieldErrors, path string) {
+	if p.Upstream == "" {
+		es.add(path+".upstream", "is required")
+	}
+	t := p.Timeouts
+	checkDuration(es, path+".timeouts.connect", t.Connect)
+	checkDuration(es, path+".timeouts.send", t.Send)
+	checkDuration(es, path+".timeouts.read", t.Read)
+	if r := p.Retry; r != nil {
+		for i, on := range r.On {
+			if _, ok := RetryConditions[on]; !ok {
+				es.add(fmt.Sprintf("%s.retry.on[%d]", path, i), "unknown condition %q", on)
+			}
+		}
+	}
+}
+
+// gatewayParamRE is a CGI-style param name.
+var gatewayParamRE = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,255}$`)
+
+func (g *GatewayAction) validate(es *FieldErrors, path string) {
+	switch g.Protocol {
+	case GatewayFastCGI, GatewayUwsgi, GatewaySCGI:
+	default:
+		es.add(path+".protocol", "must be one of %q, %q, %q", GatewayFastCGI, GatewayUwsgi, GatewaySCGI)
+	}
+	g.ProxyAction.validate(es, path)
+	for i, p := range g.Params {
+		if !gatewayParamRE.MatchString(p.Name) {
+			es.add(fmt.Sprintf("%s.params[%d].name", path, i), "must be letters, digits, '_', '.' or '-'")
+		}
+	}
+	if g.DocumentRoot != "" && !strings.HasPrefix(g.DocumentRoot, "/") {
+		es.add(path+".documentRoot", "must be an absolute path")
+	}
+	if strings.Contains(g.Index, "/") {
+		es.add(path+".index", "must be a file name")
+	}
+	if g.SplitPathInfo != "" && strings.Count(g.SplitPathInfo, "(")-strings.Count(g.SplitPathInfo, `\(`) < 2 {
+		es.add(path+".splitPathInfo", "needs two groups: the script name and the path info")
 	}
 }
 

@@ -109,8 +109,8 @@ func Check(cfg model.Config, adminAddr string) []Finding {
 		if r.IsEnabled() && !used[r.ID] {
 			warn(fmt.Sprintf("routes[%s]", r.ID), "route is not used by any site")
 		}
-		if p := r.Spec.Action.Proxy; p != nil && setsHeader(policies, r.Spec.Policies, "authorization", true) {
-			warn(fmt.Sprintf("routes[%s].spec.policies", r.ID), "sends credentials to upstream %q over plain HTTP", p.Upstream)
+		if up, _ := r.Spec.Action.Upstream(); up != "" && setsHeader(policies, r.Spec.Policies, "authorization", true) {
+			warn(fmt.Sprintf("routes[%s].spec.policies", r.ID), "sends credentials to upstream %q over plain HTTP", up)
 		}
 	}
 
