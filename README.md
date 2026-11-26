@@ -53,6 +53,17 @@ sent upstream, merged by name with the closest policy winning; `accessLog`
 picks the log for its routes (`combined`, `main`, `json` or a template). A
 route with `"inheritPolicies": false` starts over.
 
+Access policies run in nginx's order once the route is chosen:
+`rateLimit` (a leaky bucket per key with burst, delay or noDelay, as
+limit_req) and `connLimit` (requests in progress per key, as limit_conn),
+each policy one zone shared by the routes it applies to; `ipAccess` allow
+and deny rules, the first match deciding; `basicAuth` with inline users
+hashed by htpasswd or openssl passwd; and `forwardAuth`, which asks an
+upstream about each request as auth_request does and can copy its response
+headers upstream. `bandwidth` throttles response bodies (limit_rate,
+limit_rate_after), and `realIp`, on sites, takes the client address from a
+header set by trusted proxies. Refusals go through the error pages.
+
 ### Changes
 
 Every edit happens in a change set: `POST /api/v1/changesets`, then resource

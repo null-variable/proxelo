@@ -527,15 +527,29 @@ type Policy struct {
 type PolicyType string
 
 const (
-	PolicyHeaders   PolicyType = "headers"
-	PolicyAccessLog PolicyType = "accessLog"
+	PolicyHeaders     PolicyType = "headers"
+	PolicyAccessLog   PolicyType = "accessLog"
+	PolicyRateLimit   PolicyType = "rateLimit"
+	PolicyConnLimit   PolicyType = "connLimit"
+	PolicyBandwidth   PolicyType = "bandwidth"
+	PolicyIPAccess    PolicyType = "ipAccess"
+	PolicyBasicAuth   PolicyType = "basicAuth"
+	PolicyForwardAuth PolicyType = "forwardAuth"
+	PolicyRealIP      PolicyType = "realIp"
 )
 
 // PolicySpec carries the settings for Type and nothing else.
 type PolicySpec struct {
-	Type      PolicyType       `json:"type"`
-	Headers   *HeadersPolicy   `json:"headers,omitempty"`
-	AccessLog *AccessLogPolicy `json:"accessLog,omitempty"`
+	Type        PolicyType         `json:"type"`
+	Headers     *HeadersPolicy     `json:"headers,omitempty"`
+	AccessLog   *AccessLogPolicy   `json:"accessLog,omitempty"`
+	RateLimit   *RateLimitPolicy   `json:"rateLimit,omitempty"`
+	ConnLimit   *ConnLimitPolicy   `json:"connLimit,omitempty"`
+	Bandwidth   *BandwidthPolicy   `json:"bandwidth,omitempty"`
+	IPAccess    *IPAccessPolicy    `json:"ipAccess,omitempty"`
+	BasicAuth   *BasicAuthPolicy   `json:"basicAuth,omitempty"`
+	ForwardAuth *ForwardAuthPolicy `json:"forwardAuth,omitempty"`
+	RealIP      *RealIPPolicy      `json:"realIp,omitempty"`
 }
 
 // HeadersPolicy replaces nginx add_header, proxy_set_header and
@@ -576,6 +590,107 @@ type AccessLogPolicy struct {
 	EscapeJSON bool `json:"escapeJson,omitempty"`
 	// False turns logging off for the routes it applies to.
 	Enabled *bool `json:"enabled,omitempty"`
+}
+
+// RateLimitPolicy is nginx limit_req_zone with limit_req: a leaky bucket
+// per key. Each policy is one zone; every route it applies to shares the
+// zone's counters. All rate limits that apply are checked.
+type RateLimitPolicy struct {
+	// Template for the key, "$binary_remote_addr" by default. Requests whose
+	// key is empty are not limited.
+	Key string `json:"key,omitempty"`
+	// Such as "10r/s" or "30r/m".
+	Rate string `json:"rate"`
+	// Requests over the rate that wait (or pass, up to Delay) instead of
+	// being rejected.
+	Burst uint32 `json:"burst,omitempty"`
+	// Excess requests passed without waiting (nginx delay). NoDelay passes
+	// the whole burst.
+	Delay   uint32 `json:"delay,omitempty"`
+	NoDelay bool   `json:"noDelay,omitempty"`
+	// Status for rejected requests, 503 by default.
+	Status uint32 `json:"status,omitempty"`
+	// Count and log, but never delay or reject.
+	DryRun bool `json:"dryRun,omitempty"`
+	// Keys kept per proxy; when full, idle keys are dropped. Default 16384.
+	MaxKeys uint32 `json:"maxKeys,omitempty"`
+}
+
+// ConnLimitPolicy is nginx limit_conn_zone with limit_conn: requests in
+// progress per key.
+type ConnLimitPolicy struct {
+	// Template for the key, "$binary_remote_addr" by default.
+	Key string `json:"key,omitempty"`
+	Max uint32 `json:"max"`
+	// Status for rejected requests, 503 by default.
+	Status  uint32 `json:"status,omitempty"`
+	DryRun  bool   `json:"dryRun,omitempty"`
+	MaxKeys uint32 `json:"maxKeys,omitempty"`
+}
+
+// BandwidthPolicy is nginx limit_rate and limit_rate_after: the response
+// body rate of each request. The closest policy applies.
+type BandwidthPolicy struct {
+	// Such as "100k" or "1m" bytes per second.
+	Rate string `json:"rate"`
+	// Sent at full speed first, such as "500k".
+	After string `json:"after,omitempty"`
+}
+
+// IPAccessPolicy is nginx allow and deny. Rules of all policies that apply
+// are checked in order, outermost first; the first match decides and no
+// match allows. A denied request gets 403.
+type IPAccessPolicy struct {
+	Rules []IPRule `json:"rules"`
+}
+
+type IPRule struct {
+	// "allow" or "deny".
+	Action string `json:"action"`
+	// CIDR, address, or "all".
+	From string `json:"from"`
+}
+
+// BasicAuthPolicy is nginx auth_basic with the users inline. The closest
+// policy applies.
+type BasicAuthPolicy struct {
+	Realm string      `json:"realm"`
+	Users []BasicUser `json:"users"`
+}
+
+type BasicUser struct {
+	Name string `json:"name"`
+	// A hash as htpasswd or openssl passwd makes: bcrypt, $apr1$, $1$, $5$,
+	// $6$, {SHA} or {SSHA}.
+	Hash string `json:"hash"`
+}
+
+// ForwardAuthPolicy is nginx auth_request: an upstream decides whether to
+// serve each request. It gets a GET with the request headers and
+// X-Forwarded-Method, -Proto, -Host and -Uri; 2xx allows, 401 and 403 are
+// sent to the client, anything else is a 500. The closest policy applies.
+type ForwardAuthPolicy struct {
+	Upstream string `json:"upstream"`
+	// Path and query of the check, a template. Default "/".
+	URI string `json:"uri,omitempty"`
+	// Default 60s.
+	Timeout string `json:"timeout,omitempty"`
+	// Response headers of a successful check added to the request sent
+	// upstream; also variables $auth_resp_<name>.
+	CopyHeaders []string `json:"copyHeaders,omitempty"`
+}
+
+// RealIPPolicy is nginx set_real_ip_from, real_ip_header and
+// real_ip_recursive: the client address is taken from a header that
+// trusted proxies set. It applies to the whole site, before the route is
+// chosen, so only site policies may be realIp.
+type RealIPPolicy struct {
+	// Trusted proxies, as CIDRs or addresses.
+	From []string `json:"from"`
+	// Default "X-Real-IP"; "X-Forwarded-For" is read from the right.
+	Header string `json:"header,omitempty"`
+	// Skip trusted addresses from the right of the header.
+	Recursive bool `json:"recursive,omitempty"`
 }
 
 // Config is the full set of resources compiled into one snapshot.
@@ -677,6 +792,10 @@ func Refs(r Resource) []Ref {
 		}
 		if s := r.Spec.Action.Static; s != nil && s.TryFiles != nil {
 			add(RouteKind, "spec.action.static.tryFiles.route", s.TryFiles.Route)
+		}
+	case *Policy:
+		if f := r.Spec.ForwardAuth; f != nil {
+			add(UpstreamKind, "spec.forwardAuth.upstream", f.Upstream)
 		}
 	}
 	return out

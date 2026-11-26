@@ -5,6 +5,7 @@ import (
 	"maps"
 	"math"
 	"net"
+	"net/netip"
 	"regexp"
 	"slices"
 	"strconv"
@@ -152,20 +153,32 @@ func (s *CertificateSpec) validate(es *FieldErrors) {
 }
 
 func (s *PolicySpec) validate(es *FieldErrors) {
-	for _, o := range []struct {
-		t   PolicyType
-		set bool
-	}{{PolicyHeaders, s.Headers != nil}, {PolicyAccessLog, s.AccessLog != nil}} {
-		if o.set && o.t != s.Type {
-			es.add("spec."+string(o.t), "must be empty when type is %q", s.Type)
+	set := map[PolicyType]bool{
+		PolicyHeaders:     s.Headers != nil,
+		PolicyAccessLog:   s.AccessLog != nil,
+		PolicyRateLimit:   s.RateLimit != nil,
+		PolicyConnLimit:   s.ConnLimit != nil,
+		PolicyBandwidth:   s.Bandwidth != nil,
+		PolicyIPAccess:    s.IPAccess != nil,
+		PolicyBasicAuth:   s.BasicAuth != nil,
+		PolicyForwardAuth: s.ForwardAuth != nil,
+		PolicyRealIP:      s.RealIP != nil,
+	}
+	for _, t := range slices.Sorted(maps.Keys(set)) {
+		if set[t] && t != s.Type {
+			es.add("spec."+string(t), "must be empty when type is %q", s.Type)
 		}
+	}
+	if _, known := set[s.Type]; !known {
+		es.add("spec.type", "must be one of %s", quotedList(slices.Sorted(maps.Keys(set))))
+		return
+	}
+	if !set[s.Type] {
+		es.add("spec."+string(s.Type), "is required when type is %q", s.Type)
+		return
 	}
 	switch s.Type {
 	case PolicyHeaders:
-		if s.Headers == nil {
-			es.add("spec.headers", "is required when type is %q", s.Type)
-			return
-		}
 		s.Headers.Response.validate(es, "spec.headers.response")
 		s.Headers.Request.validate(es, "spec.headers.request")
 		if s.Headers.Request.Always {
@@ -173,19 +186,175 @@ func (s *PolicySpec) validate(es *FieldErrors) {
 		}
 	case PolicyAccessLog:
 		l := s.AccessLog
-		if l == nil {
-			es.add("spec.accessLog", "is required when type is %q", s.Type)
-			return
-		}
 		if l.Path != "stdout" && l.Path != "stderr" && !strings.HasPrefix(l.Path, "/") {
 			es.add("spec.accessLog.path", "must be stdout, stderr or an absolute path")
 		}
 		if strings.Contains(l.Format, "\n") {
 			es.add("spec.accessLog.format", "must be one line")
 		}
-	default:
-		es.add("spec.type", "must be %q or %q", PolicyHeaders, PolicyAccessLog)
+	case PolicyRateLimit:
+		r := s.RateLimit
+		if _, err := ParseRate(r.Rate); err != nil {
+			es.add("spec.rateLimit.rate", "%s", err)
+		}
+		if r.NoDelay && r.Delay != 0 {
+			es.add("spec.rateLimit.delay", "must be empty with noDelay")
+		}
+		if r.Delay > r.Burst {
+			es.add("spec.rateLimit.delay", "must not exceed burst")
+		}
+		checkLimitStatus(es, "spec.rateLimit.status", r.Status)
+		checkOneLine(es, "spec.rateLimit.key", r.Key)
+	case PolicyConnLimit:
+		c := s.ConnLimit
+		if c.Max == 0 {
+			es.add("spec.connLimit.max", "must be positive")
+		}
+		checkLimitStatus(es, "spec.connLimit.status", c.Status)
+		checkOneLine(es, "spec.connLimit.key", c.Key)
+	case PolicyBandwidth:
+		b := s.Bandwidth
+		if n, err := ParseSize(b.Rate); err != nil || n == 0 {
+			es.add("spec.bandwidth.rate", "must be a positive size such as \"100k\"")
+		}
+		if b.After != "" {
+			if _, err := ParseSize(b.After); err != nil {
+				es.add("spec.bandwidth.after", "must be a size such as \"500k\"")
+			}
+		}
+	case PolicyIPAccess:
+		if len(s.IPAccess.Rules) == 0 {
+			es.add("spec.ipAccess.rules", "at least one rule is required")
+		}
+		for i, r := range s.IPAccess.Rules {
+			p := fmt.Sprintf("spec.ipAccess.rules[%d]", i)
+			if r.Action != "allow" && r.Action != "deny" {
+				es.add(p+".action", "must be \"allow\" or \"deny\"")
+			}
+			if r.From != "all" && !validCIDR(r.From) {
+				es.add(p+".from", "must be a CIDR, an address or \"all\"")
+			}
+		}
+	case PolicyBasicAuth:
+		b := s.BasicAuth
+		if b.Realm == "" {
+			es.add("spec.basicAuth.realm", "is required")
+		}
+		checkOneLine(es, "spec.basicAuth.realm", b.Realm)
+		if len(b.Users) == 0 {
+			es.add("spec.basicAuth.users", "at least one user is required")
+		}
+		seen := map[string]bool{}
+		for i, u := range b.Users {
+			p := fmt.Sprintf("spec.basicAuth.users[%d]", i)
+			if u.Name == "" || strings.ContainsAny(u.Name, ":\r\n") {
+				es.add(p+".name", "must be non-empty without a colon")
+			}
+			if seen[u.Name] {
+				es.add(p+".name", "duplicate user %q", u.Name)
+			}
+			seen[u.Name] = true
+			if !knownPasswordHash(u.Hash) {
+				es.add(p+".hash", "must be a bcrypt, $apr1$, $1$, $5$, $6$, {SHA} or {SSHA} hash")
+			}
+		}
+	case PolicyForwardAuth:
+		f := s.ForwardAuth
+		if f.Upstream == "" {
+			es.add("spec.forwardAuth.upstream", "is required")
+		}
+		if f.URI != "" && !strings.HasPrefix(f.URI, "/") {
+			es.add("spec.forwardAuth.uri", "must start with /")
+		}
+		checkOneLine(es, "spec.forwardAuth.uri", f.URI)
+		checkDuration(es, "spec.forwardAuth.timeout", f.Timeout)
+		for i, h := range f.CopyHeaders {
+			checkHeaderName(es, fmt.Sprintf("spec.forwardAuth.copyHeaders[%d]", i), h)
+		}
+	case PolicyRealIP:
+		r := s.RealIP
+		if len(r.From) == 0 {
+			es.add("spec.realIp.from", "at least one trusted address is required")
+		}
+		for i, f := range r.From {
+			if !validCIDR(f) {
+				es.add(fmt.Sprintf("spec.realIp.from[%d]", i), "must be a CIDR or an address")
+			}
+		}
+		if r.Header != "" && !headerNameRE.MatchString(r.Header) {
+			es.add("spec.realIp.header", "must be a header name")
+		}
 	}
+}
+
+func quotedList(ts []PolicyType) string {
+	q := make([]string, len(ts))
+	for i, t := range ts {
+		q[i] = strconv.Quote(string(t))
+	}
+	return strings.Join(q, ", ")
+}
+
+func checkLimitStatus(es *FieldErrors, path string, s uint32) {
+	if s != 0 && (s < 400 || s > 599) {
+		es.add(path, "must be 400-599")
+	}
+}
+
+func checkOneLine(es *FieldErrors, path, v string) {
+	if strings.ContainsAny(v, "\r\n\x00") {
+		es.add(path, "must be one line")
+	}
+}
+
+func validCIDR(s string) bool {
+	if _, err := netip.ParsePrefix(s); err == nil {
+		return true
+	}
+	_, err := netip.ParseAddr(s)
+	return err == nil
+}
+
+func knownPasswordHash(h string) bool {
+	for _, p := range []string{"$2a$", "$2b$", "$2y$", "$apr1$", "$1$", "$5$", "$6$", "{SHA}", "{SSHA}", "{PLAIN}"} {
+		if strings.HasPrefix(h, p) && len(h) > len(p) {
+			return true
+		}
+	}
+	return false
+}
+
+// ParseRate parses an nginx rate, "Nr/s" or "Nr/m", into requests per 1000
+// seconds.
+func ParseRate(s string) (uint64, error) {
+	n, unit, ok := strings.Cut(s, "r/")
+	v, err := strconv.ParseUint(n, 10, 32)
+	if !ok || err != nil || v == 0 {
+		return 0, fmt.Errorf("must be a rate such as \"10r/s\" or \"30r/m\"")
+	}
+	switch unit {
+	case "s":
+		return v * 1000, nil
+	case "m":
+		return v * 1000 / 60, nil
+	}
+	return 0, fmt.Errorf("must be a rate such as \"10r/s\" or \"30r/m\"")
+}
+
+// ParseSize parses an nginx size: bytes, or with a k or m suffix.
+func ParseSize(s string) (uint64, error) {
+	mult := uint64(1)
+	switch {
+	case strings.HasSuffix(s, "k"), strings.HasSuffix(s, "K"):
+		mult, s = 1024, s[:len(s)-1]
+	case strings.HasSuffix(s, "m"), strings.HasSuffix(s, "M"):
+		mult, s = 1024*1024, s[:len(s)-1]
+	}
+	v, err := strconv.ParseUint(s, 10, 64)
+	if err != nil || v > math.MaxUint64/mult {
+		return 0, fmt.Errorf("bad size %q", s)
+	}
+	return v * mult, nil
 }
 
 var headerNameRE = regexp.MustCompile("^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")

@@ -77,9 +77,17 @@ go run ./test/conformance -proxy ... -case static-root -keep   # one case, keep 
 
 Requests listen on 127.0.0.1:18480 and the upstream on 127.0.0.1:18481 to
 18484; its answer names the port, so cases with several targets compare
-which target took each request. The
+which target took each request. A request with `X-Echo-Status` gets that
+status from the echo (401 with a Basic challenge), so cases can make the
+upstream refuse, as a forward auth check does. The
 report (stdout, and `-report file`) lists every differing request and the
 directive coverage.
+
+Without Docker, `-nginx path/to/sbin/nginx` runs a local build of the same
+nginx version instead; it needs the modules the cases use
+(`--with-http_auth_request_module --with-http_realip_module`). nginx built
+on macOS matches `location ~` regexes caselessly, unlike the Linux
+reference, so a case relying on case-sensitive regexes differs there.
 
 ### Writing a case
 

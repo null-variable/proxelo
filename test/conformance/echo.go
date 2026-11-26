@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"slices"
 	"strings"
 	"sync"
@@ -21,6 +22,16 @@ type EchoRecord struct {
 }
 
 func (r *EchoRecord) String() string { return r.Method + " " + r.URI }
+
+// header returns the first value of the lowercase header name.
+func (r *EchoRecord) header(name string) (string, bool) {
+	for _, h := range r.Headers {
+		if n, v, _ := strings.Cut(h, ": "); n == name {
+			return v, true
+		}
+	}
+	return "", false
+}
 
 // upstreamVolatile headers depend on how the proxy reuses upstream
 // connections, which the cases do not configure alike.
@@ -68,6 +79,8 @@ func (r *EchoRecord) headerSet() []string {
 // echo is the upstream of every case: it records each request and answers
 // 200 with a fixed body that names the request and the port that took it,
 // so a wrong URI or a different target choice also shows in the response.
+// A request with X-Echo-Status gets that status instead, with a Basic
+// challenge for 401, so cases can make the upstream refuse.
 type echo struct {
 	lns  []net.Listener
 	mu   sync.Mutex
@@ -177,7 +190,15 @@ func (e *echo) conn(c net.Conn) {
 		if closeConn {
 			conn = "close"
 		}
-		fmt.Fprintf(c, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: %d\r\nX-Upstream: echo\r\nConnection: %s\r\n\r\n%s", len(resp), conn, resp)
+		status, extra := 200, ""
+		if s, ok := rec.header("x-echo-status"); ok {
+			fmt.Sscan(s, &status)
+			if status == 401 {
+				extra = "WWW-Authenticate: Basic realm=\"echo\"\r\n"
+			}
+		}
+		fmt.Fprintf(c, "HTTP/1.1 %d %s\r\nContent-Type: text/plain\r\nContent-Length: %d\r\nX-Upstream: echo\r\n%sConnection: %s\r\n\r\n%s",
+			status, http.StatusText(status), len(resp), extra, conn, resp)
 		if closeConn {
 			return
 		}

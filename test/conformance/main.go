@@ -63,6 +63,9 @@ type config struct {
 	report   string
 	only     string
 	keep     bool
+	// A local nginx binary to run instead of the container. It must be the
+	// version in nginxImage, built with the modules the cases use.
+	nginxBin string
 }
 
 func main() {
@@ -73,6 +76,7 @@ func main() {
 	flag.StringVar(&c.report, "report", "", "also write the Markdown report to this file")
 	flag.StringVar(&c.only, "case", "", "run only this case")
 	flag.BoolVar(&c.keep, "keep", false, "keep the work directory")
+	flag.StringVar(&c.nginxBin, "nginx", "", "run this nginx binary instead of the "+nginxImage+" container")
 	flag.Parse()
 	if c.proxyBin == "" {
 		fmt.Fprintln(os.Stderr, "usage: conformance -proxy <proxelo-proxy> [-case name] [-report file]")
@@ -257,7 +261,13 @@ func runCase(ctx context.Context, c config, k *Case, work string, up *echo) (Cas
 		www = ""
 	}
 
-	ngx, err := runNginx(ctx, k, work, www)
+	var ngx server
+	var err error
+	if c.nginxBin != "" {
+		ngx, err = runLocalNginx(ctx, c.nginxBin, k, work, www)
+	} else {
+		ngx, err = runNginx(ctx, k, work, www)
+	}
 	if err != nil {
 		return CaseResult{}, err
 	}
@@ -342,6 +352,58 @@ func runNginx(ctx context.Context, k *Case, work, www string) (server, error) {
 		return nil, fmt.Errorf("nginx: %w: %s", err, logs)
 	}
 	return n, nil
+}
+
+// runLocalNginx runs a local nginx binary on the same configuration as the
+// container: the case's /etc/nginx and /srv/www paths point into the work
+// directory and the case's www/ tree.
+func runLocalNginx(ctx context.Context, bin string, k *Case, work, www string) (server, error) {
+	prefix, err := filepath.Abs(filepath.Join(work, "nginx"))
+	if err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(filepath.Join(prefix, "logs"), 0o755); err != nil {
+		return nil, err
+	}
+	caseConf, err := os.ReadFile(filepath.Join(k.Dir, "nginx.conf"))
+	if err != nil {
+		return nil, err
+	}
+	if www != "" {
+		abs, err := filepath.Abs(www)
+		if err != nil {
+			return nil, err
+		}
+		caseConf = bytes.ReplaceAll(caseConf, []byte("/srv/www"), []byte(abs))
+	}
+	mime, err := filepath.Abs(filepath.Join(filepath.Dir(bin), "..", "conf", "mime.types"))
+	if err != nil {
+		return nil, err
+	}
+	main := strings.NewReplacer(
+		"/etc/nginx/mime.types", mime,
+		"/etc/nginx/case.conf", filepath.Join(prefix, "case.conf"),
+		"pid /tmp/nginx.pid", "pid "+filepath.Join(prefix, "nginx.pid"),
+	).Replace(nginxMain)
+	if err := os.WriteFile(filepath.Join(prefix, "case.conf"), caseConf, 0o644); err != nil {
+		return nil, err
+	}
+	conf := filepath.Join(prefix, "nginx.conf")
+	if err := os.WriteFile(conf, []byte(main), 0o644); err != nil {
+		return nil, err
+	}
+	var log syncBuffer
+	cmd := exec.CommandContext(ctx, bin, "-p", prefix, "-c", conf, "-g", "daemon off;")
+	cmd.Stdout, cmd.Stderr = &log, &log
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	p := proxyServer{cmd, &log}
+	if err := waitListening(ctx, listenPort); err != nil {
+		p.stop()
+		return nil, fmt.Errorf("nginx: %w: %s", err, log.String())
+	}
+	return p, nil
 }
 
 type proxyServer struct {

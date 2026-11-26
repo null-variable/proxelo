@@ -342,3 +342,96 @@ func TestValidateUpstreamFeatures(t *testing.T) {
 		}
 	}
 }
+
+func TestCompileAccessPolicies(t *testing.T) {
+	cfg := validConfig()
+	pol := func(id string, spec model.PolicySpec) *model.Policy {
+		return &model.Policy{Meta: meta(id, strings.TrimPrefix(id, "pol_")), Spec: spec}
+	}
+	cfg.Policies = []*model.Policy{
+		pol("pol_rate", model.PolicySpec{Type: model.PolicyRateLimit, RateLimit: &model.RateLimitPolicy{Rate: "30r/m", Burst: 5, NoDelay: true, Status: 429}}),
+		pol("pol_conn", model.PolicySpec{Type: model.PolicyConnLimit, ConnLimit: &model.ConnLimitPolicy{Key: "$server_name", Max: 10}}),
+		pol("pol_deny", model.PolicySpec{Type: model.PolicyIPAccess, IPAccess: &model.IPAccessPolicy{Rules: []model.IPRule{
+			{Action: "allow", From: "10.0.0.0/8"}, {Action: "deny", From: "all"},
+		}}}),
+		pol("pol_auth", model.PolicySpec{Type: model.PolicyBasicAuth, BasicAuth: &model.BasicAuthPolicy{Realm: "admin", Users: []model.BasicUser{
+			{Name: "alice", Hash: "$apr1$abcdefgh$h9FWgUz3n9YxylKLlR5SQ/"},
+		}}}),
+		pol("pol_fwd", model.PolicySpec{Type: model.PolicyForwardAuth, ForwardAuth: &model.ForwardAuthPolicy{
+			Upstream: "up_api", URI: "/check", Timeout: "2s", CopyHeaders: []string{"X-User"},
+		}}),
+		pol("pol_bw", model.PolicySpec{Type: model.PolicyBandwidth, Bandwidth: &model.BandwidthPolicy{Rate: "100k", After: "1m"}}),
+		pol("pol_real", model.PolicySpec{Type: model.PolicyRealIP, RealIP: &model.RealIPPolicy{From: []string{"10.0.0.0/8"}, Header: "X-Forwarded-For", Recursive: true}}),
+	}
+	cfg.Sites[0].Spec.Policies = []string{"pol_real", "pol_rate", "pol_deny"}
+	cfg.Routes[0].Spec.Policies = []string{"pol_rate", "pol_conn", "pol_auth", "pol_fwd", "pol_bw"}
+	snap, err := Compile(cfg, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snap.GetRateZones()) != 1 || len(snap.GetConnZones()) != 1 {
+		t.Fatalf("zones = %v %v", snap.GetRateZones(), snap.GetConnZones())
+	}
+	rz := snap.GetRateZones()[0]
+	if rz.GetKey() != "$binary_remote_addr" || rz.GetRateMilli() != 500 || rz.GetBurst() != 5 || rz.GetDelay() != 5 || rz.GetStatus() != 429 {
+		t.Fatalf("rate zone = %v", rz)
+	}
+	site := snap.GetSites()[0]
+	if ri := site.GetRealIp(); ri.GetHeader() != "x-forwarded-for" || !ri.GetRecursive() || ri.GetFrom()[0] != "10.0.0.0/8" {
+		t.Fatalf("real ip = %v", ri)
+	}
+	var api, root *snapshotv1.Route
+	for _, r := range site.GetRoutes() {
+		switch r.GetId() {
+		case "rt_api":
+			api = r
+		case "rt_root":
+			root = r
+		}
+	}
+	a := api.GetAccess()
+	// The site's rate limit and the route's are the same zone, listed once.
+	if len(a.GetRateLimits()) != 1 || len(a.GetConnLimits()) != 1 || len(a.GetRules()) != 2 || a.GetRules()[1].GetCidr() != "" || a.GetRules()[1].GetAllow() {
+		t.Fatalf("access = %v", a)
+	}
+	if a.GetBasicAuth().GetRealm() != "admin" || a.GetForwardAuth().GetUri() != "/check" || a.GetForwardAuth().GetTimeoutMs() != 2000 ||
+		a.GetForwardAuth().GetCopyHeaders()[0] != "x-user" {
+		t.Fatalf("auth = %v", a)
+	}
+	if b := api.GetBandwidth(); b.GetRate() != 100*1024 || b.GetAfter() != 1024*1024 {
+		t.Fatalf("bandwidth = %v", b)
+	}
+	if ra := root.GetAccess(); len(ra.GetRules()) != 2 || ra.GetBasicAuth() != nil || root.GetBandwidth() != nil {
+		t.Fatalf("root access = %v", ra)
+	}
+
+	cfg.Routes[1].Spec.Policies = []string{"pol_real"}
+	_, err = Compile(cfg, 1)
+	wantPaths(t, err, "routes[rt_root].spec.policies[0]")
+}
+
+func TestValidateAccessPolicies(t *testing.T) {
+	bad := []model.PolicySpec{
+		{Type: model.PolicyRateLimit, RateLimit: &model.RateLimitPolicy{Rate: "10r/h"}},
+		{Type: model.PolicyRateLimit, RateLimit: &model.RateLimitPolicy{Rate: "10r/s", Burst: 1, Delay: 2}},
+		{Type: model.PolicyConnLimit, ConnLimit: &model.ConnLimitPolicy{}},
+		{Type: model.PolicyBandwidth, Bandwidth: &model.BandwidthPolicy{Rate: "0"}},
+		{Type: model.PolicyIPAccess, IPAccess: &model.IPAccessPolicy{Rules: []model.IPRule{{Action: "allow", From: "10.0.0.0/33"}}}},
+		{Type: model.PolicyBasicAuth, BasicAuth: &model.BasicAuthPolicy{Realm: "r", Users: []model.BasicUser{{Name: "a", Hash: "plain"}}}},
+		{Type: model.PolicyForwardAuth, ForwardAuth: &model.ForwardAuthPolicy{Upstream: "up_a", URI: "check"}},
+		{Type: model.PolicyRealIP, RealIP: &model.RealIPPolicy{}},
+		{Type: model.PolicyRealIP, IPAccess: &model.IPAccessPolicy{}},
+		{Type: "nope"},
+	}
+	for i, sp := range bad {
+		if es := model.Validate(&model.Policy{Meta: meta("pol_x", "x"), Spec: sp}); len(es) == 0 {
+			t.Errorf("case %d: no error", i)
+		}
+	}
+	if r, err := model.ParseRate("30r/m"); err != nil || r != 500 {
+		t.Errorf("ParseRate = %d %v", r, err)
+	}
+	if n, err := model.ParseSize("2m"); err != nil || n != 2<<20 {
+		t.Errorf("ParseSize = %d %v", n, err)
+	}
+}

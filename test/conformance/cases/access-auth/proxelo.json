@@ -1,0 +1,34 @@
+{
+  "listeners": [
+    {"id": "lst_main", "name": "main", "spec": {"address": "127.0.0.1:18480", "defaultSite": "site_main"}}
+  ],
+  "sites": [
+    {"id": "site_main", "name": "main", "spec": {"listeners": ["lst_main"],
+      "hostnames": [{"type": "exact", "value": "example.com"}],
+      "routes": ["rt_ip", "rt_basic", "rt_fwd", "rt_rl", "rt_who"], "policies": ["pol_realip"]}}
+  ],
+  "routes": [
+    {"id": "rt_ip", "name": "ip", "spec": {"match": {"path": {"type": "prefix", "value": "/ip/"}}, "policies": ["pol_ip"],
+      "action": {"type": "proxy", "proxy": {"upstream": "up_backend"}}}},
+    {"id": "rt_basic", "name": "basic", "spec": {"match": {"path": {"type": "prefix", "value": "/basic/"}}, "policies": ["pol_basic"],
+      "action": {"type": "proxy", "proxy": {"upstream": "up_backend"}}}},
+    {"id": "rt_fwd", "name": "fwd", "spec": {"match": {"path": {"type": "prefix", "value": "/fwd/"}}, "policies": ["pol_fwd"],
+      "action": {"type": "proxy", "proxy": {"upstream": "up_backend"}}}},
+    {"id": "rt_rl", "name": "rl", "spec": {"match": {"path": {"type": "prefix", "value": "/rl/"}}, "policies": ["pol_rl"],
+      "action": {"type": "proxy", "proxy": {"upstream": "up_backend"}}}},
+    {"id": "rt_who", "name": "who", "spec": {"match": {"path": {"type": "prefix", "value": "/who/"}},
+      "action": {"type": "return", "return": {"status": 200, "text": "$remote_addr $realip_remote_addr\n"}}}}
+  ],
+  "upstreams": [
+    {"id": "up_backend", "name": "backend", "spec": {"targets": [{"address": "127.0.0.1:18481"}]}}
+  ],
+  "policies": [
+    {"id": "pol_realip", "name": "realip", "spec": {"type": "realIp", "realIp": {"from": ["127.0.0.1"], "header": "X-Forwarded-For", "recursive": true}}},
+    {"id": "pol_ip", "name": "ip", "spec": {"type": "ipAccess", "ipAccess": {"rules": [
+      {"action": "allow", "from": "10.1.0.0/16"}, {"action": "deny", "from": "10.1.2.3"}, {"action": "deny", "from": "all"}]}}},
+    {"id": "pol_basic", "name": "basic", "spec": {"type": "basicAuth", "basicAuth": {"realm": "admin area",
+      "users": [{"name": "alice", "hash": "$apr1$abcdefgh$h9FWgUz3n9YxylKLlR5SQ/"}]}}},
+    {"id": "pol_fwd", "name": "fwd", "spec": {"type": "forwardAuth", "forwardAuth": {"upstream": "up_backend", "uri": "/check"}}},
+    {"id": "pol_rl", "name": "rl", "spec": {"type": "rateLimit", "rateLimit": {"rate": "1r/m", "status": 429}}}
+  ]
+}

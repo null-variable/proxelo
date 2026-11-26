@@ -164,19 +164,23 @@ validates them and builds the runtime form, `http1` is the codec, and
 `server` runs the accept loops, TLS, HTTP/2, the request phases, static
 files, proxying, logs and metrics.
 
-The request phases follow nginx: site rewrites and return, route lookup,
-route rewrites, `try_files`, content. Internal redirects, `rewrite last` and
+The request phases follow nginx: real_ip, site rewrites and return, route
+lookup, route rewrites, access (rate and connection limits, allow/deny,
+basic auth, forward auth), `try_files`, content. Internal redirects, `rewrite last` and
 named routes re-enter the phases the way nginx does. Once a keepalive
 connection is warm, serving a request does not allocate; a test enforces it.
 
 ```mermaid
 flowchart TD
     accept["accept · TLS · HTTP/1.1 or HTTP/2"] --> site["pick site<br/>(listener, Host)"]
-    site --> srw["site rewrite · return"]
+    site --> realip["real_ip"]
+    realip --> srw["site rewrite · return"]
     srw --> find["find route<br/>(=, ^~, regex, prefix)"]
     find --> rrw["route rewrite"]
     rrw -- "rewrite last" --> find
-    rrw --> try["try_files"]
+    rrw --> access["access<br/>limits · allow/deny · basic · forward auth"]
+    access -- "401 · 403 · 429 · 503 error_page" --> find
+    access --> try["try_files"]
     try -- "fallback URI" --> find
     try --> content["content<br/>static · proxy · return"]
     content -- "error_page" --> find

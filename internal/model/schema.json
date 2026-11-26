@@ -94,6 +94,70 @@
         "key"
       ]
     },
+    "BandwidthPolicy": {
+      "type": "object",
+      "description": "BandwidthPolicy is nginx limit_rate and limit_rate_after: the response body rate of each request. The closest policy applies.",
+      "properties": {
+        "after": {
+          "type": "string",
+          "description": "Sent at full speed first, such as \"500k\"."
+        },
+        "rate": {
+          "type": "string",
+          "description": "Such as \"100k\" or \"1m\" bytes per second."
+        }
+      },
+      "x-order": [
+        "rate",
+        "after"
+      ],
+      "required": [
+        "rate"
+      ]
+    },
+    "BasicAuthPolicy": {
+      "type": "object",
+      "description": "BasicAuthPolicy is nginx auth_basic with the users inline. The closest policy applies.",
+      "properties": {
+        "realm": {
+          "type": "string"
+        },
+        "users": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BasicUser"
+          }
+        }
+      },
+      "x-order": [
+        "realm",
+        "users"
+      ],
+      "required": [
+        "realm",
+        "users"
+      ]
+    },
+    "BasicUser": {
+      "type": "object",
+      "properties": {
+        "hash": {
+          "type": "string",
+          "description": "A hash as htpasswd or openssl passwd makes: bcrypt, $apr1$, $1$, $5$, $6$, {SHA} or {SSHA}."
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "x-order": [
+        "name",
+        "hash"
+      ],
+      "required": [
+        "name",
+        "hash"
+      ]
+    },
     "CertStatus": {
       "type": "object",
       "description": "CertStatus is what the control plane read from the chain, or the last issuance error.",
@@ -162,6 +226,42 @@
         "status"
       ]
     },
+    "ConnLimitPolicy": {
+      "type": "object",
+      "description": "ConnLimitPolicy is nginx limit_conn_zone with limit_conn: requests in progress per key.",
+      "properties": {
+        "dryRun": {
+          "type": "boolean"
+        },
+        "key": {
+          "type": "string",
+          "description": "Template for the key, \"$binary_remote_addr\" by default."
+        },
+        "max": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "maxKeys": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "status": {
+          "type": "integer",
+          "description": "Status for rejected requests, 503 by default.",
+          "minimum": 0
+        }
+      },
+      "x-order": [
+        "key",
+        "max",
+        "status",
+        "dryRun",
+        "maxKeys"
+      ],
+      "required": [
+        "max"
+      ]
+    },
     "ErrorPage": {
       "type": "object",
       "description": "ErrorPage is nginx error_page. Exactly one of URI and Route is set.",
@@ -197,6 +297,40 @@
       ],
       "required": [
         "codes"
+      ]
+    },
+    "ForwardAuthPolicy": {
+      "type": "object",
+      "description": "ForwardAuthPolicy is nginx auth_request: an upstream decides whether to serve each request. It gets a GET with the request headers and X-Forwarded-Method, -Proto, -Host and -Uri; 2xx allows, 401 and 403 are sent to the client, anything else is a 500. The closest policy applies.",
+      "properties": {
+        "copyHeaders": {
+          "type": "array",
+          "description": "Response headers of a successful check added to the request sent upstream; also variables $auth_resp_<name>.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "timeout": {
+          "type": "string",
+          "description": "Default 60s."
+        },
+        "upstream": {
+          "type": "string",
+          "x-ref": "upstreams"
+        },
+        "uri": {
+          "type": "string",
+          "description": "Path and query of the check, a template. Default \"/\"."
+        }
+      },
+      "x-order": [
+        "upstream",
+        "uri",
+        "timeout",
+        "copyHeaders"
+      ],
+      "required": [
+        "upstream"
       ]
     },
     "HeaderOps": {
@@ -361,6 +495,45 @@
       "required": [
         "type",
         "value"
+      ]
+    },
+    "IPAccessPolicy": {
+      "type": "object",
+      "description": "IPAccessPolicy is nginx allow and deny. Rules of all policies that apply are checked in order, outermost first; the first match decides and no match allows. A denied request gets 403.",
+      "properties": {
+        "rules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/IPRule"
+          }
+        }
+      },
+      "x-order": [
+        "rules"
+      ],
+      "required": [
+        "rules"
+      ]
+    },
+    "IPRule": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "description": "\"allow\" or \"deny\"."
+        },
+        "from": {
+          "type": "string",
+          "description": "CIDR, address, or \"all\"."
+        }
+      },
+      "x-order": [
+        "action",
+        "from"
+      ],
+      "required": [
+        "action",
+        "from"
       ]
     },
     "Keepalive": {
@@ -554,22 +727,64 @@
           "$ref": "#/$defs/AccessLogPolicy",
           "x-nullable": true
         },
+        "bandwidth": {
+          "$ref": "#/$defs/BandwidthPolicy",
+          "x-nullable": true
+        },
+        "basicAuth": {
+          "$ref": "#/$defs/BasicAuthPolicy",
+          "x-nullable": true
+        },
+        "connLimit": {
+          "$ref": "#/$defs/ConnLimitPolicy",
+          "x-nullable": true
+        },
+        "forwardAuth": {
+          "$ref": "#/$defs/ForwardAuthPolicy",
+          "x-nullable": true
+        },
         "headers": {
           "$ref": "#/$defs/HeadersPolicy",
+          "x-nullable": true
+        },
+        "ipAccess": {
+          "$ref": "#/$defs/IPAccessPolicy",
+          "x-nullable": true
+        },
+        "rateLimit": {
+          "$ref": "#/$defs/RateLimitPolicy",
+          "x-nullable": true
+        },
+        "realIp": {
+          "$ref": "#/$defs/RealIPPolicy",
           "x-nullable": true
         },
         "type": {
           "type": "string",
           "enum": [
             "headers",
-            "accessLog"
+            "accessLog",
+            "rateLimit",
+            "connLimit",
+            "bandwidth",
+            "ipAccess",
+            "basicAuth",
+            "forwardAuth",
+            "realIp"
           ]
         }
       },
       "x-order": [
         "type",
         "headers",
-        "accessLog"
+        "accessLog",
+        "rateLimit",
+        "connLimit",
+        "bandwidth",
+        "ipAccess",
+        "basicAuth",
+        "forwardAuth",
+        "realIp"
       ],
       "required": [
         "type"
@@ -636,6 +851,89 @@
       "x-order": [
         "size",
         "timeout"
+      ]
+    },
+    "RateLimitPolicy": {
+      "type": "object",
+      "description": "RateLimitPolicy is nginx limit_req_zone with limit_req: a leaky bucket per key. Each policy is one zone; every route it applies to shares the zone's counters. All rate limits that apply are checked.",
+      "properties": {
+        "burst": {
+          "type": "integer",
+          "description": "Requests over the rate that wait (or pass, up to Delay) instead of being rejected.",
+          "minimum": 0
+        },
+        "delay": {
+          "type": "integer",
+          "description": "Excess requests passed without waiting (nginx delay). NoDelay passes the whole burst.",
+          "minimum": 0
+        },
+        "dryRun": {
+          "type": "boolean",
+          "description": "Count and log, but never delay or reject."
+        },
+        "key": {
+          "type": "string",
+          "description": "Template for the key, \"$binary_remote_addr\" by default. Requests whose key is empty are not limited."
+        },
+        "maxKeys": {
+          "type": "integer",
+          "description": "Keys kept per proxy; when full, idle keys are dropped. Default 16384.",
+          "minimum": 0
+        },
+        "noDelay": {
+          "type": "boolean"
+        },
+        "rate": {
+          "type": "string",
+          "description": "Such as \"10r/s\" or \"30r/m\"."
+        },
+        "status": {
+          "type": "integer",
+          "description": "Status for rejected requests, 503 by default.",
+          "minimum": 0
+        }
+      },
+      "x-order": [
+        "key",
+        "rate",
+        "burst",
+        "delay",
+        "noDelay",
+        "status",
+        "dryRun",
+        "maxKeys"
+      ],
+      "required": [
+        "rate"
+      ]
+    },
+    "RealIPPolicy": {
+      "type": "object",
+      "description": "RealIPPolicy is nginx set_real_ip_from, real_ip_header and real_ip_recursive: the client address is taken from a header that trusted proxies set. It applies to the whole site, before the route is chosen, so only site policies may be realIp.",
+      "properties": {
+        "from": {
+          "type": "array",
+          "description": "Trusted proxies, as CIDRs or addresses.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "header": {
+          "type": "string",
+          "description": "Default \"X-Real-IP\"; \"X-Forwarded-For\" is read from the right."
+        },
+        "recursive": {
+          "type": "boolean",
+          "description": "Skip trusted addresses from the right of the header."
+        }
+      },
+      "x-order": [
+        "from",
+        "header",
+        "recursive"
+      ],
+      "required": [
+        "from"
       ]
     },
     "Retry": {

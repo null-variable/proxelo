@@ -137,11 +137,14 @@ directives:
   - name: allow
     module: ngx_http_access_module
     contexts: [http, server, location, limit_except]
-    status: missing
+    status: implemented
+    field: Policy.spec.ipAccess.rules
+    note: first matching rule of the policies in effect, outermost first
   - name: deny
     module: ngx_http_access_module
     contexts: [http, server, location, limit_except]
-    status: missing
+    status: implemented
+    field: Policy.spec.ipAccess.rules
   - name: add_before_body
     module: ngx_http_addition_module
     contexts: [http, server, location]
@@ -157,19 +160,26 @@ directives:
   - name: auth_basic
     module: ngx_http_auth_basic_module
     contexts: [http, server, location, limit_except]
-    status: missing
+    status: implemented
+    field: Policy.spec.basicAuth.realm
   - name: auth_basic_user_file
     module: ngx_http_auth_basic_module
     contexts: [http, server, location, limit_except]
-    status: missing
+    status: partial
+    field: Policy.spec.basicAuth.users
+    note: users inline; bcrypt, $apr1$, $1$, $5$, $6$, {SHA}, {SSHA}, {PLAIN}
   - name: auth_request
     module: ngx_http_auth_request_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.forwardAuth
+    note: to an upstream; 2xx allows, 401 and 403 pass through, else 500
   - name: auth_request_set
     module: ngx_http_auth_request_module
     contexts: [http, server, location]
-    status: missing
+    status: partial
+    field: Policy.spec.forwardAuth.copyHeaders
+    note: response headers copied upstream and as $auth_resp_<name>
   - name: autoindex
     module: ngx_http_autoindex_module
     contexts: [http, server, location]
@@ -420,11 +430,13 @@ directives:
   - name: limit_rate
     module: ngx_http_core_module
     contexts: [http, server, location, location if]
-    status: missing
+    status: implemented
+    field: Policy.spec.bandwidth.rate
   - name: limit_rate_after
     module: ngx_http_core_module
     contexts: [http, server, location, location if]
-    status: missing
+    status: implemented
+    field: Policy.spec.bandwidth.after
   - name: keepalive_time
     module: ngx_http_core_module
     contexts: [http, server, location]
@@ -1089,11 +1101,15 @@ directives:
   - name: limit_conn_zone
     module: ngx_http_limit_conn_module
     contexts: [http]
-    status: missing
+    status: implemented
+    field: Policy.spec.connLimit
+    note: one zone per policy, per proxy
   - name: limit_conn
     module: ngx_http_limit_conn_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.connLimit.max
+    note: per request, as nginx counts on HTTP/2
   - name: limit_conn_log_level
     module: ngx_http_limit_conn_module
     contexts: [http, server, location]
@@ -1101,19 +1117,25 @@ directives:
   - name: limit_conn_status
     module: ngx_http_limit_conn_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.connLimit.status
   - name: limit_conn_dry_run
     module: ngx_http_limit_conn_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.connLimit.dryRun
   - name: limit_req_zone
     module: ngx_http_limit_req_module
     contexts: [http]
-    status: missing
+    status: implemented
+    field: Policy.spec.rateLimit
+    note: one zone per policy, per proxy; maxKeys instead of a size
   - name: limit_req
     module: ngx_http_limit_req_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.rateLimit
+    note: burst, delay and nodelay
   - name: limit_req_log_level
     module: ngx_http_limit_req_module
     contexts: [http, server, location]
@@ -1121,11 +1143,13 @@ directives:
   - name: limit_req_status
     module: ngx_http_limit_req_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.rateLimit.status
   - name: limit_req_dry_run
     module: ngx_http_limit_req_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.rateLimit.dryRun
   - name: log_format
     module: ngx_http_log_module
     contexts: [http]
@@ -1548,15 +1572,20 @@ directives:
   - name: set_real_ip_from
     module: ngx_http_realip_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.realIp.from
+    note: site policies only
   - name: real_ip_header
     module: ngx_http_realip_module
     contexts: [http, server, location]
-    status: missing
+    status: partial
+    field: Policy.spec.realIp.header
+    note: a header name; no proxy_protocol
   - name: real_ip_recursive
     module: ngx_http_realip_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.realIp.recursive
   - name: valid_referers
     module: ngx_http_referer_module
     contexts: [server, location]

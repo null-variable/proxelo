@@ -142,6 +142,7 @@ func (c *compiler) compile(cfg model.Config, revision uint64) *snapshotv1.Snapsh
 		snap.Listeners = append(snap.Listeners, out)
 	}
 	logs := map[logKey]uint32{}
+	zs := zones{rate: map[string]uint32{}, conn: map[string]uint32{}}
 
 	// Hostnames must be unique per listener, as nginx server_name selection
 	// would otherwise depend on declaration order.
@@ -185,13 +186,14 @@ func (c *compiler) compile(cfg model.Config, revision uint64) *snapshotv1.Snapsh
 		out.RedirectHttps = s.Spec.RedirectHTTPToHTTPS
 		st := &site{
 			c: c, out: out, routes: routes, upstreams: upstreams, policies: policies,
-			snap: snap, logs: logs,
+			snap: snap, logs: logs, zones: zs,
 			named: map[string]uint32{}, placed: map[string]string{},
 		}
 		st.sitePolicies = st.resolvePolicies(base+".policies", s.Spec.Policies)
 		eff := st.effective(st.sitePolicies)
 		out.ResponseHeaders = eff.response
 		out.AccessLog = eff.log
+		out.RealIp = realIP(st.sitePolicies)
 		out.Rewrites = st.rewrites(s.Spec.Rewrite)
 		if r := s.Spec.Return; r != nil {
 			out.Return = &snapshotv1.ReturnAction{Status: r.Status, Text: r.Text}
@@ -344,6 +346,7 @@ type site struct {
 	policies  index[*model.Policy]
 	snap      *snapshotv1.Snapshot
 	logs      map[logKey]uint32
+	zones     zones
 	// The site's own policies, which every route starts from.
 	sitePolicies []*model.Policy
 	// Route ID to index in out.NamedRoutes.
@@ -505,6 +508,7 @@ func (st *site) route(r *model.Route, pols []*model.Policy) *snapshotv1.Route {
 	out.ErrorPages = st.errorPages(fmt.Sprintf("routes[%s].spec.errorPages", r.ID), r.Spec.ErrorPages)
 	eff := st.effective(pols)
 	out.ResponseHeaders, out.RequestHeaders, out.AccessLog = eff.response, eff.request, eff.log
+	out.Access, out.Bandwidth = eff.access, eff.bandwidth
 
 	a := r.Spec.Action
 	switch {
