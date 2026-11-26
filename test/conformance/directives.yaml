@@ -1563,34 +1563,42 @@ directives:
     module: ngx_http_proxy_module
     contexts: [http, server, location]
     status: missing
+    note: every connection does a full handshake; idle connections are reused
   - name: proxy_ssl_protocols
     module: ngx_http_proxy_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Upstream.spec.tls.minVersion, maxVersion
   - name: proxy_ssl_ciphers
     module: ngx_http_proxy_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Upstream.spec.tls.ciphers, ciphersuites
   - name: proxy_ssl_name
     module: ngx_http_proxy_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Upstream.spec.tls.serverName
   - name: proxy_ssl_server_name
     module: ngx_http_proxy_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Upstream.spec.tls.sni
   - name: proxy_ssl_verify
     module: ngx_http_proxy_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Upstream.spec.tls.verify
   - name: proxy_ssl_verify_depth
     module: ngx_http_proxy_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Upstream.spec.tls.depth
   - name: proxy_ssl_trusted_certificate
     module: ngx_http_proxy_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Upstream.spec.tls.ca
   - name: proxy_ssl_crl
     module: ngx_http_proxy_module
     contexts: [http, server, location]
@@ -1598,11 +1606,13 @@ directives:
   - name: proxy_ssl_certificate
     module: ngx_http_proxy_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Upstream.spec.tls.certificate
   - name: proxy_ssl_certificate_key
     module: ngx_http_proxy_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Certificate.spec.keyPem
   - name: proxy_ssl_certificate_cache
     module: ngx_http_proxy_module
     contexts: [http, server, location]
@@ -1614,7 +1624,9 @@ directives:
   - name: proxy_ssl_conf_command
     module: ngx_http_proxy_module
     contexts: [http, server, location]
-    status: missing
+    status: partial
+    field: Upstream.spec.tls.ciphersuites
+    note: Ciphersuites only
   - name: random_index
     module: ngx_http_random_index_module
     contexts: [location]
@@ -1949,17 +1961,18 @@ directives:
   - name: ssl_dhparam
     module: ngx_http_ssl_module
     contexts: [http, server]
-    status: missing
+    status: implemented
+    field: Listener.spec.tls.dhParams
   - name: ssl_ecdh_curve
     module: ngx_http_ssl_module
     contexts: [http, server]
-    status: missing
+    status: implemented
+    field: Listener.spec.tls.groups
   - name: ssl_protocols
     module: ngx_http_ssl_module
     contexts: [http, server]
-    status: partial
-    field: Listener.spec.tls.minVersion
-    note: a minimum version, not a list
+    status: implemented
+    field: Listener.spec.tls.minVersion, maxVersion
   - name: ssl_ciphers
     module: ngx_http_ssl_module
     contexts: [http, server]
@@ -1972,31 +1985,41 @@ directives:
   - name: ssl_verify_client
     module: ngx_http_ssl_module
     contexts: [http, server]
-    status: missing
+    status: implemented
+    field: Listener.spec.tls.clientAuth.mode
+    note: failures answer 400 (495/496 pages)
   - name: ssl_verify_depth
     module: ngx_http_ssl_module
     contexts: [http, server]
-    status: missing
+    status: implemented
+    field: Listener.spec.tls.clientAuth.depth
   - name: ssl_client_certificate
     module: ngx_http_ssl_module
     contexts: [http, server]
-    status: missing
+    status: implemented
+    field: Listener.spec.tls.clientAuth.ca
   - name: ssl_trusted_certificate
     module: ngx_http_ssl_module
     contexts: [http, server]
-    status: missing
+    status: partial
+    field: Listener.spec.tls.clientAuth.ca
+    note: its CAs are also sent in the certificate request
   - name: ssl_prefer_server_ciphers
     module: ngx_http_ssl_module
     contexts: [http, server]
-    status: missing
+    status: implemented
+    field: Listener.spec.tls.preferServerCiphers
   - name: ssl_session_cache
     module: ngx_http_ssl_module
     contexts: [http, server]
-    status: missing
+    status: partial
+    field: Listener.spec.tls.sessionCacheSize
+    note: per worker only (builtin), no shared zone
   - name: ssl_session_tickets
     module: ngx_http_ssl_module
     contexts: [http, server]
-    status: missing
+    status: implemented
+    field: Listener.spec.tls.noSessionTickets
   - name: ssl_session_ticket_key
     module: ngx_http_ssl_module
     contexts: [http, server]
@@ -2044,7 +2067,9 @@ directives:
   - name: ssl_conf_command
     module: ngx_http_ssl_module
     contexts: [http, server]
-    status: missing
+    status: partial
+    field: Listener.spec.tls.ciphersuites
+    note: Ciphersuites only
   - name: ssl_reject_handshake
     module: ngx_http_ssl_module
     contexts: [http, server]

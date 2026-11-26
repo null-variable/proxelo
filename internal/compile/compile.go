@@ -133,7 +133,20 @@ func (c *compiler) compile(cfg model.Config, revision uint64) *snapshotv1.Snapsh
 			}
 		}
 		if t := l.Spec.TLS; t != nil {
-			out.Tls = &snapshotv1.ListenerTls{MinVersion: tlsVersions[t.MinVersion], Ciphers: t.Ciphers}
+			out.Tls = &snapshotv1.ListenerTls{
+				MinVersion:          tlsVersions[t.MinVersion],
+				MaxVersion:          tlsVersions[t.MaxVersion],
+				Ciphers:             t.Ciphers,
+				Ciphersuites:        t.Ciphersuites,
+				PreferServerCiphers: t.PreferServerCiphers,
+				Groups:              t.Groups,
+				NoSessionTickets:    t.NoSessionTickets,
+				SessionCacheSize:    t.SessionCacheSize,
+				DhParams:            t.DHParams,
+			}
+			if a := t.ClientAuth; a != nil {
+				out.Tls.ClientAuth = &snapshotv1.ClientAuth{Mode: clientAuthModes[a.Mode], Ca: a.CA, Depth: a.Depth}
+			}
 			if id := t.DefaultCertificate; id != "" {
 				if i, ok := cert(base+".tls.defaultCertificate", id); ok {
 					out.Tls.DefaultCertificate = proto.Uint32(i)
@@ -226,6 +239,24 @@ func (c *compiler) compile(cfg model.Config, revision uint64) *snapshotv1.Snapsh
 		out.KeepaliveTimeMs = millis(sp.Keepalive.MaxAge)
 		out.QueueSize = sp.Queue.Size
 		out.QueueTimeoutMs = millis(sp.Queue.Timeout)
+		if t := sp.TLS; t != nil {
+			out.Tls = &snapshotv1.UpstreamTls{
+				ServerName:   t.ServerName,
+				Sni:          t.SNI,
+				Verify:       t.Verify,
+				Ca:           t.CA,
+				Depth:        t.Depth,
+				MinVersion:   tlsVersions[t.MinVersion],
+				MaxVersion:   tlsVersions[t.MaxVersion],
+				Ciphers:      t.Ciphers,
+				Ciphersuites: t.Ciphersuites,
+			}
+			if id := t.Certificate; id != "" {
+				if i, ok := cert(fmt.Sprintf("upstreams[%s].spec.tls.certificate", u.ID), id); ok {
+					out.Tls.Certificate = proto.Uint32(i)
+				}
+			}
+		}
 		if h := sp.HealthCheck; h != nil {
 			hc := &snapshotv1.HealthCheck{
 				Kind:       snapshotv1.HealthCheck_KIND_HTTP,
@@ -294,6 +325,12 @@ var tlsVersions = map[string]snapshotv1.ListenerTls_Version{
 	"1.1": snapshotv1.ListenerTls_VERSION_TLS1_1,
 	"1.2": snapshotv1.ListenerTls_VERSION_TLS1_2,
 	"1.3": snapshotv1.ListenerTls_VERSION_TLS1_3,
+}
+
+var clientAuthModes = map[model.ClientAuthMode]snapshotv1.ClientAuth_Mode{
+	model.ClientAuthRequire:      snapshotv1.ClientAuth_MODE_REQUIRE,
+	model.ClientAuthOptional:     snapshotv1.ClientAuth_MODE_OPTIONAL,
+	model.ClientAuthOptionalNoCA: snapshotv1.ClientAuth_MODE_OPTIONAL_NO_CA,
 }
 
 // millis converts a validated duration; empty is 0.

@@ -1,6 +1,7 @@
 package model
 
 import (
+	"encoding/pem"
 	"fmt"
 	"maps"
 	"math"
@@ -99,12 +100,59 @@ func (s *ListenerSpec) validate(es *FieldErrors) {
 		es.add("spec.address", "%s", err)
 	}
 	if t := s.TLS; t != nil {
-		if t.MinVersion != "" && !slices.Contains(TLSVersions, t.MinVersion) {
-			es.add("spec.tls.minVersion", "must be one of %s", strings.Join(TLSVersions, ", "))
+		checkTLSVersions(es, "spec.tls", t.MinVersion, t.MaxVersion)
+		if t.DHParams != "" {
+			checkPEM(es, "spec.tls.dhParams", t.DHParams, "DH PARAMETERS")
+		}
+		if a := t.ClientAuth; a != nil {
+			switch a.Mode {
+			case ClientAuthRequire, ClientAuthOptional:
+				if a.CA == "" {
+					es.add("spec.tls.clientAuth.ca", "required unless mode is optional_no_ca")
+				}
+			case ClientAuthOptionalNoCA:
+			default:
+				es.add("spec.tls.clientAuth.mode", "must be require, optional or optional_no_ca")
+			}
+			if a.CA != "" {
+				checkPEM(es, "spec.tls.clientAuth.ca", a.CA, "CERTIFICATE")
+			}
 		}
 	}
 	if s.HTTP2 && s.TLS == nil {
 		es.add("spec.http2", "requires tls")
+	}
+}
+
+func checkTLSVersions(es *FieldErrors, path, lo, hi string) {
+	for _, v := range [][2]string{{"minVersion", lo}, {"maxVersion", hi}} {
+		if v[1] != "" && !slices.Contains(TLSVersions, v[1]) {
+			es.add(path+"."+v[0], "must be one of %s", strings.Join(TLSVersions, ", "))
+		}
+	}
+	if lo != "" && hi != "" && slices.Index(TLSVersions, lo) > slices.Index(TLSVersions, hi) {
+		es.add(path+".maxVersion", "must not be below minVersion")
+	}
+}
+
+// checkPEM requires at least one PEM block, all of type kind.
+func checkPEM(es *FieldErrors, path, v, kind string) {
+	rest := []byte(v)
+	n := 0
+	for {
+		b, r := pem.Decode(rest)
+		if b == nil {
+			break
+		}
+		if b.Type != kind {
+			es.add(path, "has a %s block; want %s", b.Type, kind)
+			return
+		}
+		n++
+		rest = r
+	}
+	if n == 0 || strings.TrimSpace(string(rest)) != "" {
+		es.add(path, "must be PEM %s blocks", kind)
 	}
 }
 
@@ -846,6 +894,15 @@ func (t *TryFiles) validate(es *FieldErrors, path string) {
 func (s *UpstreamSpec) validate(es *FieldErrors) {
 	if len(s.Targets) == 0 {
 		es.add("spec.targets", "at least one target is required")
+	}
+	if t := s.TLS; t != nil {
+		checkTLSVersions(es, "spec.tls", t.MinVersion, t.MaxVersion)
+		if t.CA != "" {
+			checkPEM(es, "spec.tls.ca", t.CA, "CERTIFICATE")
+		}
+		if t.ServerName != "" && strings.ContainsAny(t.ServerName, " /:") {
+			es.add("spec.tls.serverName", "must be a host name")
+		}
 	}
 	primary := 0
 	for i, t := range s.Targets {

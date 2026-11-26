@@ -104,6 +104,44 @@ type ListenerTLS struct {
 	// OpenSSL cipher list for TLS 1.2 and below (nginx ssl_ciphers). Empty:
 	// "HIGH:!aNULL:!MD5".
 	Ciphers string `json:"ciphers,omitempty"`
+	// Highest version, like minVersion. Empty: "1.3".
+	MaxVersion string `json:"maxVersion,omitempty"`
+	// TLS 1.3 suites, e.g. "TLS_AES_128_GCM_SHA256" (nginx ssl_conf_command
+	// Ciphersuites). Empty: OpenSSL's.
+	Ciphersuites string `json:"ciphersuites,omitempty"`
+	// Server cipher order over the client's (nginx ssl_prefer_server_ciphers).
+	PreferServerCiphers bool `json:"preferServerCiphers,omitempty"`
+	// Key exchange groups, e.g. "X25519:prime256v1" (nginx ssl_ecdh_curve).
+	// Empty: OpenSSL's.
+	Groups string `json:"groups,omitempty"`
+	// Refuse session tickets (nginx ssl_session_tickets off).
+	NoSessionTickets bool `json:"noSessionTickets,omitempty"`
+	// Sessions kept for resumption by ID, per worker (nginx ssl_session_cache
+	// builtin:N). Zero: no cache.
+	SessionCacheSize uint32 `json:"sessionCacheSize,omitempty"`
+	// PEM DH parameters for DHE suites (nginx ssl_dhparam). Empty: none.
+	DHParams string `json:"dhParams,omitempty"`
+	// Client certificate check (nginx ssl_verify_client). Nil: none.
+	ClientAuth *ClientAuth `json:"clientAuth,omitempty"`
+}
+
+type ClientAuthMode string
+
+const (
+	ClientAuthRequire      ClientAuthMode = "require"
+	ClientAuthOptional     ClientAuthMode = "optional"
+	ClientAuthOptionalNoCA ClientAuthMode = "optional_no_ca"
+)
+
+// ClientAuth asks for a client certificate. A missing (require) or invalid one
+// answers 400; the result is in $ssl_client_verify.
+type ClientAuth struct {
+	Mode ClientAuthMode `json:"mode"`
+	// PEM CA certificates that sign client certificates (nginx
+	// ssl_client_certificate). Required unless mode is optional_no_ca.
+	CA string `json:"ca,omitempty"`
+	// Chain length at most (nginx ssl_verify_depth). Zero: 1.
+	Depth uint32 `json:"depth,omitempty"`
 }
 
 // Site groups routes served for a set of hostnames (nginx server).
@@ -425,6 +463,34 @@ type UpstreamSpec struct {
 	// Requests waiting when every target is at maxConns (nginx queue).
 	Queue     Queue     `json:"queue,omitzero"`
 	Keepalive Keepalive `json:"keepalive"`
+	// TLS to the targets (nginx proxy_pass https:// and proxy_ssl_*). Nil:
+	// plain TCP.
+	TLS *UpstreamTLS `json:"tls,omitempty"`
+}
+
+// UpstreamTLS configures connections to an upstream's targets.
+type UpstreamTLS struct {
+	// Name for SNI and certificate verification (nginx proxy_ssl_name).
+	// Empty: the upstream name.
+	ServerName string `json:"serverName,omitempty"`
+	// Send SNI (nginx proxy_ssl_server_name).
+	SNI bool `json:"sni,omitempty"`
+	// Check the target's chain and name (nginx proxy_ssl_verify).
+	Verify bool `json:"verify,omitempty"`
+	// PEM CA certificates to trust (nginx proxy_ssl_trusted_certificate).
+	// Empty: the system store.
+	CA string `json:"ca,omitempty"`
+	// Chain length at most (nginx proxy_ssl_verify_depth). Zero: 1.
+	Depth uint32 `json:"depth,omitempty"`
+	// Certificate ID presented to targets (nginx proxy_ssl_certificate).
+	Certificate string `json:"certificate,omitempty"`
+	// "1.0" to "1.3". Empty: "1.2" and "1.3" (nginx proxy_ssl_protocols).
+	MinVersion string `json:"minVersion,omitempty"`
+	MaxVersion string `json:"maxVersion,omitempty"`
+	// OpenSSL cipher list (nginx proxy_ssl_ciphers). Empty: "DEFAULT".
+	Ciphers string `json:"ciphers,omitempty"`
+	// TLS 1.3 suites. Empty: OpenSSL's.
+	Ciphersuites string `json:"ciphersuites,omitempty"`
 }
 
 type Target struct {
@@ -997,6 +1063,10 @@ func Refs(r Resource) []Ref {
 		}
 		if s := r.Spec.Action.Static; s != nil && s.TryFiles != nil {
 			add(RouteKind, "spec.action.static.tryFiles.route", s.TryFiles.Route)
+		}
+	case *Upstream:
+		if t := r.Spec.TLS; t != nil {
+			add(CertificateKind, "spec.tls.certificate", t.Certificate)
 		}
 	case *Policy:
 		if f := r.Spec.ForwardAuth; f != nil {
