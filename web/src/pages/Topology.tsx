@@ -1,9 +1,9 @@
 // Topology: the configuration as a request-flow diagram (listener → site →
-// route → upstream → target). Members edit connections by dragging from a
-// node's handle or from the side panel; every edit lands in the active
+// route → upstream → target). Members connect nodes by dragging one onto
+// another or from the side panel; every edit lands in the active
 // change set like a form save. The diagram exports as SVG, PNG, Mermaid,
 // Graphviz DOT or JSON.
-import { useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { api, requestText } from "../api/client";
@@ -236,7 +236,9 @@ export function Topology() {
   const [sel, setSel] = useState<Sel>(null);
   const [adding, setAdding] = useState<Kind | null>(null);
   const [busy, setBusy] = useState(false);
-  const [drag, setDrag] = useState<{ from: string; x: number; y: number } | null>(null);
+  // A press on a node: a click selects it, a drag from a node that can
+  // connect draws a line to drop on another node.
+  const [drag, setDrag] = useState<{ from: string; x: number; y: number; sx: number; sy: number; moved: boolean } | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
   const view = useMemo(() => {
@@ -319,6 +321,24 @@ export function Topology() {
     return !!o && editable(o);
   };
   const lit = (e: FlowEdge) => !!selNode && (e.from === selNode.id || e.to === selNode.id);
+  const dragFrom = drag?.moved ? view.boxes.get(drag.from)?.node : undefined;
+  const dropOn = dragFrom ? hit(drag!.x, drag!.y) : undefined;
+  const dropOK = !!dragFrom && !!dropOn && linkable(dragFrom, dropOn.node);
+  // canStart: nodes with an outgoing kind of connection.
+  const canStart = (n: GraphNode) => app.canAny("editor") && (n.kind === "listeners" || n.kind === "sites" || n.kind === "routes");
+  useEffect(() => {
+    if (!drag) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setDrag(null);
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [drag !== null]);
+  const press = (n: GraphNode, ev: ReactPointerEvent) => {
+    if (ev.button !== 0) return;
+    ev.stopPropagation();
+    svgRef.current?.setPointerCapture(ev.pointerId);
+    const p = point(ev);
+    setDrag({ from: n.id, ...p, sx: p.x, sy: p.y, moved: false });
+  };
 
   return (
     <div className="stack">
@@ -353,16 +373,30 @@ export function Topology() {
               viewBox={`0 0 ${view.width} ${view.height}`}
               role="img"
               aria-label="Configuration topology"
-              onPointerMove={(ev) => drag && setDrag({ ...drag, ...point(ev) })}
+              onPointerDown={(ev) => ev.target === ev.currentTarget && setSel(null)}
+              onPointerMove={(ev) => {
+                if (!drag) return;
+                const p = point(ev);
+                const from = view.boxes.get(drag.from)?.node;
+                const moved = drag.moved || (!!from && canStart(from) && Math.hypot(p.x - drag.sx, p.y - drag.sy) > 5);
+                setDrag({ ...drag, ...p, moved });
+              }}
               onPointerUp={(ev) => {
                 if (!drag) return;
                 const p = point(ev);
-                const to = hit(p.x, p.y)?.node;
                 const from = view.boxes.get(drag.from)?.node;
                 setDrag(null);
-                if (from && to) connect(from, to);
+                if (!drag.moved) {
+                  setSel({ node: drag.from });
+                  return;
+                }
+                const to = hit(p.x, p.y)?.node;
+                if (from && to && to.id !== from.id) {
+                  if (linkable(from, to)) connect(from, to);
+                  else toast("Not connected", `A ${KINDS[from.kind as Kind]?.one ?? from.kind} cannot connect to a ${KINDS[to.kind as Kind]?.one ?? to.kind}.`, true);
+                }
               }}
-              onClick={(ev) => ev.target === ev.currentTarget && setSel(null)}
+              onPointerCancel={() => setDrag(null)}
             >
               <defs>
                 <marker id="topo-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
@@ -400,12 +434,15 @@ export function Topology() {
               {[...view.boxes.values()].map(({ node: n, x, y }) => (
                 <g
                   key={n.id}
-                  className={`topo__node topo__node--${n.kind}` + (near(n.id) ? " topo__node--sel" : "") + (n.disabled ? " topo__node--off" : "")}
+                  className={`topo__node topo__node--${n.kind}` + (near(n.id) ? " topo__node--sel" : "") + (n.disabled ? " topo__node--off" : "") +
+                    (canStart(n) ? " topo__node--grab" : "") +
+                    (dragFrom ? (linkable(dragFrom, n) ? " topo__node--target" : n.id === dragFrom.id ? "" : " topo__node--dim") : "") +
+                    (dropOK && dropOn!.node.id === n.id ? " topo__node--drop" : "")}
                   transform={`translate(${x},${y})`}
                   role="button"
                   tabIndex={0}
                   aria-label={`${n.kind} ${n.name}`}
-                  onClick={() => setSel({ node: n.id })}
+                  onPointerDown={(ev) => press(n, ev)}
                   onKeyDown={(e) => e.key === "Enter" && setSel({ node: n.id })}
                 >
                   <title>{`${n.name}${n.detail ? "\n" + n.detail : ""}${n.group ? "\ngroup " + groupName(n.group) : ""}`}</title>
@@ -414,26 +451,14 @@ export function Topology() {
                   <text className="topo__name" x={14} y={21}>{clip(n.name, 24)}</text>
                   <text className="topo__detail" x={14} y={39}>{clip(n.detail ?? "", 30)}</text>
                   {n.group && group === "*" && <text className="topo__group" x={NODE_W - 8} y={21} textAnchor="end">{clip(groupName(n.group), 10)}</text>}
-                  {editable(n) && n.kind !== "upstreams" && (
-                    <circle
-                      data-export="skip"
-                      className="topo__handle"
-                      cx={NODE_W}
-                      cy={NODE_H / 2}
-                      r={6}
-                      aria-label={`Connect from ${n.name}`}
-                      onPointerDown={(ev) => {
-                        ev.stopPropagation();
-                        (ev.target as Element).releasePointerCapture?.(ev.pointerId);
-                        setDrag({ from: n.id, ...point(ev) });
-                      }}
-                    />
-                  )}
+                  {canStart(n) && <circle data-export="skip" className="topo__handle" cx={NODE_W} cy={NODE_H / 2} r={7} aria-hidden="true" />}
                 </g>
               ))}
-              {drag && (() => {
-                const a = view.boxes.get(drag.from)!;
-                return <path data-export="skip" className="topo__edge topo__edge--drag" d={`M${a.x + NODE_W},${a.y + NODE_H / 2} L${drag.x},${drag.y}`} />;
+              {dragFrom && (() => {
+                const a = view.boxes.get(dragFrom.id)!;
+                // Snap onto a valid target's input side.
+                const d = dropOK ? edgePath(a, dropOn!) : `M${a.x + NODE_W},${a.y + NODE_H / 2} L${drag!.x},${drag!.y}`;
+                return <path data-export="skip" className={"topo__edge topo__edge--drag" + (dropOK ? " topo__edge--ok" : "")} d={d} markerEnd={dropOK ? "url(#topo-arrow)" : undefined} />;
               })()}
             </svg>
           </div>
@@ -445,7 +470,7 @@ export function Topology() {
               <EdgePanel edge={selEdge} view={view} editable={ownerEditable(selEdge)} busy={busy} onDisconnect={disconnect} />
             ) : (
               <Card title="Diagram">
-                <p className="muted small">Select a node or connection. Drag from a node's right handle onto another node to connect them: listener → site, site → route, route → child route or upstream.</p>
+                <p className="muted small">Click a node or connection to select it. Drag a node onto another to connect them: listener → site, site → route, route → child route or upstream. Valid targets light up while dragging; Esc cancels.</p>
                 <p className="muted small mt">Dashed nodes are disabled. Details are edited in each resource's form.</p>
               </Card>
             )}

@@ -187,7 +187,7 @@ PROXELO_API=127.0.0.1:9443 bun run dev   # dev server proxying /api to a running
 |---|---|
 | Dashboard | 5-minute traffic, 5xx and upstream failure rates, node sync, certificates expiring within 30 days, recent revisions, pending-confirmation banner |
 | Sites, Routes, Upstreams, Certificates, Policies, Listeners | Lists with search; editors generated from `/api/v1/schema` (reference fields become pickers) with a Raw JSON tab; server field errors shown at the field; site route tree with nginx match badges |
-| Topology | The configuration as a request-flow diagram, filterable by group; drag from a node's handle (or use the side panel) to connect listener → site, site → route, route → child route or upstream, remove connections, add resources and upstream targets, all into the active change set; export as SVG, PNG, Mermaid, Graphviz DOT or JSON |
+| Topology | The configuration as a request-flow diagram, filterable by group; drag a node onto another (valid targets light up) or use the side panel to connect listener → site, site → route, route → child route or upstream, remove connections, add resources and upstream targets, all into the active change set; export as SVG, PNG, Mermaid, Graphviz DOT or JSON |
 | Changes | Change sets (the active one is the draft every edit goes to), resource and effective diff, validate with safety findings, apply with commit-confirm, import, export, discard; revisions with confirm and rollback |
 | Simulator | One request against the latest revision, side by side with the active change set |
 | Nodes, Settings | Proxy sync state; password, TOTP, API tokens, groups with members and domains, users and the audit log |

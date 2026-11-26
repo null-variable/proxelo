@@ -23,6 +23,7 @@
 
     font-family: var(--font-sans);
     touch-action: none;
+    user-select: none;
   }
 
   &__col {
@@ -61,9 +62,15 @@
     }
 
     &--drag {
-      stroke: var(--px-text-link);
+      stroke: var(--px-text-subtle);
       stroke-dasharray: 5 4;
       pointer-events: none;
+    }
+
+    &--ok {
+      stroke: var(--px-text-link);
+      stroke-width: 2.5;
+      stroke-dasharray: none;
     }
   }
 
@@ -107,6 +114,26 @@
       stroke: var(--px-focus);
       stroke-width: 1.5;
     }
+
+    &--grab {
+      cursor: grab;
+    }
+
+    &--target .topo__box {
+      stroke: var(--accent);
+      stroke-dasharray: 4 3;
+      stroke-width: 1.5;
+    }
+
+    &--drop .topo__box {
+      fill: var(--px-tint);
+      stroke-dasharray: none;
+      stroke-width: 2.5;
+    }
+
+    &--dim {
+      opacity: 0.35;
+    }
   }
 
   &__box {
@@ -140,11 +167,7 @@
     fill: var(--px-base);
     stroke: var(--accent);
     stroke-width: 2;
-    cursor: crosshair;
-
-    &:hover {
-      fill: var(--accent);
-    }
+    pointer-events: none;
   }
 
   &__panel {
