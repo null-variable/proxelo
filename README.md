@@ -14,6 +14,9 @@ They share only the protocol in
 [proxelo-api](https://github.com/null-variable/proxelo-api). A proxy keeps
 serving its last good snapshot when the control plane is unavailable.
 
+[docs/architecture.md](docs/architecture.md) explains the resource model,
+how an edit reaches traffic, and the security boundaries.
+
 ## Status
 
 Early development. The control plane stores Listener, Site, Route, Upstream,
