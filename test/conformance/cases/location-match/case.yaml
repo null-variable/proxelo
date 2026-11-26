@@ -1,0 +1,18 @@
+directives: [location, return]
+requests:
+  - {target: /exact, headers: {Host: example.com}}
+  - {target: /exact/, headers: {Host: example.com}}
+  - {target: /exactly, headers: {Host: example.com}}
+  - {target: /, headers: {Host: example.com}}
+  - {target: /docs, headers: {Host: example.com}}
+  - {target: /docs/, headers: {Host: example.com}}
+  - {target: /docs/api/v1, headers: {Host: example.com}}
+  - {target: /docs/index.php, headers: {Host: example.com}}
+  - {target: /static/x.php, headers: {Host: example.com}}
+  - {target: /static/logo.PNG, headers: {Host: example.com}}
+  - {target: /a/b.PHP, headers: {Host: example.com}}
+  - {target: /a/b.Jpg, headers: {Host: example.com}}
+  - {target: "/docs/%61pi/x", headers: {Host: example.com}}
+  - {target: /a/../docs/api/x, headers: {Host: example.com}}
+  - {target: //docs//api/x, headers: {Host: example.com}}
+  - {target: "/x.php?y=1", headers: {Host: example.com}}

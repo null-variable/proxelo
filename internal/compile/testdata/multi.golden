@@ -1,6 +1,6 @@
 {
   "revision": "1",
-  "hash": "gSkYCBDC2nD0oUxTejvKEkmPgmIIfFk+pCly3J7r2ic=",
+  "hash": "Ci7kpXLKPt9Cpz03no9J0EoVmIFNXG3XUv8aJfCt0go=",
   "listeners": [
     {
       "address": "0.0.0.0:8080",
@@ -78,7 +78,8 @@
       "balancing": "BALANCING_ROUND_ROBIN",
       "id": "up_x",
       "maxFails": 1,
-      "failTimeoutMs": 10000
+      "failTimeoutMs": 10000,
+      "host": "x"
     },
     {
       "targets": [
@@ -94,7 +95,8 @@
       "balancing": "BALANCING_ROUND_ROBIN",
       "id": "up_y",
       "maxFails": 1,
-      "failTimeoutMs": 10000
+      "failTimeoutMs": 10000,
+      "host": "y"
     }
   ]
 }

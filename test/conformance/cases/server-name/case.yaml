@@ -1,0 +1,13 @@
+directives: [listen, server_name, return]
+requests:
+  - {target: /, headers: {Host: example.com}}
+  - {target: /, headers: {Host: WWW.Example.COM}}
+  - {target: /, headers: {Host: "example.com:18480"}}
+  - {target: /, headers: {Host: "example.com."}}
+  - {target: /, headers: {Host: a.example.com}}
+  - {target: /, headers: {Host: deep.a.example.com}}
+  - {target: /, headers: {Host: mail.example.com}}
+  - {target: /, headers: {Host: mail.example.net}}
+  - {target: /, headers: {Host: api7.example.org}}
+  - {target: /, headers: {Host: apix.example.org}}
+  - {target: /, headers: {Host: unknown.test}}

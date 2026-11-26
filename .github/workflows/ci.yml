@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    # Weekly, so a new nginx release shows up as missing directives.
+    - cron: "0 3 * * 1"
 
 jobs:
   go:
@@ -17,8 +20,68 @@ jobs:
         run: test -z "$(gofmt -l .)"
       - run: go vet ./...
       - run: go test -race ./...
+      - name: Generated schema is up to date
+        run: |
+          go generate ./internal/model
+          git diff --exit-code -- internal/model/schema.json
 
-  snapshot-compat:
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+
+  # The IR contract with proxelo-proxy, against its main branch and its
+  # latest release: every compiled configuration loads in the proxy and
+  # routes to the site it was compiled for.
+  integration:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        proxy: [main, release]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pick the proxy revision
+        id: ref
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ matrix.proxy }}" = release ]; then
+            tag=$(gh release view -R null-variable/proxelo-proxy --json tagName -q .tagName 2>/dev/null || true)
+            echo "ref=${tag:-main}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=main" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        with:
+          repository: null-variable/proxelo-proxy
+          ref: ${{ steps.ref.outputs.ref }}
+          path: proxy
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: proxy
+      - run: cargo build --release --manifest-path proxy/Cargo.toml -p proxelo-proxy
+      - name: IR round trip
+        run: PROXELO_PROXY=$PWD/proxy/target/release/proxelo-proxy go test ./internal/compile -run TestRoundTrip -v
+      - name: Compiled examples load in the proxy
+        run: |
+          for f in examples/*.json; do
+            go run ./cmd/proxelo compile "$f" /tmp/snapshot.bin
+            proxy/target/release/proxelo-proxy check /tmp/snapshot.bin
+          done
+
+  # Differential test against nginx and directive coverage.
+  conformance:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -30,10 +93,22 @@ jobs:
         with:
           go-version-file: go.mod
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo build --manifest-path proxy/Cargo.toml
-      - name: Compiled examples load in the proxy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: proxy
+      - run: cargo build --release --manifest-path proxy/Cargo.toml -p proxelo-proxy
+      - name: directives.yaml matches the reference nginx
         run: |
-          for f in examples/*.json; do
-            go run ./cmd/proxelo compile "$f" /tmp/snapshot.bin
-            proxy/target/debug/proxelo-proxy check /tmp/snapshot.bin
-          done
+          version=$(sed -n 's/^nginx: //p' test/conformance/directives.yaml)
+          git clone --depth 1 -b "release-$version" https://github.com/nginx/nginx /tmp/nginx
+          go run ./test/conformance/directives -src /tmp/nginx -check
+      - name: Directives of the latest nginx release
+        continue-on-error: true
+        run: |
+          latest=$(git ls-remote --tags --refs https://github.com/nginx/nginx 'release-*' | sed 's|.*/release-||' | sort -V | tail -1)
+          git clone --depth 1 -b "release-$latest" https://github.com/nginx/nginx /tmp/nginx-latest
+          go run ./test/conformance/directives -src /tmp/nginx-latest -check
+      - name: Differential test
+        run: go run ./test/conformance -proxy proxy/target/release/proxelo-proxy -report conformance.md
+      - if: always()
+        run: test -f conformance.md && cat conformance.md >> "$GITHUB_STEP_SUMMARY" || true

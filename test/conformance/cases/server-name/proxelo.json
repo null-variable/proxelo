@@ -1,0 +1,20 @@
+{
+  "listeners": [
+    {"id": "lst_main", "name": "main", "spec": {"address": "127.0.0.1:18480", "defaultSite": "site_default"}}
+  ],
+  "sites": [
+    {"id": "site_default", "name": "default", "spec": {"listeners": ["lst_main"], "return": {"status": 200, "text": "default\n"}}},
+    {"id": "site_exact", "name": "exact", "spec": {"listeners": ["lst_main"],
+      "hostnames": [{"type": "exact", "value": "example.com"}, {"type": "exact", "value": "www.example.com"}],
+      "return": {"status": 200, "text": "exact\n"}}},
+    {"id": "site_lead", "name": "lead", "spec": {"listeners": ["lst_main"],
+      "hostnames": [{"type": "wildcard", "value": "*.example.com"}],
+      "return": {"status": 200, "text": "leading wildcard\n"}}},
+    {"id": "site_trail", "name": "trail", "spec": {"listeners": ["lst_main"],
+      "hostnames": [{"type": "wildcard", "value": "mail.*"}],
+      "return": {"status": 200, "text": "trailing wildcard\n"}}},
+    {"id": "site_regex", "name": "regex", "spec": {"listeners": ["lst_main"],
+      "hostnames": [{"type": "regex", "value": "^api\\d+\\.example\\.org$"}],
+      "return": {"status": 200, "text": "regex\n"}}}
+  ]
+}

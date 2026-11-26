@@ -1,6 +1,6 @@
 {
   "revision": "1",
-  "hash": "0XTlTd7UPMR8kZesGbzh10F+caftURA2Tp1CZ9dR+aw=",
+  "hash": "w4M43MHCUbIhjAbr81V+fjRfpsAJlD4KnTWRvTDsmLY=",
   "listeners": [
     {
       "address": "0.0.0.0:8080",
@@ -61,7 +61,8 @@
       "keepaliveIdle": 32,
       "id": "up_api",
       "maxFails": 1,
-      "failTimeoutMs": 10000
+      "failTimeoutMs": 10000,
+      "host": "api"
     }
   ]
 }

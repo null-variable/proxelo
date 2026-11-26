@@ -213,6 +213,7 @@ upgraded one end up identical.
 | `web` | Web console source (Vite + React + TypeScript, bun) |
 | `examples` | Sample resource files |
 | `test/bench` | Benchmark harness: nginx vs `proxelo-proxy` (S1, S3), see its README |
+| `test/conformance` | Differential test against nginx and the nginx directive coverage list, see its README |
 
 ## Development
 
@@ -222,7 +223,14 @@ go test ./...
 go test ./internal/compile -update   # rewrite golden snapshots
 go generate ./internal/model         # rewrite schema.json after model changes
 (cd web && bun install && bun run build)  # web console, before go build
+PROXELO_PROXY=../proxelo-proxy/target/release/proxelo-proxy go test ./internal/compile -run TestRoundTrip
+go run ./test/conformance -proxy ../proxelo-proxy/target/release/proxelo-proxy   # needs Docker
 ```
+
+`TestRoundTrip` checks the snapshot contract with `proxelo-proxy`: every
+compiled configuration loads in the proxy and routes to the site it was
+compiled for. CI runs it against the proxy's main branch and its latest
+release.
 
 ## License
 

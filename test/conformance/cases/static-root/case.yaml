@@ -1,0 +1,29 @@
+directives: [root, index, location]
+# Last-Modified and ETag come from file times, which differ between the
+# container's view of the bind mount and the host.
+ignore: [last-modified, etag]
+requests:
+  - {target: /, headers: {Host: example.com}}
+  - {target: /index.html, headers: {Host: example.com}}
+  - {target: /docs, headers: {Host: example.com}}
+  - {target: /docs/, headers: {Host: example.com}}
+  - {target: /docs/notes.txt, headers: {Host: example.com}}
+  - {target: /style.css, headers: {Host: example.com}}
+  - {target: /img/logo.png, headers: {Host: example.com}}
+  - {target: /README, headers: {Host: example.com}}
+  - {target: /missing.html, headers: {Host: example.com}}
+  - {target: /img/, headers: {Host: example.com}}
+  - {target: "/docs/notes.txt?x=1", headers: {Host: example.com}}
+  - {method: HEAD, target: /style.css, headers: {Host: example.com}}
+  - {method: POST, target: /style.css, headers: {Host: example.com}}
+  - {target: /docs/notes.txt, headers: {Host: example.com, Range: "bytes=0-3"}}
+  - {target: /docs/notes.txt, headers: {Host: example.com, Range: "bytes=-3"}}
+  - {target: /docs/notes.txt, headers: {Host: example.com, Range: "bytes=4-"}}
+  - {target: /docs/notes.txt, headers: {Host: example.com, Range: "bytes=20-"}}
+  - {target: /docs/notes.txt, headers: {Host: example.com, Range: "bytes=abc"}}
+  - {target: /docs/notes.txt, headers: {Host: example.com, Range: "bytes=0-1,4-5"}}
+  - {target: /docs/notes.txt, headers: {Host: example.com, Range: "bytes=0-1,20-30"}}
+  - {target: /docs/notes.txt, headers: {Host: example.com, Range: "bytes=0-0,0-20"}}
+  - {target: /docs/notes.txt, headers: {Host: example.com, Range: "items=0-1"}}
+  - {target: /docs/notes.txt, headers: {Host: example.com, Range: "bytes=0-1", If-Range: '"nope"'}}
+  - {method: HEAD, target: /docs/notes.txt, headers: {Host: example.com, Range: "bytes=0-1"}}

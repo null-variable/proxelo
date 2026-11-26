@@ -1,0 +1,13 @@
+{
+  "listeners": [
+    {"id": "lst_main", "name": "main", "spec": {"address": "127.0.0.1:18480", "defaultSite": "site_main"}}
+  ],
+  "sites": [
+    {"id": "site_main", "name": "main", "spec": {"listeners": ["lst_main"],
+      "hostnames": [{"type": "exact", "value": "example.com"}], "routes": ["rt_root"]}}
+  ],
+  "routes": [
+    {"id": "rt_root", "name": "root", "spec": {"match": {"path": {"type": "prefix", "value": "/"}},
+      "action": {"type": "static", "static": {"root": "/srv/www", "index": ["index.html"]}}}}
+  ]
+}

@@ -209,6 +209,8 @@ func (c *compiler) compile(cfg model.Config, revision uint64) *snapshotv1.Snapsh
 			KeepaliveIdle:      sp.Keepalive.Idle,
 			KeepaliveTimeoutMs: millis(sp.Keepalive.Timeout),
 			KeepaliveRequests:  sp.Keepalive.MaxRequests,
+			// nginx proxy_pass http://<upstream name> sends the name as Host.
+			Host: u.Name,
 			// nginx defaults: max_fails=1 fail_timeout=10s.
 			MaxFails:      1,
 			FailTimeoutMs: 10_000,

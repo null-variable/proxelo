@@ -1,0 +1,19 @@
+{
+  "listeners": [
+    {"id": "lst_main", "name": "main", "spec": {"address": "127.0.0.1:18480", "defaultSite": "site_main"}}
+  ],
+  "sites": [
+    {"id": "site_main", "name": "main", "spec": {"listeners": ["lst_main"],
+      "hostnames": [{"type": "exact", "value": "example.com"}],
+      "routes": ["rt_exact", "rt_root", "rt_docs", "rt_docs_api", "rt_static", "rt_php", "rt_img"]}}
+  ],
+  "routes": [
+    {"id": "rt_exact", "name": "exact", "spec": {"match": {"path": {"type": "exact", "value": "/exact"}}, "action": {"type": "return", "return": {"status": 200, "text": "exact\n"}}}},
+    {"id": "rt_root", "name": "root", "spec": {"match": {"path": {"type": "prefix", "value": "/"}}, "action": {"type": "return", "return": {"status": 200, "text": "root prefix\n"}}}},
+    {"id": "rt_docs", "name": "docs", "spec": {"match": {"path": {"type": "prefix", "value": "/docs/"}}, "action": {"type": "return", "return": {"status": 200, "text": "docs prefix\n"}}}},
+    {"id": "rt_docs_api", "name": "docs-api", "spec": {"match": {"path": {"type": "prefix", "value": "/docs/api/"}}, "action": {"type": "return", "return": {"status": 200, "text": "longer prefix\n"}}}},
+    {"id": "rt_static", "name": "static", "spec": {"match": {"path": {"type": "prefixPriority", "value": "/static/"}}, "action": {"type": "return", "return": {"status": 200, "text": "priority prefix\n"}}}},
+    {"id": "rt_php", "name": "php", "spec": {"match": {"path": {"type": "regex", "value": "\\.php$"}}, "action": {"type": "return", "return": {"status": 200, "text": "regex\n"}}}},
+    {"id": "rt_img", "name": "img", "spec": {"match": {"path": {"type": "regexCI", "value": "\\.(png|jpg)$"}}, "action": {"type": "return", "return": {"status": 200, "text": "regex ci\n"}}}}
+  ]
+}

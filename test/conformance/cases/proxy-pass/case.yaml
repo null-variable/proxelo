@@ -1,0 +1,11 @@
+directives: [proxy_pass, upstream, ngx_http_upstream_module/server, location]
+requests:
+  - {target: /, headers: {Host: example.com}}
+  - {target: "/a/b?c=d&e", headers: {Host: example.com}}
+  - {target: "/a%20b/%2F", headers: {Host: example.com}}
+  - {target: /a/../b, headers: {Host: example.com}}
+  - {target: /x, headers: {Host: example.com, X-Custom: one, Accept: text/plain}}
+  - {target: /x, headers: {Host: example.com, Connection: keep-alive, Keep-Alive: timeout=5}}
+  - {method: POST, target: /submit, headers: {Host: example.com, Content-Type: application/x-www-form-urlencoded}, body: "a=1&b=2"}
+  - {method: PUT, target: /put, headers: {Host: example.com}, body: "payload"}
+  - {method: DELETE, target: /del, headers: {Host: example.com}}

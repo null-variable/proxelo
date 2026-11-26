@@ -1,0 +1,3196 @@
+# nginx directives and their Proxelo equivalents. Regenerate the list
+# from an nginx checkout with `go run ./test/conformance/directives -src <dir>`;
+# it keeps status, field and note. See test/conformance/README.md.
+nginx: 1.31.10
+directives:
+  - name: include
+    module: ngx_conf_module
+    contexts: [any]
+    status: missing
+  - name: daemon
+    module: ngx_core_module
+    contexts: [main]
+    status: implemented
+    field: systemd unit
+    note: replaced by the process model
+  - name: master_process
+    module: ngx_core_module
+    contexts: [main]
+    status: implemented
+    field: proxelo up
+    note: replaced by the process model
+  - name: timer_resolution
+    module: ngx_core_module
+    contexts: [main]
+    status: missing
+  - name: pid
+    module: ngx_core_module
+    contexts: [main]
+    status: implemented
+    field: systemd unit
+    note: replaced by the process model
+  - name: lock_file
+    module: ngx_core_module
+    contexts: [main]
+    status: missing
+  - name: worker_processes
+    module: ngx_core_module
+    contexts: [main]
+    status: implemented
+    field: proxelo-proxy --workers
+  - name: debug_points
+    module: ngx_core_module
+    contexts: [main]
+    status: missing
+  - name: user
+    module: ngx_core_module
+    contexts: [main]
+    status: missing
+  - name: worker_priority
+    module: ngx_core_module
+    contexts: [main]
+    status: missing
+  - name: worker_cpu_affinity
+    module: ngx_core_module
+    contexts: [main]
+    status: missing
+  - name: worker_rlimit_nofile
+    module: ngx_core_module
+    contexts: [main]
+    status: missing
+  - name: worker_rlimit_core
+    module: ngx_core_module
+    contexts: [main]
+    status: missing
+  - name: worker_shutdown_timeout
+    module: ngx_core_module
+    contexts: [main]
+    status: missing
+  - name: working_directory
+    module: ngx_core_module
+    contexts: [main]
+    status: missing
+  - name: env
+    module: ngx_core_module
+    contexts: [main]
+    status: missing
+  - name: load_module
+    module: ngx_core_module
+    contexts: [main]
+    status: missing
+  - name: devpoll_changes
+    module: ngx_devpoll_module
+    contexts: [events]
+    status: missing
+  - name: devpoll_events
+    module: ngx_devpoll_module
+    contexts: [events]
+    status: missing
+  - name: epoll_events
+    module: ngx_epoll_module
+    contexts: [events]
+    status: missing
+  - name: worker_aio_requests
+    module: ngx_epoll_module
+    contexts: [events]
+    status: missing
+  - name: error_log
+    module: ngx_errlog_module
+    contexts: [main]
+    status: missing
+  - name: worker_connections
+    module: ngx_event_core_module
+    contexts: [events]
+    status: missing
+  - name: use
+    module: ngx_event_core_module
+    contexts: [events]
+    status: missing
+  - name: multi_accept
+    module: ngx_event_core_module
+    contexts: [events]
+    status: missing
+  - name: accept_mutex
+    module: ngx_event_core_module
+    contexts: [events]
+    status: missing
+  - name: accept_mutex_delay
+    module: ngx_event_core_module
+    contexts: [events]
+    status: missing
+  - name: debug_connection
+    module: ngx_event_core_module
+    contexts: [events]
+    status: missing
+  - name: eventport_events
+    module: ngx_eventport_module
+    contexts: [events]
+    status: missing
+  - name: events
+    module: ngx_events_module
+    contexts: [main]
+    status: missing
+  - name: google_perftools_profiles
+    module: ngx_google_perftools_module
+    contexts: [main]
+    status: missing
+  - name: allow
+    module: ngx_http_access_module
+    contexts: [http, server, location, limit_except]
+    status: missing
+  - name: deny
+    module: ngx_http_access_module
+    contexts: [http, server, location, limit_except]
+    status: missing
+  - name: add_before_body
+    module: ngx_http_addition_module
+    contexts: [http, server, location]
+    status: missing
+  - name: add_after_body
+    module: ngx_http_addition_module
+    contexts: [http, server, location]
+    status: missing
+  - name: addition_types
+    module: ngx_http_addition_module
+    contexts: [http, server, location]
+    status: missing
+  - name: auth_basic
+    module: ngx_http_auth_basic_module
+    contexts: [http, server, location, limit_except]
+    status: missing
+  - name: auth_basic_user_file
+    module: ngx_http_auth_basic_module
+    contexts: [http, server, location, limit_except]
+    status: missing
+  - name: auth_request
+    module: ngx_http_auth_request_module
+    contexts: [http, server, location]
+    status: missing
+  - name: auth_request_set
+    module: ngx_http_auth_request_module
+    contexts: [http, server, location]
+    status: missing
+  - name: autoindex
+    module: ngx_http_autoindex_module
+    contexts: [http, server, location]
+    status: missing
+  - name: autoindex_format
+    module: ngx_http_autoindex_module
+    contexts: [http, server, location]
+    status: missing
+  - name: autoindex_localtime
+    module: ngx_http_autoindex_module
+    contexts: [http, server, location]
+    status: missing
+  - name: autoindex_exact_size
+    module: ngx_http_autoindex_module
+    contexts: [http, server, location]
+    status: missing
+  - name: modern_browser
+    module: ngx_http_browser_module
+    contexts: [http, server, location]
+    status: missing
+  - name: ancient_browser
+    module: ngx_http_browser_module
+    contexts: [http, server, location]
+    status: missing
+  - name: modern_browser_value
+    module: ngx_http_browser_module
+    contexts: [http, server, location]
+    status: missing
+  - name: ancient_browser_value
+    module: ngx_http_browser_module
+    contexts: [http, server, location]
+    status: missing
+  - name: charset
+    module: ngx_http_charset_filter_module
+    contexts: [http, server, location, location if]
+    status: missing
+  - name: source_charset
+    module: ngx_http_charset_filter_module
+    contexts: [http, server, location, location if]
+    status: missing
+  - name: override_charset
+    module: ngx_http_charset_filter_module
+    contexts: [http, server, location, location if]
+    status: missing
+  - name: charset_types
+    module: ngx_http_charset_filter_module
+    contexts: [http, server, location]
+    status: missing
+  - name: charset_map
+    module: ngx_http_charset_filter_module
+    contexts: [http]
+    status: missing
+  - name: output_buffers
+    module: ngx_http_copy_filter_module
+    contexts: [http, server, location]
+    status: missing
+  - name: variables_hash_max_size
+    module: ngx_http_core_module
+    contexts: [http]
+    status: missing
+  - name: variables_hash_bucket_size
+    module: ngx_http_core_module
+    contexts: [http]
+    status: missing
+  - name: server_names_hash_max_size
+    module: ngx_http_core_module
+    contexts: [http]
+    status: missing
+  - name: server_names_hash_bucket_size
+    module: ngx_http_core_module
+    contexts: [http]
+    status: missing
+  - name: server
+    module: ngx_http_core_module
+    contexts: [http]
+    status: implemented
+    field: Site
+  - name: connection_pool_size
+    module: ngx_http_core_module
+    contexts: [http, server]
+    status: missing
+  - name: request_pool_size
+    module: ngx_http_core_module
+    contexts: [http, server]
+    status: missing
+  - name: client_header_timeout
+    module: ngx_http_core_module
+    contexts: [http, server]
+    status: fixed
+    note: fixed at the nginx default 60s
+  - name: client_header_buffer_size
+    module: ngx_http_core_module
+    contexts: [http, server]
+    status: missing
+  - name: large_client_header_buffers
+    module: ngx_http_core_module
+    contexts: [http, server]
+    status: missing
+  - name: max_headers
+    module: ngx_http_core_module
+    contexts: [http, server]
+    status: missing
+  - name: ignore_invalid_headers
+    module: ngx_http_core_module
+    contexts: [http, server]
+    status: missing
+  - name: merge_slashes
+    module: ngx_http_core_module
+    contexts: [http, server]
+    status: fixed
+    note: always on, the nginx default
+  - name: underscores_in_headers
+    module: ngx_http_core_module
+    contexts: [http, server]
+    status: missing
+  - name: location
+    module: ngx_http_core_module
+    contexts: [server, location]
+    status: implemented
+    field: Route.spec.match.path
+    note: =, prefix, ^~, ~, ~* and nesting; @name locations are routes referenced by error pages and try_files
+  - name: listen
+    module: ngx_http_core_module
+    contexts: [server]
+    status: partial
+    field: Listener.spec.address
+    note: address, reuseport, backlog, ssl and http2; no default_server flag (Listener.spec.defaultSite instead), no ipv6only, so_keepalive, fastopen, deferred, bind
+  - name: server_name
+    module: ngx_http_core_module
+    contexts: [server]
+    status: implemented
+    field: Site.spec.hostnames
+    note: exact, wildcard and regex names in nginx lookup order
+  - name: types_hash_max_size
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: types_hash_bucket_size
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: types
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: fixed
+    note: built-in table of common nginx mime.types entries
+  - name: default_type
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: fixed
+    note: fixed at application/octet-stream
+  - name: root
+    module: ngx_http_core_module
+    contexts: [http, server, location, location if]
+    status: implemented
+    field: Route.spec.action.static.root
+  - name: alias
+    module: ngx_http_core_module
+    contexts: [location]
+    status: missing
+  - name: limit_except
+    module: ngx_http_core_module
+    contexts: [location]
+    status: missing
+  - name: client_max_body_size
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: fixed
+    note: fixed at the nginx default 1m
+  - name: client_body_buffer_size
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: client_body_timeout
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: fixed
+    note: fixed at the nginx default 60s
+  - name: client_body_temp_path
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: client_body_in_file_only
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: client_body_in_single_buffer
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: client_body_early_read
+    module: ngx_http_core_module
+    contexts: [http, server]
+    status: missing
+  - name: sendfile
+    module: ngx_http_core_module
+    contexts: [http, server, location, location if]
+    status: missing
+  - name: sendfile_max_chunk
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: subrequest_output_buffer_size
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: aio
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: aio_write
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: read_ahead
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: directio
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: directio_alignment
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: tcp_nopush
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: tcp_nodelay
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: send_timeout
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: fixed
+    note: fixed at the nginx default 60s
+  - name: send_lowat
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: postpone_output
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: limit_rate
+    module: ngx_http_core_module
+    contexts: [http, server, location, location if]
+    status: missing
+  - name: limit_rate_after
+    module: ngx_http_core_module
+    contexts: [http, server, location, location if]
+    status: missing
+  - name: keepalive_time
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: keepalive_timeout
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: fixed
+    note: fixed at the nginx default 75s
+  - name: keepalive_min_timeout
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: keepalive_requests
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: keepalive_disable
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: satisfy
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: auth_delay
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: internal
+    module: ngx_http_core_module
+    contexts: [location]
+    status: missing
+  - name: lingering_close
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: lingering_time
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: lingering_timeout
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: reset_timedout_connection
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: absolute_redirect
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: fixed
+    note: always on, the nginx default
+  - name: server_name_in_redirect
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: port_in_redirect
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: msie_padding
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: msie_refresh
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: log_not_found
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: log_subrequest
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: recursive_error_pages
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: server_tokens
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: if_modified_since
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: max_ranges
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: chunked_transfer_encoding
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: etag
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: early_hints
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: error_page
+    module: ngx_http_core_module
+    contexts: [http, server, location, location if]
+    status: implemented
+    field: Site.spec.errorPages, Route.spec.errorPages
+  - name: post_action
+    module: ngx_http_core_module
+    contexts: [http, server, location, location if]
+    status: missing
+  - name: error_log
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: open_file_cache
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: open_file_cache_valid
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: open_file_cache_min_uses
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: open_file_cache_errors
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: open_file_cache_events
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: resolver
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: resolver_timeout
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: gzip_vary
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: gzip_http_version
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: gzip_proxied
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: gzip_disable
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: disable_symlinks
+    module: ngx_http_core_module
+    contexts: [http, server, location]
+    status: missing
+  - name: dav_methods
+    module: ngx_http_dav_module
+    contexts: [http, server, location]
+    status: missing
+  - name: create_full_put_path
+    module: ngx_http_dav_module
+    contexts: [http, server, location]
+    status: missing
+  - name: min_delete_depth
+    module: ngx_http_dav_module
+    contexts: [http, server, location]
+    status: missing
+  - name: dav_access
+    module: ngx_http_dav_module
+    contexts: [http, server, location]
+    status: missing
+  - name: degradation
+    module: ngx_http_degradation_module
+    contexts: [http]
+    status: missing
+  - name: degrade
+    module: ngx_http_degradation_module
+    contexts: [http, server, location]
+    status: missing
+  - name: empty_gif
+    module: ngx_http_empty_gif_module
+    contexts: [location]
+    status: missing
+  - name: fastcgi_pass
+    module: ngx_http_fastcgi_module
+    contexts: [location, location if]
+    status: missing
+  - name: fastcgi_index
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_split_path_info
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_store
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_store_access
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_buffering
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_request_buffering
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_ignore_client_abort
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_bind
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_socket_keepalive
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_socket_rcvbuf
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_socket_sndbuf
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_connect_timeout
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_send_timeout
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_send_lowat
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_buffer_size
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_pass_request_headers
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_pass_request_body
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_intercept_errors
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_read_timeout
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_buffers
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_busy_buffers_size
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_force_ranges
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_limit_rate
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_cache
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_cache_key
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_cache_path
+    module: ngx_http_fastcgi_module
+    contexts: [http]
+    status: missing
+  - name: fastcgi_cache_bypass
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_no_cache
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_cache_valid
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_cache_min_uses
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_cache_max_range_offset
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_cache_use_stale
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_cache_methods
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_cache_lock
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_cache_lock_timeout
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_cache_lock_age
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_cache_revalidate
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_cache_background_update
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_temp_path
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_max_temp_file_size
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_temp_file_write_size
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_next_upstream
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_next_upstream_tries
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_next_upstream_timeout
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_param
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_pass_header
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_hide_header
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_ignore_headers
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_catch_stderr
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: fastcgi_keep_conn
+    module: ngx_http_fastcgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: flv
+    module: ngx_http_flv_module
+    contexts: [location]
+    status: missing
+  - name: geo
+    module: ngx_http_geo_module
+    contexts: [http]
+    status: missing
+  - name: geoip_country
+    module: ngx_http_geoip_module
+    contexts: [http]
+    status: missing
+  - name: geoip_org
+    module: ngx_http_geoip_module
+    contexts: [http]
+    status: missing
+  - name: geoip_city
+    module: ngx_http_geoip_module
+    contexts: [http]
+    status: missing
+  - name: geoip_proxy
+    module: ngx_http_geoip_module
+    contexts: [http]
+    status: missing
+  - name: geoip_proxy_recursive
+    module: ngx_http_geoip_module
+    contexts: [http]
+    status: missing
+  - name: grpc_pass
+    module: ngx_http_grpc_module
+    contexts: [location, location if]
+    status: missing
+  - name: grpc_bind
+    module: ngx_http_grpc_module
+    contexts: [http, server, location]
+    status: missing
+  - name: grpc_socket_keepalive
+    module: ngx_http_grpc_module
+    contexts: [http, server, location]
+    status: missing
+  - name: grpc_socket_rcvbuf
+    module: ngx_http_grpc_module
+    contexts: [http, server, location]
+    status: missing
+  - name: grpc_socket_sndbuf
+    module: ngx_http_grpc_module
+    contexts: [http, server, location]
+    status: missing
+  - name: grpc_connect_timeout
+    module: ngx_http_grpc_module
+    contexts: [http, server, location]
+    status: missing
+  - name: grpc_send_timeout
+    module: ngx_http_grpc_module
+    contexts: [http, server, location]
+    status: missing
+  - name: grpc_intercept_errors
+    module: ngx_http_grpc_module
+    contexts: [http, server, location]
+    status: missing
+  - name: grpc_buffer_size
+    module: ngx_http_grpc_module
+    contexts: [http, server, location]
+    status: missing
+  - name: grpc_read_timeout
+    module: ngx_http_grpc_module
+    contexts: [http, server, location]
+    status: missing
+  - name: grpc_next_upstream
+    module: ngx_http_grpc_module
+    contexts: [http, server, location]
+    status: missing
+  - name: grpc_next_upstream_tries
+    module: ngx_http_grpc_module
+    contexts: [http, server, location]
+    status: missing
+  - name: grpc_next_upstream_timeout
+    module: ngx_http_grpc_module
+    contexts: [http, server, location]
+    status: missing
+  - name: grpc_set_header
+    module: ngx_http_grpc_module
+    contexts: [http, server, location]
+    status: missing
+  - name: grpc_pass_header
+    module: ngx_http_grpc_module
+    contexts: [http, server, location]
+    status: missing
+  - name: grpc_hide_header
+    module: ngx_http_grpc_module
+    contexts: [http, server, location]
+    status: missing
+  - name: grpc_ignore_headers
+    module: ngx_http_grpc_module
+    contexts: [http, server, location]
+    status: missing
+  - name: grpc_ssl_session_reuse
+    module: ngx_http_grpc_module
+    contexts: [http, server, location]
+    status: missing
+  - name: grpc_ssl_protocols
+    module: ngx_http_grpc_module
+    contexts: [http, server, location]
+    status: missing
+  - name: grpc_ssl_ciphers
+    module: ngx_http_grpc_module
+    contexts: [http, server, location]
+    status: missing
+  - name: grpc_ssl_name
+    module: ngx_http_grpc_module
+    contexts: [http, server, location]
+    status: missing
+  - name: grpc_ssl_server_name
+    module: ngx_http_grpc_module
+    contexts: [http, server, location]
+    status: missing
+  - name: grpc_ssl_verify
+    module: ngx_http_grpc_module
+    contexts: [http, server, location]
+    status: missing
+  - name: grpc_ssl_verify_depth
+    module: ngx_http_grpc_module
+    contexts: [http, server, location]
+    status: missing
+  - name: grpc_ssl_trusted_certificate
+    module: ngx_http_grpc_module
+    contexts: [http, server, location]
+    status: missing
+  - name: grpc_ssl_crl
+    module: ngx_http_grpc_module
+    contexts: [http, server, location]
+    status: missing
+  - name: grpc_ssl_certificate
+    module: ngx_http_grpc_module
+    contexts: [http, server, location]
+    status: missing
+  - name: grpc_ssl_certificate_key
+    module: ngx_http_grpc_module
+    contexts: [http, server, location]
+    status: missing
+  - name: grpc_ssl_certificate_cache
+    module: ngx_http_grpc_module
+    contexts: [http, server, location]
+    status: missing
+  - name: grpc_ssl_password_file
+    module: ngx_http_grpc_module
+    contexts: [http, server, location]
+    status: missing
+  - name: grpc_ssl_conf_command
+    module: ngx_http_grpc_module
+    contexts: [http, server, location]
+    status: missing
+  - name: gunzip
+    module: ngx_http_gunzip_filter_module
+    contexts: [http, server, location]
+    status: missing
+  - name: gunzip_buffers
+    module: ngx_http_gunzip_filter_module
+    contexts: [http, server, location]
+    status: missing
+  - name: gzip
+    module: ngx_http_gzip_filter_module
+    contexts: [http, server, location, location if]
+    status: missing
+  - name: gzip_buffers
+    module: ngx_http_gzip_filter_module
+    contexts: [http, server, location]
+    status: missing
+  - name: gzip_types
+    module: ngx_http_gzip_filter_module
+    contexts: [http, server, location]
+    status: missing
+  - name: gzip_comp_level
+    module: ngx_http_gzip_filter_module
+    contexts: [http, server, location]
+    status: missing
+  - name: gzip_window
+    module: ngx_http_gzip_filter_module
+    contexts: [http, server, location]
+    status: missing
+  - name: gzip_hash
+    module: ngx_http_gzip_filter_module
+    contexts: [http, server, location]
+    status: missing
+  - name: postpone_gzipping
+    module: ngx_http_gzip_filter_module
+    contexts: [http, server, location]
+    status: missing
+  - name: gzip_no_buffer
+    module: ngx_http_gzip_filter_module
+    contexts: [http, server, location]
+    status: missing
+  - name: gzip_min_length
+    module: ngx_http_gzip_filter_module
+    contexts: [http, server, location]
+    status: missing
+  - name: gzip_static
+    module: ngx_http_gzip_static_module
+    contexts: [http, server, location]
+    status: missing
+  - name: expires
+    module: ngx_http_headers_filter_module
+    contexts: [http, server, location, location if]
+    status: missing
+  - name: add_header
+    module: ngx_http_headers_filter_module
+    contexts: [http, server, location, location if]
+    status: implemented
+    field: Policy headers.response.set/add, always
+  - name: add_trailer
+    module: ngx_http_headers_filter_module
+    contexts: [http, server, location, location if]
+    status: missing
+  - name: add_header_inherit
+    module: ngx_http_headers_filter_module
+    contexts: [http, server, location, location if]
+    status: missing
+  - name: add_trailer_inherit
+    module: ngx_http_headers_filter_module
+    contexts: [http, server, location, location if]
+    status: missing
+  - name: image_filter
+    module: ngx_http_image_filter_module
+    contexts: [location]
+    status: missing
+  - name: image_filter_jpeg_quality
+    module: ngx_http_image_filter_module
+    contexts: [http, server, location]
+    status: missing
+  - name: image_filter_webp_quality
+    module: ngx_http_image_filter_module
+    contexts: [http, server, location]
+    status: missing
+  - name: image_filter_sharpen
+    module: ngx_http_image_filter_module
+    contexts: [http, server, location]
+    status: missing
+  - name: image_filter_transparency
+    module: ngx_http_image_filter_module
+    contexts: [http, server, location]
+    status: missing
+  - name: image_filter_interlace
+    module: ngx_http_image_filter_module
+    contexts: [http, server, location]
+    status: missing
+  - name: image_filter_buffer
+    module: ngx_http_image_filter_module
+    contexts: [http, server, location]
+    status: missing
+  - name: index
+    module: ngx_http_index_module
+    contexts: [http, server, location]
+    status: implemented
+    field: Route.spec.action.static.index
+  - name: json_set
+    module: ngx_http_json_module
+    contexts: [http]
+    status: missing
+  - name: json_max_depth
+    module: ngx_http_json_module
+    contexts: [http]
+    status: missing
+  - name: limit_conn_zone
+    module: ngx_http_limit_conn_module
+    contexts: [http]
+    status: missing
+  - name: limit_conn
+    module: ngx_http_limit_conn_module
+    contexts: [http, server, location]
+    status: missing
+  - name: limit_conn_log_level
+    module: ngx_http_limit_conn_module
+    contexts: [http, server, location]
+    status: missing
+  - name: limit_conn_status
+    module: ngx_http_limit_conn_module
+    contexts: [http, server, location]
+    status: missing
+  - name: limit_conn_dry_run
+    module: ngx_http_limit_conn_module
+    contexts: [http, server, location]
+    status: missing
+  - name: limit_req_zone
+    module: ngx_http_limit_req_module
+    contexts: [http]
+    status: missing
+  - name: limit_req
+    module: ngx_http_limit_req_module
+    contexts: [http, server, location]
+    status: missing
+  - name: limit_req_log_level
+    module: ngx_http_limit_req_module
+    contexts: [http, server, location]
+    status: missing
+  - name: limit_req_status
+    module: ngx_http_limit_req_module
+    contexts: [http, server, location]
+    status: missing
+  - name: limit_req_dry_run
+    module: ngx_http_limit_req_module
+    contexts: [http, server, location]
+    status: missing
+  - name: log_format
+    module: ngx_http_log_module
+    contexts: [http]
+    status: partial
+    field: Policy accessLog.format
+    note: nginx variables with escape=json
+  - name: access_log
+    module: ngx_http_log_module
+    contexts: [http, server, location, location if, limit_except]
+    status: partial
+    field: Policy accessLog
+    note: stdout, stderr or a file; no buffer, gzip, flush or if=
+  - name: open_log_file_cache
+    module: ngx_http_log_module
+    contexts: [http, server, location]
+    status: missing
+  - name: map
+    module: ngx_http_map_module
+    contexts: [http]
+    status: missing
+  - name: map_hash_max_size
+    module: ngx_http_map_module
+    contexts: [http]
+    status: missing
+  - name: map_hash_bucket_size
+    module: ngx_http_map_module
+    contexts: [http]
+    status: missing
+  - name: memcached_pass
+    module: ngx_http_memcached_module
+    contexts: [location, location if]
+    status: missing
+  - name: memcached_bind
+    module: ngx_http_memcached_module
+    contexts: [http, server, location]
+    status: missing
+  - name: memcached_socket_keepalive
+    module: ngx_http_memcached_module
+    contexts: [http, server, location]
+    status: missing
+  - name: memcached_connect_timeout
+    module: ngx_http_memcached_module
+    contexts: [http, server, location]
+    status: missing
+  - name: memcached_send_timeout
+    module: ngx_http_memcached_module
+    contexts: [http, server, location]
+    status: missing
+  - name: memcached_buffer_size
+    module: ngx_http_memcached_module
+    contexts: [http, server, location]
+    status: missing
+  - name: memcached_read_timeout
+    module: ngx_http_memcached_module
+    contexts: [http, server, location]
+    status: missing
+  - name: memcached_next_upstream
+    module: ngx_http_memcached_module
+    contexts: [http, server, location]
+    status: missing
+  - name: memcached_next_upstream_tries
+    module: ngx_http_memcached_module
+    contexts: [http, server, location]
+    status: missing
+  - name: memcached_next_upstream_timeout
+    module: ngx_http_memcached_module
+    contexts: [http, server, location]
+    status: missing
+  - name: memcached_gzip_flag
+    module: ngx_http_memcached_module
+    contexts: [http, server, location]
+    status: missing
+  - name: mirror
+    module: ngx_http_mirror_module
+    contexts: [http, server, location]
+    status: missing
+  - name: mirror_request_body
+    module: ngx_http_mirror_module
+    contexts: [http, server, location]
+    status: missing
+  - name: http
+    module: ngx_http_module
+    contexts: [main]
+    status: missing
+  - name: mp4
+    module: ngx_http_mp4_module
+    contexts: [location]
+    status: missing
+  - name: mp4_buffer_size
+    module: ngx_http_mp4_module
+    contexts: [http, server, location]
+    status: missing
+  - name: mp4_max_buffer_size
+    module: ngx_http_mp4_module
+    contexts: [http, server, location]
+    status: missing
+  - name: mp4_start_key_frame
+    module: ngx_http_mp4_module
+    contexts: [http, server, location]
+    status: missing
+  - name: perl_modules
+    module: ngx_http_perl_module
+    contexts: [http]
+    status: missing
+  - name: perl_require
+    module: ngx_http_perl_module
+    contexts: [http]
+    status: missing
+  - name: perl
+    module: ngx_http_perl_module
+    contexts: [location, limit_except]
+    status: missing
+  - name: perl_set
+    module: ngx_http_perl_module
+    contexts: [http]
+    status: missing
+  - name: proxy_pass
+    module: ngx_http_proxy_module
+    contexts: [location, location if, limit_except]
+    status: partial
+    field: Route.spec.action.proxy.upstream
+    note: to a named upstream without a URI part
+  - name: proxy_redirect
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_cookie_domain
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_cookie_path
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_cookie_flags
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_store
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_store_access
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_buffering
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_request_buffering
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_ignore_client_abort
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_bind
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_socket_keepalive
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_socket_rcvbuf
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_socket_sndbuf
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_connect_timeout
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: implemented
+    field: Route.spec.action.proxy.timeouts.connect
+  - name: proxy_send_timeout
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: implemented
+    field: Route.spec.action.proxy.timeouts.send
+  - name: proxy_send_lowat
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_intercept_errors
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_set_header
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: implemented
+    field: Policy headers.request.set
+  - name: proxy_headers_hash_max_size
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_headers_hash_bucket_size
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_set_body
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_method
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_pass_request_headers
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_pass_request_body
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_pass_trailers
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_buffer_size
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_read_timeout
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: implemented
+    field: Route.spec.action.proxy.timeouts.read
+  - name: proxy_buffers
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_busy_buffers_size
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_force_ranges
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_limit_rate
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_cache
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_cache_key
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_cache_path
+    module: ngx_http_proxy_module
+    contexts: [http]
+    status: missing
+  - name: proxy_cache_bypass
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_no_cache
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_cache_valid
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_cache_min_uses
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_cache_max_range_offset
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_cache_use_stale
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_cache_methods
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_cache_lock
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_cache_lock_timeout
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_cache_lock_age
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_cache_revalidate
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_cache_convert_head
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_cache_background_update
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_temp_path
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_max_temp_file_size
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_temp_file_write_size
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_next_upstream
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: partial
+    field: Route.spec.action.proxy.retry.on
+    note: error, timeout, http_500, http_502, http_503, http_504, off
+  - name: proxy_next_upstream_tries
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: implemented
+    field: Route.spec.action.proxy.retry.tries
+  - name: proxy_next_upstream_timeout
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_pass_header
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_hide_header
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: implemented
+    field: Policy headers.response.remove
+  - name: proxy_ignore_headers
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_http_version
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: fixed
+    note: always 1.1
+  - name: proxy_ssl_session_reuse
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_ssl_protocols
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_ssl_ciphers
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_ssl_name
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_ssl_server_name
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_ssl_verify
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_ssl_verify_depth
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_ssl_trusted_certificate
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_ssl_crl
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_ssl_certificate
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_ssl_certificate_key
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_ssl_certificate_cache
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_ssl_password_file
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: proxy_ssl_conf_command
+    module: ngx_http_proxy_module
+    contexts: [http, server, location]
+    status: missing
+  - name: random_index
+    module: ngx_http_random_index_module
+    contexts: [location]
+    status: missing
+  - name: set_real_ip_from
+    module: ngx_http_realip_module
+    contexts: [http, server, location]
+    status: missing
+  - name: real_ip_header
+    module: ngx_http_realip_module
+    contexts: [http, server, location]
+    status: missing
+  - name: real_ip_recursive
+    module: ngx_http_realip_module
+    contexts: [http, server, location]
+    status: missing
+  - name: valid_referers
+    module: ngx_http_referer_module
+    contexts: [server, location]
+    status: missing
+  - name: referer_hash_max_size
+    module: ngx_http_referer_module
+    contexts: [server, location]
+    status: missing
+  - name: referer_hash_bucket_size
+    module: ngx_http_referer_module
+    contexts: [server, location]
+    status: missing
+  - name: rewrite
+    module: ngx_http_rewrite_module
+    contexts: [server, server if, location, location if]
+    status: implemented
+    field: Site.spec.rewrite, Route.spec.rewrite
+    note: last, break, redirect, permanent and captures
+  - name: return
+    module: ngx_http_rewrite_module
+    contexts: [server, server if, location, location if]
+    status: implemented
+    field: Site.spec.return, Route.spec.action.return
+  - name: break
+    module: ngx_http_rewrite_module
+    contexts: [server, server if, location, location if]
+    status: missing
+  - name: if
+    module: ngx_http_rewrite_module
+    contexts: [server, location]
+    status: missing
+  - name: set
+    module: ngx_http_rewrite_module
+    contexts: [server, server if, location, location if]
+    status: missing
+  - name: rewrite_log
+    module: ngx_http_rewrite_module
+    contexts: [http, server, server if, location, location if]
+    status: missing
+  - name: uninitialized_variable_warn
+    module: ngx_http_rewrite_module
+    contexts: [http, server, server if, location, location if]
+    status: missing
+  - name: scgi_pass
+    module: ngx_http_scgi_module
+    contexts: [location, location if]
+    status: missing
+  - name: scgi_store
+    module: ngx_http_scgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: scgi_store_access
+    module: ngx_http_scgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: scgi_buffering
+    module: ngx_http_scgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: scgi_request_buffering
+    module: ngx_http_scgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: scgi_ignore_client_abort
+    module: ngx_http_scgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: scgi_bind
+    module: ngx_http_scgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: scgi_socket_keepalive
+    module: ngx_http_scgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: scgi_socket_rcvbuf
+    module: ngx_http_scgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: scgi_socket_sndbuf
+    module: ngx_http_scgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: scgi_connect_timeout
+    module: ngx_http_scgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: scgi_send_timeout
+    module: ngx_http_scgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: scgi_buffer_size
+    module: ngx_http_scgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: scgi_pass_request_headers
+    module: ngx_http_scgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: scgi_pass_request_body
+    module: ngx_http_scgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: scgi_intercept_errors
+    module: ngx_http_scgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: scgi_read_timeout
+    module: ngx_http_scgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: scgi_buffers
+    module: ngx_http_scgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: scgi_busy_buffers_size
+    module: ngx_http_scgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: scgi_force_ranges
+    module: ngx_http_scgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: scgi_limit_rate
+    module: ngx_http_scgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: scgi_cache
+    module: ngx_http_scgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: scgi_cache_key
+    module: ngx_http_scgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: scgi_cache_path
+    module: ngx_http_scgi_module
+    contexts: [http]
+    status: missing
+  - name: scgi_cache_bypass
+    module: ngx_http_scgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: scgi_no_cache
+    module: ngx_http_scgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: scgi_cache_valid
+    module: ngx_http_scgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: scgi_cache_min_uses
+    module: ngx_http_scgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: scgi_cache_max_range_offset
+    module: ngx_http_scgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: scgi_cache_use_stale
+    module: ngx_http_scgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: scgi_cache_methods
+    module: ngx_http_scgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: scgi_cache_lock
+    module: ngx_http_scgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: scgi_cache_lock_timeout
+    module: ngx_http_scgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: scgi_cache_lock_age
+    module: ngx_http_scgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: scgi_cache_revalidate
+    module: ngx_http_scgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: scgi_cache_background_update
+    module: ngx_http_scgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: scgi_temp_path
+    module: ngx_http_scgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: scgi_max_temp_file_size
+    module: ngx_http_scgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: scgi_temp_file_write_size
+    module: ngx_http_scgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: scgi_next_upstream
+    module: ngx_http_scgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: scgi_next_upstream_tries
+    module: ngx_http_scgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: scgi_next_upstream_timeout
+    module: ngx_http_scgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: scgi_param
+    module: ngx_http_scgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: scgi_pass_header
+    module: ngx_http_scgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: scgi_hide_header
+    module: ngx_http_scgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: scgi_ignore_headers
+    module: ngx_http_scgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: secure_link
+    module: ngx_http_secure_link_module
+    contexts: [http, server, location]
+    status: missing
+  - name: secure_link_md5
+    module: ngx_http_secure_link_module
+    contexts: [http, server, location]
+    status: missing
+  - name: secure_link_secret
+    module: ngx_http_secure_link_module
+    contexts: [http, server, location]
+    status: missing
+  - name: slice
+    module: ngx_http_slice_filter_module
+    contexts: [http, server, location]
+    status: missing
+  - name: split_clients
+    module: ngx_http_split_clients_module
+    contexts: [http]
+    status: missing
+  - name: ssi
+    module: ngx_http_ssi_filter_module
+    contexts: [http, server, location, location if]
+    status: missing
+  - name: ssi_silent_errors
+    module: ngx_http_ssi_filter_module
+    contexts: [http, server, location]
+    status: missing
+  - name: ssi_ignore_recycled_buffers
+    module: ngx_http_ssi_filter_module
+    contexts: [http, server, location]
+    status: missing
+  - name: ssi_min_file_chunk
+    module: ngx_http_ssi_filter_module
+    contexts: [http, server, location]
+    status: missing
+  - name: ssi_value_length
+    module: ngx_http_ssi_filter_module
+    contexts: [http, server, location]
+    status: missing
+  - name: ssi_types
+    module: ngx_http_ssi_filter_module
+    contexts: [http, server, location]
+    status: missing
+  - name: ssi_last_modified
+    module: ngx_http_ssi_filter_module
+    contexts: [http, server, location]
+    status: missing
+  - name: ssl_certificate
+    module: ngx_http_ssl_module
+    contexts: [http, server]
+    status: implemented
+    field: Certificate, Site.spec.certificates
+  - name: ssl_certificate_key
+    module: ngx_http_ssl_module
+    contexts: [http, server]
+    status: implemented
+    field: Certificate.spec.keyPem
+  - name: ssl_certificate_cache
+    module: ngx_http_ssl_module
+    contexts: [http, server]
+    status: missing
+  - name: ssl_ech_file
+    module: ngx_http_ssl_module
+    contexts: [http, server]
+    status: missing
+  - name: ssl_password_file
+    module: ngx_http_ssl_module
+    contexts: [http, server]
+    status: missing
+  - name: ssl_certificate_compression
+    module: ngx_http_ssl_module
+    contexts: [http, server]
+    status: missing
+  - name: ssl_dhparam
+    module: ngx_http_ssl_module
+    contexts: [http, server]
+    status: missing
+  - name: ssl_ecdh_curve
+    module: ngx_http_ssl_module
+    contexts: [http, server]
+    status: missing
+  - name: ssl_protocols
+    module: ngx_http_ssl_module
+    contexts: [http, server]
+    status: partial
+    field: Listener.spec.tls.minVersion
+    note: a minimum version, not a list
+  - name: ssl_ciphers
+    module: ngx_http_ssl_module
+    contexts: [http, server]
+    status: implemented
+    field: Listener.spec.tls.ciphers
+  - name: ssl_buffer_size
+    module: ngx_http_ssl_module
+    contexts: [http, server]
+    status: missing
+  - name: ssl_verify_client
+    module: ngx_http_ssl_module
+    contexts: [http, server]
+    status: missing
+  - name: ssl_verify_depth
+    module: ngx_http_ssl_module
+    contexts: [http, server]
+    status: missing
+  - name: ssl_client_certificate
+    module: ngx_http_ssl_module
+    contexts: [http, server]
+    status: missing
+  - name: ssl_trusted_certificate
+    module: ngx_http_ssl_module
+    contexts: [http, server]
+    status: missing
+  - name: ssl_prefer_server_ciphers
+    module: ngx_http_ssl_module
+    contexts: [http, server]
+    status: missing
+  - name: ssl_session_cache
+    module: ngx_http_ssl_module
+    contexts: [http, server]
+    status: missing
+  - name: ssl_session_tickets
+    module: ngx_http_ssl_module
+    contexts: [http, server]
+    status: missing
+  - name: ssl_session_ticket_key
+    module: ngx_http_ssl_module
+    contexts: [http, server]
+    status: missing
+  - name: ssl_session_timeout
+    module: ngx_http_ssl_module
+    contexts: [http, server]
+    status: missing
+  - name: ssl_crl
+    module: ngx_http_ssl_module
+    contexts: [http, server]
+    status: missing
+  - name: ssl_ocsp
+    module: ngx_http_ssl_module
+    contexts: [http, server]
+    status: missing
+  - name: ssl_ocsp_responder
+    module: ngx_http_ssl_module
+    contexts: [http, server]
+    status: missing
+  - name: ssl_ocsp_cache
+    module: ngx_http_ssl_module
+    contexts: [http, server]
+    status: missing
+  - name: ssl_stapling
+    module: ngx_http_ssl_module
+    contexts: [http, server]
+    status: missing
+  - name: ssl_stapling_file
+    module: ngx_http_ssl_module
+    contexts: [http, server]
+    status: missing
+  - name: ssl_stapling_responder
+    module: ngx_http_ssl_module
+    contexts: [http, server]
+    status: missing
+  - name: ssl_stapling_verify
+    module: ngx_http_ssl_module
+    contexts: [http, server]
+    status: missing
+  - name: ssl_early_data
+    module: ngx_http_ssl_module
+    contexts: [http, server]
+    status: missing
+  - name: ssl_conf_command
+    module: ngx_http_ssl_module
+    contexts: [http, server]
+    status: missing
+  - name: ssl_reject_handshake
+    module: ngx_http_ssl_module
+    contexts: [http, server]
+    status: missing
+  - name: stub_status
+    module: ngx_http_status_module
+    contexts: [server, location]
+    status: missing
+  - name: sub_filter
+    module: ngx_http_sub_filter_module
+    contexts: [http, server, location]
+    status: missing
+  - name: sub_filter_types
+    module: ngx_http_sub_filter_module
+    contexts: [http, server, location]
+    status: missing
+  - name: sub_filter_once
+    module: ngx_http_sub_filter_module
+    contexts: [http, server, location]
+    status: missing
+  - name: sub_filter_last_modified
+    module: ngx_http_sub_filter_module
+    contexts: [http, server, location]
+    status: missing
+  - name: try_files
+    module: ngx_http_try_files_module
+    contexts: [server, location]
+    status: implemented
+    field: Route.spec.action.static.tryFiles
+  - name: tunnel_pass
+    module: ngx_http_tunnel_module
+    contexts: [server, location, location if]
+    status: missing
+  - name: tunnel_bind
+    module: ngx_http_tunnel_module
+    contexts: [http, server, location]
+    status: missing
+  - name: tunnel_socket_keepalive
+    module: ngx_http_tunnel_module
+    contexts: [http, server, location]
+    status: missing
+  - name: tunnel_socket_rcvbuf
+    module: ngx_http_tunnel_module
+    contexts: [http, server, location]
+    status: missing
+  - name: tunnel_socket_sndbuf
+    module: ngx_http_tunnel_module
+    contexts: [http, server, location]
+    status: missing
+  - name: tunnel_connect_timeout
+    module: ngx_http_tunnel_module
+    contexts: [http, server, location]
+    status: missing
+  - name: tunnel_send_timeout
+    module: ngx_http_tunnel_module
+    contexts: [http, server, location]
+    status: missing
+  - name: tunnel_send_lowat
+    module: ngx_http_tunnel_module
+    contexts: [http, server, location]
+    status: missing
+  - name: tunnel_buffer_size
+    module: ngx_http_tunnel_module
+    contexts: [http, server, location]
+    status: missing
+  - name: tunnel_read_timeout
+    module: ngx_http_tunnel_module
+    contexts: [http, server, location]
+    status: missing
+  - name: tunnel_next_upstream
+    module: ngx_http_tunnel_module
+    contexts: [http, server, location]
+    status: missing
+  - name: tunnel_next_upstream_tries
+    module: ngx_http_tunnel_module
+    contexts: [http, server, location]
+    status: missing
+  - name: tunnel_next_upstream_timeout
+    module: ngx_http_tunnel_module
+    contexts: [http, server, location]
+    status: missing
+  - name: hash
+    module: ngx_http_upstream_hash_module
+    contexts: [upstream]
+    status: missing
+  - name: ip_hash
+    module: ngx_http_upstream_ip_hash_module
+    contexts: [upstream]
+    status: missing
+  - name: keepalive
+    module: ngx_http_upstream_keepalive_module
+    contexts: [upstream]
+    status: implemented
+    field: Upstream.spec.keepalive.idle
+  - name: keepalive_time
+    module: ngx_http_upstream_keepalive_module
+    contexts: [upstream]
+    status: missing
+  - name: keepalive_timeout
+    module: ngx_http_upstream_keepalive_module
+    contexts: [upstream]
+    status: implemented
+    field: Upstream.spec.keepalive.timeout
+  - name: keepalive_requests
+    module: ngx_http_upstream_keepalive_module
+    contexts: [upstream]
+    status: implemented
+    field: Upstream.spec.keepalive.maxRequests
+  - name: least_conn
+    module: ngx_http_upstream_least_conn_module
+    contexts: [upstream]
+    status: implemented
+    field: Upstream.spec.balancing.algorithm
+  - name: least_time
+    module: ngx_http_upstream_least_time_module
+    contexts: [upstream]
+    status: missing
+  - name: upstream
+    module: ngx_http_upstream_module
+    contexts: [http]
+    status: implemented
+    field: Upstream
+  - name: server
+    module: ngx_http_upstream_module
+    contexts: [upstream]
+    status: partial
+    field: Upstream.spec.targets
+    note: address, weight, backup, max_fails, fail_timeout; no down, max_conns, resolve, slow_start
+  - name: resolver
+    module: ngx_http_upstream_module
+    contexts: [upstream]
+    status: missing
+  - name: resolver_timeout
+    module: ngx_http_upstream_module
+    contexts: [upstream]
+    status: missing
+  - name: random
+    module: ngx_http_upstream_random_module
+    contexts: [upstream]
+    status: missing
+  - name: sticky
+    module: ngx_http_upstream_sticky_module
+    contexts: [upstream]
+    status: missing
+  - name: zone
+    module: ngx_http_upstream_zone_module
+    contexts: [upstream]
+    status: missing
+  - name: userid
+    module: ngx_http_userid_module
+    contexts: [http, server, location]
+    status: missing
+  - name: userid_service
+    module: ngx_http_userid_module
+    contexts: [http, server, location]
+    status: missing
+  - name: userid_name
+    module: ngx_http_userid_module
+    contexts: [http, server, location]
+    status: missing
+  - name: userid_domain
+    module: ngx_http_userid_module
+    contexts: [http, server, location]
+    status: missing
+  - name: userid_path
+    module: ngx_http_userid_module
+    contexts: [http, server, location]
+    status: missing
+  - name: userid_expires
+    module: ngx_http_userid_module
+    contexts: [http, server, location]
+    status: missing
+  - name: userid_flags
+    module: ngx_http_userid_module
+    contexts: [http, server, location]
+    status: missing
+  - name: userid_p3p
+    module: ngx_http_userid_module
+    contexts: [http, server, location]
+    status: missing
+  - name: userid_mark
+    module: ngx_http_userid_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_pass
+    module: ngx_http_uwsgi_module
+    contexts: [location, location if]
+    status: missing
+  - name: uwsgi_modifier1
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_modifier2
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_store
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_store_access
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_buffering
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_request_buffering
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_ignore_client_abort
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_bind
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_socket_keepalive
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_socket_rcvbuf
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_socket_sndbuf
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_connect_timeout
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_send_timeout
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_buffer_size
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_pass_request_headers
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_pass_request_body
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_intercept_errors
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_read_timeout
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_buffers
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_busy_buffers_size
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_force_ranges
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_limit_rate
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_cache
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_cache_key
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_cache_path
+    module: ngx_http_uwsgi_module
+    contexts: [http]
+    status: missing
+  - name: uwsgi_cache_bypass
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_no_cache
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_cache_valid
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_cache_min_uses
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_cache_max_range_offset
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_cache_use_stale
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_cache_methods
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_cache_lock
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_cache_lock_timeout
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_cache_lock_age
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_cache_revalidate
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_cache_background_update
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_temp_path
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_max_temp_file_size
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_temp_file_write_size
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_next_upstream
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_next_upstream_tries
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_next_upstream_timeout
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_param
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_string
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_pass_header
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_hide_header
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_ignore_headers
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_ssl_session_reuse
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_ssl_protocols
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_ssl_ciphers
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_ssl_name
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_ssl_server_name
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_ssl_verify
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_ssl_verify_depth
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_ssl_trusted_certificate
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_ssl_crl
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_ssl_certificate
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_ssl_certificate_key
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_ssl_certificate_cache
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_ssl_password_file
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: uwsgi_ssl_conf_command
+    module: ngx_http_uwsgi_module
+    contexts: [http, server, location]
+    status: missing
+  - name: http2
+    module: ngx_http_v2_module
+    contexts: [http, server]
+    status: implemented
+    field: Listener.spec.http2
+  - name: http2_recv_buffer_size
+    module: ngx_http_v2_module
+    contexts: [http]
+    status: missing
+  - name: http2_pool_size
+    module: ngx_http_v2_module
+    contexts: [http, server]
+    status: missing
+  - name: http2_max_concurrent_streams
+    module: ngx_http_v2_module
+    contexts: [http, server]
+    status: missing
+  - name: http2_max_concurrent_pushes
+    module: ngx_http_v2_module
+    contexts: [http, server]
+    status: missing
+  - name: http2_max_requests
+    module: ngx_http_v2_module
+    contexts: [http, server]
+    status: missing
+  - name: http2_max_field_size
+    module: ngx_http_v2_module
+    contexts: [http, server]
+    status: missing
+  - name: http2_max_header_size
+    module: ngx_http_v2_module
+    contexts: [http, server]
+    status: missing
+  - name: http2_body_preread_size
+    module: ngx_http_v2_module
+    contexts: [http, server]
+    status: missing
+  - name: http2_streams_index_size
+    module: ngx_http_v2_module
+    contexts: [http, server]
+    status: missing
+  - name: http2_recv_timeout
+    module: ngx_http_v2_module
+    contexts: [http, server]
+    status: missing
+  - name: http2_idle_timeout
+    module: ngx_http_v2_module
+    contexts: [http, server]
+    status: missing
+  - name: http2_chunk_size
+    module: ngx_http_v2_module
+    contexts: [http, server, location]
+    status: missing
+  - name: http2_push_preload
+    module: ngx_http_v2_module
+    contexts: [http, server, location]
+    status: missing
+  - name: http2_push
+    module: ngx_http_v2_module
+    contexts: [http, server, location]
+    status: missing
+  - name: http3
+    module: ngx_http_v3_module
+    contexts: [http, server]
+    status: missing
+  - name: http3_hq
+    module: ngx_http_v3_module
+    contexts: [http, server]
+    status: missing
+  - name: http3_max_concurrent_streams
+    module: ngx_http_v3_module
+    contexts: [http, server]
+    status: missing
+  - name: http3_stream_buffer_size
+    module: ngx_http_v3_module
+    contexts: [http, server]
+    status: missing
+  - name: quic_retry
+    module: ngx_http_v3_module
+    contexts: [http, server]
+    status: missing
+  - name: quic_gso
+    module: ngx_http_v3_module
+    contexts: [http, server]
+    status: missing
+  - name: quic_host_key
+    module: ngx_http_v3_module
+    contexts: [http, server]
+    status: missing
+  - name: quic_active_connection_id_limit
+    module: ngx_http_v3_module
+    contexts: [http, server]
+    status: missing
+  - name: xml_entities
+    module: ngx_http_xslt_filter_module
+    contexts: [http, server, location]
+    status: missing
+  - name: xml_external_entities
+    module: ngx_http_xslt_filter_module
+    contexts: [http, server, location]
+    status: missing
+  - name: xslt_stylesheet
+    module: ngx_http_xslt_filter_module
+    contexts: [location]
+    status: missing
+  - name: xslt_param
+    module: ngx_http_xslt_filter_module
+    contexts: [http, server, location]
+    status: missing
+  - name: xslt_string_param
+    module: ngx_http_xslt_filter_module
+    contexts: [http, server, location]
+    status: missing
+  - name: xslt_types
+    module: ngx_http_xslt_filter_module
+    contexts: [http, server, location]
+    status: missing
+  - name: xslt_last_modified
+    module: ngx_http_xslt_filter_module
+    contexts: [http, server, location]
+    status: missing
+  - name: kqueue_changes
+    module: ngx_kqueue_module
+    contexts: [events]
+    status: missing
+  - name: kqueue_events
+    module: ngx_kqueue_module
+    contexts: [events]
+    status: missing
+  - name: auth_http
+    module: ngx_mail_auth_http_module
+    contexts: [mail, mail server]
+    status: missing
+  - name: auth_http_timeout
+    module: ngx_mail_auth_http_module
+    contexts: [mail, mail server]
+    status: missing
+  - name: auth_http_header
+    module: ngx_mail_auth_http_module
+    contexts: [mail, mail server]
+    status: missing
+  - name: auth_http_pass_client_cert
+    module: ngx_mail_auth_http_module
+    contexts: [mail, mail server]
+    status: missing
+  - name: server
+    module: ngx_mail_core_module
+    contexts: [mail]
+    status: missing
+  - name: listen
+    module: ngx_mail_core_module
+    contexts: [mail server]
+    status: missing
+  - name: protocol
+    module: ngx_mail_core_module
+    contexts: [mail server]
+    status: missing
+  - name: timeout
+    module: ngx_mail_core_module
+    contexts: [mail, mail server]
+    status: missing
+  - name: server_name
+    module: ngx_mail_core_module
+    contexts: [mail, mail server]
+    status: missing
+  - name: error_log
+    module: ngx_mail_core_module
+    contexts: [mail, mail server]
+    status: missing
+  - name: resolver
+    module: ngx_mail_core_module
+    contexts: [mail, mail server]
+    status: missing
+  - name: resolver_timeout
+    module: ngx_mail_core_module
+    contexts: [mail, mail server]
+    status: missing
+  - name: max_errors
+    module: ngx_mail_core_module
+    contexts: [mail, mail server]
+    status: missing
+  - name: imap_client_buffer
+    module: ngx_mail_imap_module
+    contexts: [mail, mail server]
+    status: missing
+  - name: imap_capabilities
+    module: ngx_mail_imap_module
+    contexts: [mail, mail server]
+    status: missing
+  - name: imap_auth
+    module: ngx_mail_imap_module
+    contexts: [mail, mail server]
+    status: missing
+  - name: mail
+    module: ngx_mail_module
+    contexts: [main]
+    status: missing
+  - name: pop3_capabilities
+    module: ngx_mail_pop3_module
+    contexts: [mail, mail server]
+    status: missing
+  - name: pop3_auth
+    module: ngx_mail_pop3_module
+    contexts: [mail, mail server]
+    status: missing
+  - name: proxy
+    module: ngx_mail_proxy_module
+    contexts: [mail, mail server]
+    status: missing
+  - name: proxy_buffer
+    module: ngx_mail_proxy_module
+    contexts: [mail, mail server]
+    status: missing
+  - name: proxy_timeout
+    module: ngx_mail_proxy_module
+    contexts: [mail, mail server]
+    status: missing
+  - name: proxy_pass_error_message
+    module: ngx_mail_proxy_module
+    contexts: [mail, mail server]
+    status: missing
+  - name: xclient
+    module: ngx_mail_proxy_module
+    contexts: [mail, mail server]
+    status: missing
+  - name: proxy_smtp_auth
+    module: ngx_mail_proxy_module
+    contexts: [mail, mail server]
+    status: missing
+  - name: proxy_protocol
+    module: ngx_mail_proxy_module
+    contexts: [mail, mail server]
+    status: missing
+  - name: set_real_ip_from
+    module: ngx_mail_realip_module
+    contexts: [mail, mail server]
+    status: missing
+  - name: smtp_client_buffer
+    module: ngx_mail_smtp_module
+    contexts: [mail, mail server]
+    status: missing
+  - name: smtp_greeting_delay
+    module: ngx_mail_smtp_module
+    contexts: [mail, mail server]
+    status: missing
+  - name: smtp_capabilities
+    module: ngx_mail_smtp_module
+    contexts: [mail, mail server]
+    status: missing
+  - name: smtp_auth
+    module: ngx_mail_smtp_module
+    contexts: [mail, mail server]
+    status: missing
+  - name: starttls
+    module: ngx_mail_ssl_module
+    contexts: [mail, mail server]
+    status: missing
+  - name: ssl_certificate
+    module: ngx_mail_ssl_module
+    contexts: [mail, mail server]
+    status: missing
+  - name: ssl_certificate_key
+    module: ngx_mail_ssl_module
+    contexts: [mail, mail server]
+    status: missing
+  - name: ssl_password_file
+    module: ngx_mail_ssl_module
+    contexts: [mail, mail server]
+    status: missing
+  - name: ssl_certificate_compression
+    module: ngx_mail_ssl_module
+    contexts: [mail, mail server]
+    status: missing
+  - name: ssl_dhparam
+    module: ngx_mail_ssl_module
+    contexts: [mail, mail server]
+    status: missing
+  - name: ssl_ecdh_curve
+    module: ngx_mail_ssl_module
+    contexts: [mail, mail server]
+    status: missing
+  - name: ssl_protocols
+    module: ngx_mail_ssl_module
+    contexts: [mail, mail server]
+    status: missing
+  - name: ssl_ciphers
+    module: ngx_mail_ssl_module
+    contexts: [mail, mail server]
+    status: missing
+  - name: ssl_prefer_server_ciphers
+    module: ngx_mail_ssl_module
+    contexts: [mail, mail server]
+    status: missing
+  - name: ssl_session_cache
+    module: ngx_mail_ssl_module
+    contexts: [mail, mail server]
+    status: missing
+  - name: ssl_session_tickets
+    module: ngx_mail_ssl_module
+    contexts: [mail, mail server]
+    status: missing
+  - name: ssl_session_ticket_key
+    module: ngx_mail_ssl_module
+    contexts: [mail, mail server]
+    status: missing
+  - name: ssl_session_timeout
+    module: ngx_mail_ssl_module
+    contexts: [mail, mail server]
+    status: missing
+  - name: ssl_verify_client
+    module: ngx_mail_ssl_module
+    contexts: [mail, mail server]
+    status: missing
+  - name: ssl_verify_depth
+    module: ngx_mail_ssl_module
+    contexts: [mail, mail server]
+    status: missing
+  - name: ssl_client_certificate
+    module: ngx_mail_ssl_module
+    contexts: [mail, mail server]
+    status: missing
+  - name: ssl_trusted_certificate
+    module: ngx_mail_ssl_module
+    contexts: [mail, mail server]
+    status: missing
+  - name: ssl_crl
+    module: ngx_mail_ssl_module
+    contexts: [mail, mail server]
+    status: missing
+  - name: ssl_conf_command
+    module: ngx_mail_ssl_module
+    contexts: [mail, mail server]
+    status: missing
+  - name: ssl_object_cache_inheritable
+    module: ngx_openssl_cache_module
+    contexts: [main]
+    status: missing
+  - name: ssl_engine
+    module: ngx_openssl_module
+    contexts: [main]
+    status: missing
+  - name: quic_bpf
+    module: ngx_quic_bpf_module
+    contexts: [main]
+    status: missing
+  - name: pcre_jit
+    module: ngx_regex_module
+    contexts: [main]
+    status: missing
+  - name: allow
+    module: ngx_stream_access_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: deny
+    module: ngx_stream_access_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: variables_hash_max_size
+    module: ngx_stream_core_module
+    contexts: [stream]
+    status: missing
+  - name: variables_hash_bucket_size
+    module: ngx_stream_core_module
+    contexts: [stream]
+    status: missing
+  - name: server_names_hash_max_size
+    module: ngx_stream_core_module
+    contexts: [stream]
+    status: missing
+  - name: server_names_hash_bucket_size
+    module: ngx_stream_core_module
+    contexts: [stream]
+    status: missing
+  - name: server
+    module: ngx_stream_core_module
+    contexts: [stream]
+    status: missing
+  - name: listen
+    module: ngx_stream_core_module
+    contexts: [stream server]
+    status: missing
+  - name: server_name
+    module: ngx_stream_core_module
+    contexts: [stream server]
+    status: missing
+  - name: error_log
+    module: ngx_stream_core_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: resolver
+    module: ngx_stream_core_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: resolver_timeout
+    module: ngx_stream_core_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: proxy_protocol_timeout
+    module: ngx_stream_core_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: tcp_nodelay
+    module: ngx_stream_core_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: preread_buffer_size
+    module: ngx_stream_core_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: preread_timeout
+    module: ngx_stream_core_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: geo
+    module: ngx_stream_geo_module
+    contexts: [stream]
+    status: missing
+  - name: geoip_country
+    module: ngx_stream_geoip_module
+    contexts: [stream]
+    status: missing
+  - name: geoip_org
+    module: ngx_stream_geoip_module
+    contexts: [stream]
+    status: missing
+  - name: geoip_city
+    module: ngx_stream_geoip_module
+    contexts: [stream]
+    status: missing
+  - name: limit_conn_zone
+    module: ngx_stream_limit_conn_module
+    contexts: [stream]
+    status: missing
+  - name: limit_conn
+    module: ngx_stream_limit_conn_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: limit_conn_log_level
+    module: ngx_stream_limit_conn_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: limit_conn_dry_run
+    module: ngx_stream_limit_conn_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: log_format
+    module: ngx_stream_log_module
+    contexts: [stream]
+    status: missing
+  - name: access_log
+    module: ngx_stream_log_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: open_log_file_cache
+    module: ngx_stream_log_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: map
+    module: ngx_stream_map_module
+    contexts: [stream]
+    status: missing
+  - name: map_hash_max_size
+    module: ngx_stream_map_module
+    contexts: [stream]
+    status: missing
+  - name: map_hash_bucket_size
+    module: ngx_stream_map_module
+    contexts: [stream]
+    status: missing
+  - name: stream
+    module: ngx_stream_module
+    contexts: [main]
+    status: missing
+  - name: pass
+    module: ngx_stream_pass_module
+    contexts: [stream server]
+    status: missing
+  - name: proxy_pass
+    module: ngx_stream_proxy_module
+    contexts: [stream server]
+    status: missing
+  - name: proxy_bind
+    module: ngx_stream_proxy_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: proxy_socket_keepalive
+    module: ngx_stream_proxy_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: proxy_socket_rcvbuf
+    module: ngx_stream_proxy_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: proxy_socket_sndbuf
+    module: ngx_stream_proxy_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: proxy_connect_timeout
+    module: ngx_stream_proxy_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: proxy_timeout
+    module: ngx_stream_proxy_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: proxy_buffer_size
+    module: ngx_stream_proxy_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: proxy_downstream_buffer
+    module: ngx_stream_proxy_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: proxy_upstream_buffer
+    module: ngx_stream_proxy_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: proxy_upload_rate
+    module: ngx_stream_proxy_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: proxy_download_rate
+    module: ngx_stream_proxy_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: proxy_requests
+    module: ngx_stream_proxy_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: proxy_responses
+    module: ngx_stream_proxy_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: proxy_next_upstream
+    module: ngx_stream_proxy_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: proxy_next_upstream_tries
+    module: ngx_stream_proxy_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: proxy_next_upstream_timeout
+    module: ngx_stream_proxy_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: proxy_protocol
+    module: ngx_stream_proxy_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: proxy_half_close
+    module: ngx_stream_proxy_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: proxy_ssl
+    module: ngx_stream_proxy_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: proxy_ssl_session_reuse
+    module: ngx_stream_proxy_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: proxy_ssl_protocols
+    module: ngx_stream_proxy_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: proxy_ssl_ciphers
+    module: ngx_stream_proxy_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: proxy_ssl_name
+    module: ngx_stream_proxy_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: proxy_ssl_server_name
+    module: ngx_stream_proxy_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: proxy_ssl_alpn
+    module: ngx_stream_proxy_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: proxy_ssl_verify
+    module: ngx_stream_proxy_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: proxy_ssl_verify_depth
+    module: ngx_stream_proxy_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: proxy_ssl_trusted_certificate
+    module: ngx_stream_proxy_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: proxy_ssl_crl
+    module: ngx_stream_proxy_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: proxy_ssl_certificate
+    module: ngx_stream_proxy_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: proxy_ssl_certificate_key
+    module: ngx_stream_proxy_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: proxy_ssl_certificate_cache
+    module: ngx_stream_proxy_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: proxy_ssl_password_file
+    module: ngx_stream_proxy_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: proxy_ssl_conf_command
+    module: ngx_stream_proxy_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: set_real_ip_from
+    module: ngx_stream_realip_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: return
+    module: ngx_stream_return_module
+    contexts: [stream server]
+    status: missing
+  - name: set
+    module: ngx_stream_set_module
+    contexts: [stream server]
+    status: missing
+  - name: split_clients
+    module: ngx_stream_split_clients_module
+    contexts: [stream]
+    status: missing
+  - name: ssl_handshake_timeout
+    module: ngx_stream_ssl_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: ssl_certificate
+    module: ngx_stream_ssl_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: ssl_certificate_key
+    module: ngx_stream_ssl_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: ssl_certificate_cache
+    module: ngx_stream_ssl_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: ssl_ech_file
+    module: ngx_stream_ssl_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: ssl_password_file
+    module: ngx_stream_ssl_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: ssl_certificate_compression
+    module: ngx_stream_ssl_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: ssl_dhparam
+    module: ngx_stream_ssl_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: ssl_ecdh_curve
+    module: ngx_stream_ssl_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: ssl_protocols
+    module: ngx_stream_ssl_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: ssl_ciphers
+    module: ngx_stream_ssl_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: ssl_verify_client
+    module: ngx_stream_ssl_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: ssl_verify_depth
+    module: ngx_stream_ssl_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: ssl_client_certificate
+    module: ngx_stream_ssl_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: ssl_trusted_certificate
+    module: ngx_stream_ssl_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: ssl_prefer_server_ciphers
+    module: ngx_stream_ssl_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: ssl_session_cache
+    module: ngx_stream_ssl_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: ssl_session_tickets
+    module: ngx_stream_ssl_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: ssl_session_ticket_key
+    module: ngx_stream_ssl_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: ssl_session_timeout
+    module: ngx_stream_ssl_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: ssl_crl
+    module: ngx_stream_ssl_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: ssl_ocsp
+    module: ngx_stream_ssl_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: ssl_ocsp_responder
+    module: ngx_stream_ssl_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: ssl_ocsp_cache
+    module: ngx_stream_ssl_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: ssl_stapling
+    module: ngx_stream_ssl_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: ssl_stapling_file
+    module: ngx_stream_ssl_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: ssl_stapling_responder
+    module: ngx_stream_ssl_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: ssl_stapling_verify
+    module: ngx_stream_ssl_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: ssl_conf_command
+    module: ngx_stream_ssl_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: ssl_reject_handshake
+    module: ngx_stream_ssl_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: ssl_alpn
+    module: ngx_stream_ssl_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: ssl_preread
+    module: ngx_stream_ssl_preread_module
+    contexts: [stream, stream server]
+    status: missing
+  - name: hash
+    module: ngx_stream_upstream_hash_module
+    contexts: [stream upstream]
+    status: missing
+  - name: least_conn
+    module: ngx_stream_upstream_least_conn_module
+    contexts: [stream upstream]
+    status: missing
+  - name: least_time
+    module: ngx_stream_upstream_least_time_module
+    contexts: [stream upstream]
+    status: missing
+  - name: upstream
+    module: ngx_stream_upstream_module
+    contexts: [stream]
+    status: missing
+  - name: server
+    module: ngx_stream_upstream_module
+    contexts: [stream upstream]
+    status: missing
+  - name: resolver
+    module: ngx_stream_upstream_module
+    contexts: [stream upstream]
+    status: missing
+  - name: resolver_timeout
+    module: ngx_stream_upstream_module
+    contexts: [stream upstream]
+    status: missing
+  - name: random
+    module: ngx_stream_upstream_random_module
+    contexts: [stream upstream]
+    status: missing
+  - name: zone
+    module: ngx_stream_upstream_zone_module
+    contexts: [stream upstream]
+    status: missing
+  - name: thread_pool
+    module: ngx_thread_pool_module
+    contexts: [main]
+    status: missing
