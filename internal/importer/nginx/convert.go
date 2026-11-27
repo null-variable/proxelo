@@ -457,6 +457,14 @@ func (c *converter) common(d *Directive, s *scope) bool {
 		"proxy_cache_background_update", "proxy_cache_revalidate", "proxy_cache_convert_head", "proxy_ignore_headers":
 		c.cacheDirective(d, s)
 		return true
+	case "slice":
+		if arg(0) == "0" {
+			s.cache.Slice = ""
+		} else {
+			s.cache.Slice = arg(0)
+		}
+		c.note(d, Converted, "")
+		return true
 	case "proxy_cache_lock_age", "proxy_cache_max_range_offset":
 		c.note(d, Replaced, "the lock lasts as long as the request that holds it; ranges are served from whole entries")
 		return true

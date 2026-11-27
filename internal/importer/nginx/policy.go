@@ -261,7 +261,7 @@ func (c *converter) cachePolicy(s, parent scope) (string, bool) {
 	k := s.cache
 	p.Key, p.Valid, p.Methods, p.MinUses, p.Bypass, p.NoStore = k.Key, k.Valid, k.Methods, k.MinUses, k.Bypass, k.NoStore
 	p.Lock, p.LockTimeout, p.UseStale, p.BackgroundUpdate = k.Lock, k.LockTimeout, k.UseStale, k.BackgroundUpdate
-	p.Revalidate, p.KeepHead, p.Ignore = k.Revalidate, k.KeepHead, k.Ignore
+	p.Revalidate, p.KeepHead, p.Ignore, p.Slice = k.Revalidate, k.KeepHead, k.Ignore, k.Slice
 	if p.BackgroundUpdate && !slices.Contains(p.UseStale, "updating") {
 		p.BackgroundUpdate = false
 	}

@@ -311,6 +311,7 @@ func (st *site) cache(pols []*model.Policy) *snapshotv1.Cache {
 		Lock: c.Lock, LockTimeoutMs: millis(c.LockTimeout), BackgroundUpdate: c.BackgroundUpdate,
 		Revalidate: c.Revalidate, KeepHead: c.KeepHead,
 	}
+	out.Slice, _ = model.ParseSize(c.Slice)
 	for _, v := range c.Valid {
 		cv := &snapshotv1.CacheValid{Seconds: seconds(v.Time)}
 		for _, s := range v.Statuses {

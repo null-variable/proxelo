@@ -1920,7 +1920,9 @@ directives:
   - name: slice
     module: ngx_http_slice_filter_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.cache.slice
+    note: with a cache policy
   - name: split_clients
     module: ngx_http_split_clients_module
     contexts: [http]

@@ -412,6 +412,13 @@ func (c *CachePolicy) validate(es *FieldErrors) {
 		}
 	}
 	checkSeconds(es, "spec.cache.inactive", c.Inactive)
+	if c.Slice != "" {
+		if n, err := ParseSize(c.Slice); err != nil || n == 0 {
+			es.add("spec.cache.slice", "must be a positive size such as \"1m\"")
+		} else if c.Key != "" && !strings.Contains(c.Key, "$slice_range") {
+			es.add("spec.cache.key", "must include $slice_range with slice")
+		}
+	}
 	checkOneLine(es, "spec.cache.key", c.Key)
 	for i, v := range c.Valid {
 		p := fmt.Sprintf("spec.cache.valid[%d]", i)

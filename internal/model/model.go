@@ -924,6 +924,10 @@ type CachePolicy struct {
 	Ignore []string `json:"ignore,omitempty"`
 	// HEAD goes upstream as HEAD, not GET (proxy_cache_convert_head off).
 	KeepHead bool `json:"keepHead,omitempty"`
+	// Fetch and store ranges of this size apart, such as "1m" (nginx
+	// slice); the key gets $slice_range when it is the default. Valid times
+	// should include 206.
+	Slice string `json:"slice,omitempty"`
 	// False turns caching off for the routes it applies to (proxy_cache
 	// off); the other settings are then unused.
 	Enabled *bool `json:"enabled,omitempty"`

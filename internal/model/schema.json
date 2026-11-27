@@ -260,6 +260,10 @@
           "type": "boolean",
           "description": "Refresh expired entries with conditional requests."
         },
+        "slice": {
+          "type": "string",
+          "description": "Fetch and store ranges of this size apart, such as \"1m\" (nginx slice); the key gets $slice_range when it is the default. Valid times should include 206."
+        },
         "useStale": {
           "type": "array",
           "description": "When an expired entry answers instead (proxy_cache_use_stale): \"error\", \"timeout\", \"updating\", \"http_500\", \"http_502\", \"http_503\", \"http_504\", \"http_403\", \"http_404\", \"http_429\".",
@@ -294,6 +298,7 @@
         "revalidate",
         "ignore",
         "keepHead",
+        "slice",
         "enabled"
       ]
     },
