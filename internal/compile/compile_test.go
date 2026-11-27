@@ -679,3 +679,72 @@ func TestValidateTokenAuth(t *testing.T) {
 		}
 	}
 }
+
+func TestCompileWasmAndWAF(t *testing.T) {
+	sha := strings.Repeat("ab", 32)
+	cfg := validConfig()
+	cfg.Policies = []*model.Policy{
+		{Meta: meta("pol_waf", "waf"), Spec: model.PolicySpec{Type: model.PolicyWAF, WAF: &model.WAFPolicy{
+			Module: sha, Mode: model.WAFBlock, Paranoia: 2, RequestBody: true,
+			Exceptions: []model.WAFException{{Rule: 942100}, {Rule: 941100, Path: "/upload"}},
+		}}},
+		{Meta: meta("pol_wasm", "plug"), Spec: model.PolicySpec{Type: model.PolicyWasm, Wasm: &model.WasmPolicy{
+			Module: sha, Configuration: "{}", Timeout: "200ms", MaxMemory: "64m", FailOpen: true,
+		}}},
+	}
+	cfg.Routes[0].Spec.Policies = []string{"pol_waf", "pol_wasm"}
+	for _, p := range cfg.Policies {
+		if es := model.Validate(p); es != nil {
+			t.Fatalf("%s: %v", p.ID, es)
+		}
+	}
+	snap, err := Compile(cfg, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snap.GetWasmModules()) != 1 || snap.GetWasmModules()[0].GetSha256() != sha {
+		t.Fatalf("modules = %v", snap.GetWasmModules())
+	}
+	var a *snapshotv1.Access
+	for _, r := range snap.GetSites()[0].GetRoutes() {
+		if r.GetId() == "rt_api" {
+			a = r.GetAccess()
+		}
+	}
+	if len(a.GetWasm()) != 2 {
+		t.Fatalf("wasm = %v", a.GetWasm())
+	}
+	waf, plug := a.GetWasm()[0], a.GetWasm()[1]
+	cfgText := string(waf.GetConfiguration())
+	for _, want := range []string{"SecRuleEngine On", "SecRequestBodyAccess On", "blocking_paranoia_level=2", "SecRuleRemoveById 942100", `@beginsWith /upload`, "ruleRemoveById=941100", "@owasp_crs/*.conf"} {
+		if !strings.Contains(cfgText, want) {
+			t.Errorf("waf configuration lacks %q: %s", want, cfgText)
+		}
+	}
+	if !waf.GetRequestBody() || waf.GetName() != "waf" {
+		t.Errorf("waf = %v", waf)
+	}
+	if plug.GetTimeoutMs() != 200 || plug.GetMaxMemory() != 64<<20 || !plug.GetFailOpen() || plug.GetName() != "plug" {
+		t.Errorf("wasm = %v", plug)
+	}
+}
+
+func TestValidateWasmAndWAF(t *testing.T) {
+	sha := strings.Repeat("ab", 32)
+	bad := []model.PolicySpec{
+		{Type: model.PolicyWasm, Wasm: &model.WasmPolicy{Module: "nope"}},
+		{Type: model.PolicyWasm, Wasm: &model.WasmPolicy{Module: sha, MaxMemory: "lots"}},
+		{Type: model.PolicyWAF, WAF: &model.WAFPolicy{Module: sha, Mode: "deny"}},
+		{Type: model.PolicyWAF, WAF: &model.WAFPolicy{Module: sha, Paranoia: 5}},
+		{Type: model.PolicyWAF, WAF: &model.WAFPolicy{Module: sha, NoCRS: true, Paranoia: 2}},
+		{Type: model.PolicyWAF, WAF: &model.WAFPolicy{Module: sha, Rules: []string{"a\nb"}}},
+		{Type: model.PolicyWAF, WAF: &model.WAFPolicy{Module: sha, Exceptions: []model.WAFException{{Path: "/x"}}}},
+		{Type: model.PolicyWAF, WAF: &model.WAFPolicy{Module: sha, Exceptions: []model.WAFException{{Rule: 1, Path: "/a b"}}}},
+	}
+	for i, s := range bad {
+		p := &model.Policy{Meta: meta("pol_x", "x"), Spec: s}
+		if es := model.Validate(p); len(es) == 0 {
+			t.Errorf("case %d: no error", i)
+		}
+	}
+}

@@ -123,6 +123,7 @@ func control(args []string) error {
 	defer st.Close()
 
 	dist := distrib.New(log)
+	dist.SetWasmSource(st.WasmBytes)
 	switch rev, err := st.Latest(context.Background()); {
 	case errors.Is(err, store.ErrNotFound):
 	case err != nil:

@@ -85,6 +85,21 @@ func (s *Store) newRevision(ctx context.Context, tx *sql.Tx, author, message str
 	if err != nil {
 		return nil, err
 	}
+	if len(snap.GetWasmModules()) > 0 {
+		known, err := wasmKnown(ctx, tx)
+		if err != nil {
+			return nil, err
+		}
+		var fe model.FieldErrors
+		for _, m := range snap.GetWasmModules() {
+			if !known[m.GetSha256()] {
+				fe = append(fe, model.FieldError{Path: "policies", Message: fmt.Sprintf("wasm module %s is not uploaded", m.GetSha256())})
+			}
+		}
+		if len(fe) > 0 {
+			return nil, fe
+		}
+	}
 	snapBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(snap)
 	if err != nil {
 		return nil, err

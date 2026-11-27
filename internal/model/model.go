@@ -684,6 +684,8 @@ const (
 	PolicyRealIP      PolicyType = "realIp"
 	PolicyCompression PolicyType = "compression"
 	PolicyCache       PolicyType = "cache"
+	PolicyWasm        PolicyType = "wasm"
+	PolicyWAF         PolicyType = "waf"
 )
 
 // PolicySpec carries the settings for Type and nothing else.
@@ -702,6 +704,8 @@ type PolicySpec struct {
 	RealIP      *RealIPPolicy      `json:"realIp,omitempty"`
 	Compression *CompressionPolicy `json:"compression,omitempty"`
 	Cache       *CachePolicy       `json:"cache,omitempty"`
+	Wasm        *WasmPolicy        `json:"wasm,omitempty"`
+	WAF         *WAFPolicy         `json:"waf,omitempty"`
 }
 
 // HeadersPolicy replaces nginx add_header, proxy_set_header and
@@ -987,6 +991,64 @@ type CachePolicy struct {
 	// False turns caching off for the routes it applies to (proxy_cache
 	// off); the other settings are then unused.
 	Enabled *bool `json:"enabled,omitempty"`
+}
+
+// WasmPolicy runs a proxy-wasm (ABI 0.2) plugin in the access phase of the
+// routes it applies to: it sees the request headers and, with requestBody,
+// the body, then the response headers, and may answer itself. Every wasm
+// and waf policy that applies runs, outermost first.
+type WasmPolicy struct {
+	// SHA-256 of an uploaded module, lowercase hex.
+	Module string `json:"module"`
+	// Plugin name, its root ID. Default the policy name.
+	PluginName string `json:"pluginName,omitempty"`
+	// Plugin configuration, often JSON.
+	Configuration string `json:"configuration,omitempty"`
+	// VM configuration.
+	VMConfiguration string `json:"vmConfiguration,omitempty"`
+	// Buffer the request body for the plugin, up to maxBody (default "1m").
+	RequestBody bool   `json:"requestBody,omitempty"`
+	MaxBody     string `json:"maxBody,omitempty"`
+	// Memory of one instance at most. Default "256m".
+	MaxMemory string `json:"maxMemory,omitempty"`
+	// Time one callback may run. Default "1s".
+	Timeout string `json:"timeout,omitempty"`
+	// When the plugin fails, pass the request on instead of answering 500.
+	FailOpen bool `json:"failOpen,omitempty"`
+}
+
+// WAFPolicy filters requests with the Coraza web application firewall,
+// ModSecurity rules with the OWASP Core Rule Set, run as a proxy-wasm
+// plugin. In detect mode matches are only logged; block answers 403.
+type WAFPolicy struct {
+	// SHA-256 of an uploaded coraza-proxy-wasm module, lowercase hex.
+	Module string `json:"module"`
+	// "detect" (default) or "block".
+	Mode string `json:"mode,omitempty"`
+	// Leave out the OWASP Core Rule Set; only rules apply.
+	NoCRS bool `json:"noCrs,omitempty"`
+	// CRS paranoia level 1 (default) to 4.
+	Paranoia uint32 `json:"paranoia,omitempty"`
+	// Inbound anomaly score that blocks. Default 5.
+	AnomalyThreshold uint32 `json:"anomalyThreshold,omitempty"`
+	// More ModSecurity directives (SecLang), one per entry, after the CRS.
+	Rules []string `json:"rules,omitempty"`
+	// Rules turned off, everywhere or under a path.
+	Exceptions []WAFException `json:"exceptions,omitempty"`
+	// Inspect the request body, up to maxBody (default "1m").
+	RequestBody bool   `json:"requestBody,omitempty"`
+	MaxBody     string `json:"maxBody,omitempty"`
+	// When the firewall fails, pass the request on instead of answering 500.
+	FailOpen bool `json:"failOpen,omitempty"`
+}
+
+// WAFException turns off one rule, for requests whose path starts with
+// Path when set.
+type WAFException struct {
+	Rule uint32 `json:"rule"`
+	Path string `json:"path,omitempty"`
+	// Why, for whoever reads the policy later.
+	Note string `json:"note,omitempty"`
 }
 
 // CacheValid is one proxy_cache_valid line.

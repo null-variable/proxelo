@@ -47,7 +47,7 @@ export function variants(s: Schema): string[] | null {
 
 // Words the generated labels spell in capitals.
 const ACRONYMS: Record<string, string> = {
-  tls: "TLS", http2: "HTTP/2", http3: "HTTP/3", http: "HTTP", https: "HTTPS", uri: "URI", url: "URL", pem: "PEM", acme: "ACME", cidrs: "CIDRs", dns: "DNS", json: "JSON", ip: "IP", id: "ID", jwt: "JWT", jwks: "JWKS", oidc: "OIDC",
+  tls: "TLS", http2: "HTTP/2", http3: "HTTP/3", http: "HTTP", https: "HTTPS", uri: "URI", url: "URL", pem: "PEM", acme: "ACME", cidrs: "CIDRs", dns: "DNS", json: "JSON", ip: "IP", id: "ID", jwt: "JWT", jwks: "JWKS", oidc: "OIDC", wasm: "WASM", waf: "WAF", crs: "CRS", vm: "VM",
 };
 
 export function label(name: string): string {

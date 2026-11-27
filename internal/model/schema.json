@@ -1492,8 +1492,18 @@
             "oidc",
             "realIp",
             "compression",
-            "cache"
+            "cache",
+            "wasm",
+            "waf"
           ]
+        },
+        "waf": {
+          "$ref": "#/$defs/WAFPolicy",
+          "x-nullable": true
+        },
+        "wasm": {
+          "$ref": "#/$defs/WasmPolicy",
+          "x-nullable": true
         }
       },
       "x-order": [
@@ -1510,7 +1520,9 @@
         "oidc",
         "realIp",
         "compression",
-        "cache"
+        "cache",
+        "wasm",
+        "waf"
       ],
       "required": [
         "type"
@@ -2359,6 +2371,154 @@
       "required": [
         "name",
         "op"
+      ]
+    },
+    "WAFException": {
+      "type": "object",
+      "description": "WAFException turns off one rule, for requests whose path starts with Path when set.",
+      "properties": {
+        "note": {
+          "type": "string",
+          "description": "Why, for whoever reads the policy later."
+        },
+        "path": {
+          "type": "string"
+        },
+        "rule": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "x-order": [
+        "rule",
+        "path",
+        "note"
+      ],
+      "required": [
+        "rule"
+      ]
+    },
+    "WAFPolicy": {
+      "type": "object",
+      "description": "WAFPolicy filters requests with the Coraza web application firewall, ModSecurity rules with the OWASP Core Rule Set, run as a proxy-wasm plugin. In detect mode matches are only logged; block answers 403.",
+      "properties": {
+        "anomalyThreshold": {
+          "type": "integer",
+          "description": "Inbound anomaly score that blocks. Default 5.",
+          "minimum": 0
+        },
+        "exceptions": {
+          "type": "array",
+          "description": "Rules turned off, everywhere or under a path.",
+          "items": {
+            "$ref": "#/$defs/WAFException"
+          }
+        },
+        "failOpen": {
+          "type": "boolean",
+          "description": "When the firewall fails, pass the request on instead of answering 500."
+        },
+        "maxBody": {
+          "type": "string"
+        },
+        "mode": {
+          "type": "string",
+          "description": "\"detect\" (default) or \"block\"."
+        },
+        "module": {
+          "type": "string",
+          "description": "SHA-256 of an uploaded coraza-proxy-wasm module, lowercase hex."
+        },
+        "noCrs": {
+          "type": "boolean",
+          "description": "Leave out the OWASP Core Rule Set; only rules apply."
+        },
+        "paranoia": {
+          "type": "integer",
+          "description": "CRS paranoia level 1 (default) to 4.",
+          "minimum": 0
+        },
+        "requestBody": {
+          "type": "boolean",
+          "description": "Inspect the request body, up to maxBody (default \"1m\")."
+        },
+        "rules": {
+          "type": "array",
+          "description": "More ModSecurity directives (SecLang), one per entry, after the CRS.",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "x-order": [
+        "module",
+        "mode",
+        "noCrs",
+        "paranoia",
+        "anomalyThreshold",
+        "rules",
+        "exceptions",
+        "requestBody",
+        "maxBody",
+        "failOpen"
+      ],
+      "required": [
+        "module"
+      ]
+    },
+    "WasmPolicy": {
+      "type": "object",
+      "description": "WasmPolicy runs a proxy-wasm (ABI 0.2) plugin in the access phase of the routes it applies to: it sees the request headers and, with requestBody, the body, then the response headers, and may answer itself. Every wasm and waf policy that applies runs, outermost first.",
+      "properties": {
+        "configuration": {
+          "type": "string",
+          "description": "Plugin configuration, often JSON."
+        },
+        "failOpen": {
+          "type": "boolean",
+          "description": "When the plugin fails, pass the request on instead of answering 500."
+        },
+        "maxBody": {
+          "type": "string"
+        },
+        "maxMemory": {
+          "type": "string",
+          "description": "Memory of one instance at most. Default \"256m\"."
+        },
+        "module": {
+          "type": "string",
+          "description": "SHA-256 of an uploaded module, lowercase hex."
+        },
+        "pluginName": {
+          "type": "string",
+          "description": "Plugin name, its root ID. Default the policy name."
+        },
+        "requestBody": {
+          "type": "boolean",
+          "description": "Buffer the request body for the plugin, up to maxBody (default \"1m\")."
+        },
+        "timeout": {
+          "type": "string",
+          "description": "Time one callback may run. Default \"1s\"."
+        },
+        "vmConfiguration": {
+          "type": "string",
+          "description": "VM configuration."
+        }
+      },
+      "x-order": [
+        "module",
+        "pluginName",
+        "configuration",
+        "vmConfiguration",
+        "requestBody",
+        "maxBody",
+        "maxMemory",
+        "timeout",
+        "failOpen"
+      ],
+      "required": [
+        "module"
       ]
     }
   },

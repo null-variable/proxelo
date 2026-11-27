@@ -109,12 +109,27 @@ type Distributor struct {
 
 	taps   taps
 	purges purges
+
+	// wasm gives the bytes of a module by SHA-256; nil when none are kept.
+	wasm func(ctx context.Context, sha string) ([]byte, error)
+}
+
+// wasmChunk is the size of the pieces a module is sent in.
+const wasmChunk = 1 << 20
+
+// SetWasmSource sets where module bytes come from.
+func (d *Distributor) SetWasmSource(f func(ctx context.Context, sha string) ([]byte, error)) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.wasm = f
 }
 
 // published is a snapshot as sent: the exact bytes the hash covers.
 type published struct {
 	revision uint64
 	data     []byte
+	// SHA-256 of the WebAssembly modules it uses.
+	wasm []string
 }
 
 type node struct {
@@ -129,6 +144,8 @@ type node struct {
 	sentTap string
 	// Purges to send on this connection.
 	purges []*distribv1.Purge
+	// SHA-256 of the modules the proxy has: from Hello, then those sent.
+	wasm map[string]bool
 	// replaced is closed when a newer connection takes over the node ID.
 	replaced chan struct{}
 }
@@ -150,6 +167,9 @@ func (d *Distributor) Publish(b []byte) error {
 		return nil
 	}
 	d.latest = &published{revision: snap.GetRevision(), data: slices.Clone(b)}
+	for _, m := range snap.GetWasmModules() {
+		d.latest.wasm = append(d.latest.wasm, m.GetSha256())
+	}
 	d.wakeAll()
 	return nil
 }
@@ -236,6 +256,10 @@ func (d *Distributor) register(hello *distribv1.Hello) *node {
 		},
 		wake:     make(chan struct{}, 1),
 		replaced: make(chan struct{}),
+		wasm:     map[string]bool{},
+	}
+	for _, h := range hello.GetWasmModules() {
+		n.wasm[h] = true
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -302,6 +326,9 @@ func (d *Distributor) sendLoop(ctx context.Context, stream distribv1.Distributio
 			d.mu.Unlock()
 		}
 		if snap != nil {
+			if err := d.sendWasm(ctx, stream, n, snap.wasm); err != nil {
+				return err
+			}
 			resp := &distribv1.SyncResponse{Kind: &distribv1.SyncResponse_SnapshotData{SnapshotData: snap.data}}
 			if err := stream.Send(resp); err != nil {
 				return err
@@ -320,6 +347,46 @@ func (d *Distributor) sendLoop(ctx context.Context, stream distribv1.Distributio
 		case <-n.wake:
 		}
 	}
+}
+
+// sendWasm sends the modules of a snapshot that the proxy lacks, before
+// the snapshot. A module that cannot be read is left out; the proxy then
+// rejects the snapshot and says why.
+func (d *Distributor) sendWasm(ctx context.Context, stream distribv1.DistributionService_SyncServer, n *node, shas []string) error {
+	d.mu.Lock()
+	src := d.wasm
+	var missing []string
+	for _, h := range shas {
+		if !n.wasm[h] {
+			missing = append(missing, h)
+		}
+	}
+	d.mu.Unlock()
+	if src == nil {
+		return nil
+	}
+	for _, h := range missing {
+		b, err := src(ctx, h)
+		if err != nil {
+			d.log.Error("wasm module", "sha256", h, "err", err)
+			continue
+		}
+		for off := 0; ; off += wasmChunk {
+			end := min(off+wasmChunk, len(b))
+			c := &distribv1.WasmChunk{Sha256: h, Offset: uint64(off), Data: b[off:end], Last: end == len(b)}
+			if err := stream.Send(&distribv1.SyncResponse{Kind: &distribv1.SyncResponse_WasmChunk{WasmChunk: c}}); err != nil {
+				return err
+			}
+			if c.Last {
+				break
+			}
+		}
+		d.mu.Lock()
+		n.wasm[h] = true
+		d.mu.Unlock()
+		d.log.Info("wasm module sent", "node", n.status.NodeID, "sha256", h, "bytes", len(b))
+	}
+	return nil
 }
 
 func (d *Distributor) recvLoop(stream distribv1.DistributionService_SyncServer, n *node) error {

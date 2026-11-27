@@ -66,7 +66,12 @@ given inline or fetched from a JWKS URL, as auth_jwt does, with the claims
 as `$jwt_claim_<name>`; and `oidc`, which signs users in with an OpenID
 Connect provider (code flow with PKCE) and keeps them in a signed session
 cookie, with `$oidc_sub` and `$oidc_email`. Client secrets are never
-returned by the API. `bandwidth` throttles response bodies (limit_rate,
+returned by the API. `waf` runs the Coraza web application firewall with
+the OWASP Core Rule Set (paranoia level, anomaly threshold, extra SecLang
+rules, rule exceptions everywhere or under a path), in `detect` mode,
+which only logs, or `block`, which answers 403; `wasm` runs any proxy-wasm
+plugin on the request and response headers and, when asked, the request
+body. Both name an uploaded module by its SHA-256 and can fail open. `bandwidth` throttles response bodies (limit_rate,
 limit_rate_after), and `realIp`, on sites, takes the client address from a
 header set by trusted proxies. Refusals go through the error pages.
 
@@ -231,6 +236,7 @@ without a successor. Under systemd, use `Type=notify`, `NotifyAccess=all` and
 | `POST /api/v1/revisions/{rev}/confirm`, `/rollback`, `PUT .../tag` | Commit-confirm, rollback (`0` empties), retention tag |
 | `GET /api/v1/revisions/{rev}/snapshot` | Compiled snapshot (protobuf, includes keys; admin) |
 | `POST /api/v1/cache/{policy}:purge` | Remove cached responses of a `cache` policy on every connected proxy: `{"keys"}`, `{"prefixes"}`, `{"tags"}` (upstream `Cache-Tag`) or `{"all":true}`; answers per node. Operator |
+| `GET`/`POST /api/v1/wasm[?name=]`, `DELETE /api/v1/wasm/{sha256}` | WebAssembly modules for `wasm` and `waf` policies: list, upload (the module as the body), delete one no policy uses. Proxies receive the modules a snapshot needs before it |
 | `GET /api/v1/nodes` | Connected proxies: active, last sent and last rejected revision |
 | `GET /api/v1/traffic?window=5m` | Requests, 5xx, upstream attempts and failures summed over every proxy (window up to 15m) |
 | `GET /api/v1/schema` | JSON Schema of every resource spec, generated from `internal/model` (`go generate ./internal/model`) |

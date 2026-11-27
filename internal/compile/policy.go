@@ -2,6 +2,7 @@ package compile
 
 import (
 	"cmp"
+	"encoding/json"
 	"fmt"
 	"maps"
 	"slices"
@@ -72,6 +73,8 @@ type zones struct {
 	rate  map[string]uint32
 	conn  map[string]uint32
 	cache map[string]uint32
+	// Module index by SHA-256.
+	wasm map[string]uint32
 }
 
 // The default key of limit policies, nginx's usual $binary_remote_addr.
@@ -178,6 +181,10 @@ func (st *site) effective(all []*model.Policy) effect {
 					KeyCacheS: seconds(j.KeyCache), Issuer: j.Issuer, Audiences: j.Audiences, LeewayS: seconds(j.Leeway),
 				}
 			}
+		case model.PolicyWasm, model.PolicyWAF:
+			if f := st.wasmFilter(p); f != nil {
+				a.Wasm = append(a.Wasm, f)
+			}
 		case model.PolicyOIDC:
 			if o := p.Spec.OIDC; o != nil {
 				a.Oidc = &snapshotv1.Oidc{
@@ -188,7 +195,7 @@ func (st *site) effective(all []*model.Policy) effect {
 			}
 		}
 	}
-	if len(a.RateLimits) > 0 || len(a.ConnLimits) > 0 || len(a.Rules) > 0 || a.BasicAuth != nil || a.ForwardAuth != nil || a.Jwt != nil || a.Oidc != nil {
+	if len(a.RateLimits) > 0 || len(a.ConnLimits) > 0 || len(a.Rules) > 0 || a.BasicAuth != nil || a.ForwardAuth != nil || a.Jwt != nil || a.Oidc != nil || len(a.Wasm) > 0 {
 		e.access = a
 	}
 	e.response, e.request = resp.ops(), req.ops()
@@ -376,4 +383,89 @@ func seconds(d string) uint32 {
 		return 0 // empty, or reported by model.Validate
 	}
 	return uint32(v / time.Second)
+}
+
+// wasmModule returns the index of module sha, adding it on first use.
+func (st *site) wasmModule(sha string) uint32 {
+	if i, ok := st.zones.wasm[sha]; ok {
+		return i
+	}
+	i := uint32(len(st.snap.WasmModules))
+	st.snap.WasmModules = append(st.snap.WasmModules, &snapshotv1.WasmModule{Sha256: sha})
+	st.zones.wasm[sha] = i
+	return i
+}
+
+// wasmFilter compiles a wasm or waf policy.
+func (st *site) wasmFilter(p *model.Policy) *snapshotv1.WasmFilter {
+	size := func(s string) uint64 {
+		n, _ := model.ParseSize(s)
+		return n
+	}
+	if w := p.Spec.Wasm; p.Spec.Type == model.PolicyWasm && w != nil {
+		return &snapshotv1.WasmFilter{
+			Module: st.wasmModule(w.Module), Name: cmp.Or(w.PluginName, p.Name),
+			Configuration: []byte(w.Configuration), VmConfiguration: []byte(w.VMConfiguration),
+			FailOpen: w.FailOpen, RequestBody: w.RequestBody, MaxBody: size(w.MaxBody),
+			MaxMemory: size(w.MaxMemory), TimeoutMs: millis(w.Timeout),
+		}
+	}
+	if w := p.Spec.WAF; p.Spec.Type == model.PolicyWAF && w != nil {
+		return &snapshotv1.WasmFilter{
+			Module: st.wasmModule(w.Module), Name: p.Name, Configuration: corazaConfig(w),
+			FailOpen: w.FailOpen, RequestBody: w.RequestBody, MaxBody: size(w.MaxBody),
+		}
+	}
+	return nil
+}
+
+// wafExceptionID is the first rule ID of the path exceptions.
+const wafExceptionID = 9_990_000
+
+// corazaConfig is the coraza-proxy-wasm plugin configuration of w: the
+// recommended settings, the mode, the Core Rule Set with its paranoia
+// level and threshold, then the exceptions and rules.
+func corazaConfig(w *model.WAFPolicy) []byte {
+	engine := "DetectionOnly"
+	if w.Mode == model.WAFBlock {
+		engine = "On"
+	}
+	body := "Off"
+	if w.RequestBody {
+		body = "On"
+	}
+	d := []string{
+		"Include @recommended-conf",
+		"SecRuleEngine " + engine,
+		"SecRequestBodyAccess " + body,
+		// Response bodies are not given to filters.
+		"SecResponseBodyAccess Off",
+	}
+	// Exceptions under a path turn the rule off before it runs.
+	for i, e := range w.Exceptions {
+		if e.Path != "" {
+			d = append(d, fmt.Sprintf(`SecRule REQUEST_FILENAME "@beginsWith %s" "id:%d,phase:1,pass,nolog,ctl:ruleRemoveById=%d"`, e.Path, wafExceptionID+i, e.Rule))
+		}
+	}
+	if !w.NoCRS {
+		d = append(d, "Include @crs-setup-conf")
+		if w.Paranoia > 0 {
+			d = append(d, fmt.Sprintf(`SecAction "id:900000,phase:1,pass,t:none,nolog,setvar:tx.blocking_paranoia_level=%d"`, w.Paranoia))
+		}
+		if w.AnomalyThreshold > 0 {
+			d = append(d, fmt.Sprintf(`SecAction "id:900110,phase:1,pass,t:none,nolog,setvar:tx.inbound_anomaly_score_threshold=%d"`, w.AnomalyThreshold))
+		}
+		d = append(d, "Include @owasp_crs/*.conf")
+	}
+	d = append(d, w.Rules...)
+	for _, e := range w.Exceptions {
+		if e.Path == "" {
+			d = append(d, fmt.Sprintf("SecRuleRemoveById %d", e.Rule))
+		}
+	}
+	b, _ := json.Marshal(map[string]any{
+		"directives_map":     map[string][]string{"default": d},
+		"default_directives": "default",
+	})
+	return b
 }

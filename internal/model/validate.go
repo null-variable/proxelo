@@ -207,6 +207,34 @@ func checkPEM(es *FieldErrors, path, v, kind string) {
 	}
 }
 
+// WAF modes.
+const (
+	WAFDetect = "detect"
+	WAFBlock  = "block"
+)
+
+// IsModuleHash reports whether s is a SHA-256 in lowercase hex.
+func IsModuleHash(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+	for _, c := range s {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+func checkSizeField(es *FieldErrors, path, v string) {
+	if v == "" {
+		return
+	}
+	if n, err := ParseSize(v); err != nil || n == 0 {
+		es.add(path, "must be a size such as \"1m\"")
+	}
+}
+
 func checkDuration(es *FieldErrors, path, v string) {
 	if v == "" {
 		return
@@ -268,6 +296,8 @@ func (s *PolicySpec) validate(es *FieldErrors) {
 		PolicyRealIP:      s.RealIP != nil,
 		PolicyCompression: s.Compression != nil,
 		PolicyCache:       s.Cache != nil,
+		PolicyWasm:        s.Wasm != nil,
+		PolicyWAF:         s.WAF != nil,
 	}
 	for _, t := range slices.Sorted(maps.Keys(set)) {
 		if set[t] && t != s.Type {
@@ -376,6 +406,45 @@ func (s *PolicySpec) validate(es *FieldErrors) {
 		for i, h := range f.CopyHeaders {
 			checkHeaderName(es, fmt.Sprintf("spec.forwardAuth.copyHeaders[%d]", i), h)
 		}
+	case PolicyWasm:
+		w := s.Wasm
+		if !IsModuleHash(w.Module) {
+			es.add("spec.wasm.module", "must be the SHA-256 of a module in lowercase hex")
+		}
+		checkOneLine(es, "spec.wasm.pluginName", w.PluginName)
+		checkSizeField(es, "spec.wasm.maxBody", w.MaxBody)
+		checkSizeField(es, "spec.wasm.maxMemory", w.MaxMemory)
+		checkDuration(es, "spec.wasm.timeout", w.Timeout)
+	case PolicyWAF:
+		w := s.WAF
+		if !IsModuleHash(w.Module) {
+			es.add("spec.waf.module", "must be the SHA-256 of a module in lowercase hex")
+		}
+		if w.Mode != "" && w.Mode != WAFDetect && w.Mode != WAFBlock {
+			es.add("spec.waf.mode", "must be %q or %q", WAFDetect, WAFBlock)
+		}
+		if w.Paranoia > 4 {
+			es.add("spec.waf.paranoia", "must be 1 to 4")
+		}
+		if w.NoCRS && (w.Paranoia != 0 || w.AnomalyThreshold != 0) {
+			es.add("spec.waf.noCrs", "paranoia and anomalyThreshold need the Core Rule Set")
+		}
+		for i, rl := range w.Rules {
+			if strings.TrimSpace(rl) == "" || strings.ContainsAny(rl, "\r\n") {
+				es.add(fmt.Sprintf("spec.waf.rules[%d]", i), "must be one non-empty line")
+			}
+		}
+		for i, e := range w.Exceptions {
+			at := fmt.Sprintf("spec.waf.exceptions[%d]", i)
+			if e.Rule == 0 {
+				es.add(at+".rule", "is required")
+			}
+			if e.Path != "" && (!strings.HasPrefix(e.Path, "/") || strings.ContainsAny(e.Path, "\"' \t\r\n")) {
+				es.add(at+".path", "must be a path without quotes or spaces")
+			}
+			checkOneLine(es, at+".note", e.Note)
+		}
+		checkSizeField(es, "spec.waf.maxBody", w.MaxBody)
 	case PolicyJWT:
 		j := s.JWT
 		checkOneLine(es, "spec.jwt.realm", j.Realm)

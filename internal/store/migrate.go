@@ -35,6 +35,7 @@ var migrations = []migration{
 	{"groups and group members", migrateGroups},
 	{"groups each revision touched", migrateRevisionGroups},
 	{"single sign-on identities", migrateSSO},
+	{"webassembly modules", migrateWasm},
 }
 
 // SchemaVersion is the version this binary migrates databases to.

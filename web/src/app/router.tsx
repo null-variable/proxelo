@@ -11,6 +11,7 @@ import { Settings } from "../pages/Settings";
 import { Simulator } from "../pages/Simulator";
 import { Tap } from "../pages/Tap";
 import { Topology } from "../pages/Topology";
+import { Wasm } from "../pages/Wasm";
 import { Shell } from "./Shell";
 
 function NotFound() {
@@ -28,6 +29,7 @@ const nodes = createRoute({ getParentRoute: () => root, path: "/nodes", componen
 const simulator = createRoute({ getParentRoute: () => root, path: "/simulator", component: Simulator });
 const tap = createRoute({ getParentRoute: () => root, path: "/tap", component: Tap });
 const topology = createRoute({ getParentRoute: () => root, path: "/topology", component: Topology });
+const wasm = createRoute({ getParentRoute: () => root, path: "/wasm", component: Wasm });
 const settings = createRoute({ getParentRoute: () => root, path: "/settings", component: Settings });
 
 type ChangesTab = "changesets" | "revisions";
@@ -68,7 +70,7 @@ const resource = createRoute({
 });
 
 export const router = createRouter({
-  routeTree: root.addChildren([dashboard, nodes, simulator, tap, topology, settings, changes, changeSet, resources, resource]),
+  routeTree: root.addChildren([dashboard, nodes, simulator, tap, topology, settings, wasm, changes, changeSet, resources, resource]),
   scrollRestoration: true,
 });
 
