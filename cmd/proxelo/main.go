@@ -25,6 +25,7 @@ import (
 	"github.com/null-variable/proxelo/internal/breakglass"
 	"github.com/null-variable/proxelo/internal/compile"
 	"github.com/null-variable/proxelo/internal/deploy"
+	"github.com/null-variable/proxelo/internal/discovery"
 	"github.com/null-variable/proxelo/internal/distrib"
 	"github.com/null-variable/proxelo/internal/model"
 	"github.com/null-variable/proxelo/internal/simulate"
@@ -145,6 +146,11 @@ func control(args []string) error {
 		Apply: func(ctx context.Context, _ *model.Certificate) error { return dep.ApplyHead(ctx) },
 	}, st, dist, log)
 
+	disc := discovery.New(func(ctx context.Context) ([]*model.Upstream, error) {
+		cfg, err := st.Head(ctx)
+		return cfg.Upstreams, err
+	}, dist, log)
+
 	if err := printSetupToken(st, *listen); err != nil {
 		return err
 	}
@@ -157,7 +163,7 @@ func control(args []string) error {
 		*listen = string(v)
 	}
 	root := http.NewServeMux()
-	root.Handle("/api/", api.Handler(st, dist, dep, sim, api.Options{CertsChanged: certs.Kick, AdminAddr: *listen, SecureCookies: *secureCookies}, log))
+	root.Handle("/api/", api.Handler(st, dist, dep, sim, api.Options{CertsChanged: certs.Kick, UpstreamsChanged: disc.Kick, Discovery: disc.Statuses, AdminAddr: *listen, SecureCookies: *secureCookies}, log))
 	root.Handle("/", ui.Handler())
 	adm := admin.New(root, allowList, log)
 	if err := adm.Bind(*listen); err != nil {
@@ -181,6 +187,7 @@ func control(args []string) error {
 	defer stop()
 	go certs.Run(ctx)
 	go dep.Run(ctx)
+	go disc.Run(ctx)
 	errc := make(chan error, 3)
 	go func() { errc <- fmt.Errorf("control socket: %w", grpcSrv.Serve(ln)) }()
 	go func() { errc <- fmt.Errorf("break-glass socket: %w", bgSrv.Serve(bgLn)) }()

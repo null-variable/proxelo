@@ -1189,9 +1189,59 @@ func (t *TryFiles) validate(es *FieldErrors, path string) {
 	}
 }
 
+func (d *Discovery) validate(es *FieldErrors) {
+	switch d.Provider {
+	case DiscoveryDocker:
+		if d.Endpoint != "" && !strings.HasPrefix(d.Endpoint, "unix:///") && !httpURL(d.Endpoint) {
+			es.add("spec.discovery.endpoint", "must be unix:///path or an http or https URL")
+		}
+		if _, err := strconv.ParseUint(d.Port, 10, 16); err != nil || d.Port == "0" {
+			es.add("spec.discovery.port", "must be the container port")
+		}
+		if len(d.Selector) == 0 {
+			es.add("spec.discovery.selector", "at least one label is required")
+		}
+	case DiscoveryKubernetes:
+		if d.Endpoint != "" && !httpURL(d.Endpoint) {
+			es.add("spec.discovery.endpoint", "must be an http or https URL")
+		}
+		if len(d.Selector) != 1 || strings.Count(d.Selector[0], "/") != 1 || strings.HasPrefix(d.Selector[0], "/") || strings.HasSuffix(d.Selector[0], "/") {
+			es.add("spec.discovery.selector", "must be one namespace/service")
+		}
+	case DiscoveryConsul:
+		if d.Endpoint != "" && !httpURL(d.Endpoint) {
+			es.add("spec.discovery.endpoint", "must be an http or https URL")
+		}
+		if len(d.Selector) != 1 || d.Selector[0] == "" {
+			es.add("spec.discovery.selector", "must be one service name")
+		}
+		if d.Port != "" {
+			if _, err := strconv.ParseUint(d.Port, 10, 16); err != nil || d.Port == "0" {
+				es.add("spec.discovery.port", "must be a port number")
+			}
+		}
+	default:
+		es.add("spec.discovery.provider", "must be %q, %q or %q", DiscoveryDocker, DiscoveryKubernetes, DiscoveryConsul)
+	}
+	if d.Provider != DiscoveryDocker && d.Network != "" {
+		es.add("spec.discovery.network", "is only for docker")
+	}
+	if d.Provider == DiscoveryDocker && (d.Tag != "" || d.Token != "") {
+		es.add("spec.discovery.tag", "tag and token are not for docker")
+	}
+	for i, s := range d.Selector {
+		checkOneLine(es, fmt.Sprintf("spec.discovery.selector[%d]", i), s)
+	}
+	checkOneLine(es, "spec.discovery.token", d.Token)
+	checkDuration(es, "spec.discovery.interval", d.Interval)
+}
+
 func (s *UpstreamSpec) validate(es *FieldErrors) {
-	if len(s.Targets) == 0 {
-		es.add("spec.targets", "at least one target is required")
+	if len(s.Targets) == 0 && s.Discovery == nil {
+		es.add("spec.targets", "at least one target is required without discovery")
+	}
+	if d := s.Discovery; d != nil {
+		d.validate(es)
 	}
 	if t := s.TLS; t != nil {
 		checkTLSVersions(es, "spec.tls", t.MinVersion, t.MaxVersion)

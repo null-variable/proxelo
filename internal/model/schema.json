@@ -540,6 +540,64 @@
         "max"
       ]
     },
+    "Discovery": {
+      "type": "object",
+      "description": "Discovery finds an upstream's targets with a service registry. The control plane polls it and sends what it finds to every proxy; the rest of the upstream (balancing, health checks, keepalive) applies to them as to configured targets. When the registry cannot be read the last targets found stay.",
+      "properties": {
+        "endpoint": {
+          "type": "string",
+          "description": "docker: the Engine API, \"unix:///var/run/docker.sock\" by default or \"http://host:port\". kubernetes: the API server, by default the in-cluster one (KUBERNETES_SERVICE_HOST, service account token and CA). consul: the agent, \"http://127.0.0.1:8500\" by default."
+        },
+        "interval": {
+          "type": "string",
+          "description": "How often the registry is read. Default \"10s\"."
+        },
+        "network": {
+          "type": "string",
+          "description": "docker: the network whose container address is used. Empty: the first one."
+        },
+        "port": {
+          "type": "string",
+          "description": "Port on the targets. docker: the container port, used with the container's address on network; kubernetes: the port name or number of the EndpointSlice; consul: overrides the service port."
+        },
+        "provider": {
+          "type": "string",
+          "description": "\"docker\", \"kubernetes\" or \"consul\".",
+          "enum": [
+            "docker",
+            "kubernetes",
+            "consul"
+          ]
+        },
+        "selector": {
+          "type": "array",
+          "description": "docker: running containers with every one of these labels (\"key=value\" or \"key\"). kubernetes: the Service whose EndpointSlices give the targets, as \"namespace/name\". consul: the service name.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "tag": {
+          "type": "string",
+          "description": "consul: only services with this tag; kubernetes and consul: a token for the API (kubernetes default: the service account's)."
+        },
+        "token": {
+          "type": "string"
+        }
+      },
+      "x-order": [
+        "provider",
+        "endpoint",
+        "selector",
+        "port",
+        "network",
+        "tag",
+        "token",
+        "interval"
+      ],
+      "required": [
+        "provider"
+      ]
+    },
     "ErrorPage": {
       "type": "object",
       "description": "ErrorPage is nginx error_page. Exactly one of URI and Route is set.",
@@ -2234,6 +2292,11 @@
         "balancing": {
           "$ref": "#/$defs/Balancing"
         },
+        "discovery": {
+          "$ref": "#/$defs/Discovery",
+          "description": "Targets found at run time and added to Targets, which may then be empty. Nil: only Targets.",
+          "x-nullable": true
+        },
         "healthCheck": {
           "$ref": "#/$defs/HealthCheck",
           "description": "Active health checks (probes from every node). Nil: none.",
@@ -2274,7 +2337,8 @@
         "sticky",
         "queue",
         "keepalive",
-        "tls"
+        "tls",
+        "discovery"
       ],
       "required": [
         "targets",

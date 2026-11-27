@@ -42,7 +42,11 @@ leaving open change sets unapplied. Upstreams balance by round robin,
 least_conn, ip_hash, hash or hash_consistent (picking the same targets as
 nginx), random or random_two. Targets can be backups, marked down, limited
 with maxConns (with a request queue when all are full), ramped up with slow
-start and re-resolved through DNS while running. Passive health and active
+start and re-resolved through DNS while running. An upstream can also take
+targets from Docker container labels, a Kubernetes Service's
+EndpointSlices or the Consul catalog: the control plane polls the registry
+and sends the targets it finds to every proxy without a new revision; the
+upstream's Discovered targets card shows the last read. Passive health and active
 HTTP or TCP health checks take failing targets out; each proxy reports the
 targets it has taken out to the control plane. Sticky sessions pin a client
 by a cookie the proxy sets or by a route value from a variable. Proxy routes

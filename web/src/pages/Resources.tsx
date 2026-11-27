@@ -76,7 +76,12 @@ function summary(kind: Kind, r: Resource, refs: Refs | undefined): ReactNode {
         </>
       );
     case "upstreams":
-      return <span className="mono">{(s.targets ?? []).map((t: { address: string }) => t.address).join(", ")}</span>;
+      return (
+        <span className="mono">
+          {(s.targets ?? []).map((t: { address: string }) => t.address).join(", ")}
+          {s.discovery ? `${s.targets?.length ? " + " : ""}${s.discovery.provider}` : ""}
+        </span>
+      );
     case "certificates":
       return certStatus(r);
     case "policies":
@@ -306,6 +311,7 @@ export function ResourceEdit({ kind, id }: { kind: Kind; id: string }) {
       </Card>
       {kind === "lookups" && canEdit && view === "form" && <LookupImport spec={doc.spec ?? {}} onChange={(spec) => setDoc({ ...doc, spec })} />}
       {kind === "policies" && !isNew && doc.spec?.type === "cache" && app.can("operator") && <CachePurge zone={id} />}
+      {kind === "upstreams" && !isNew && doc.spec?.discovery && <Discovered upstream={id} />}
       <Card title="Specification">
         {view === "form" ? (
           <fieldset className="fieldset-plain" disabled={!canEdit}>
@@ -451,6 +457,36 @@ function LookupImport({ spec, onChange }: { spec: Record<string, any>; onChange:
           <button type="button" className="btn btn--sm" disabled={!text.trim()} onClick={run}>Import</button>
         </div>
       </div>
+    </Card>
+  );
+}
+
+type DiscoveryStatus = { upstreamId: string; provider: string; addresses: string[] | null; checkedAt: string; error?: string };
+
+// Discovered shows the targets discovery last found for an applied
+// upstream; they are sent to the proxies without a new revision.
+function Discovered({ upstream }: { upstream: string }) {
+  const st = useQuery({
+    queryKey: ["discovery"],
+    queryFn: () => api.get<Items<DiscoveryStatus>>("/discovery"),
+    refetchInterval: 5000,
+  });
+  const s = st.data?.items.find((d) => d.upstreamId === upstream);
+  return (
+    <Card title="Discovered targets">
+      {!s ? (
+        <p className="muted small">Not watched yet: discovery starts once the upstream is applied.</p>
+      ) : (
+        <div className="stack">
+          {s.error && <p className="danger-text small">{s.error}</p>}
+          {s.addresses?.length ? (
+            <ul className="mono small">{s.addresses.map((a) => <li key={a}>{a}</li>)}</ul>
+          ) : (
+            <p className="muted small">{s.checkedAt.startsWith("0001") ? "Not read yet." : "None found."}</p>
+          )}
+          {!s.checkedAt.startsWith("0001") && <p className="muted small">Read from {s.provider} at {new Date(s.checkedAt).toLocaleTimeString()}</p>}
+        </div>
+      )}
     </Card>
   );
 }

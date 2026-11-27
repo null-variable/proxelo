@@ -110,6 +110,11 @@ type Distributor struct {
 	taps   taps
 	purges purges
 
+	// discovered are the targets discovery found, by upstream ID, each
+	// with the version it was last set at.
+	discovered  map[string]discoveredSet
+	discVersion uint64
+
 	// wasm gives the bytes of a module by SHA-256; nil when none are kept.
 	wasm func(ctx context.Context, sha string) ([]byte, error)
 }
@@ -144,6 +149,8 @@ type node struct {
 	sentTap string
 	// Purges to send on this connection.
 	purges []*distribv1.Purge
+	// Version of each upstream's discovered targets sent on this connection.
+	sentDiscovered map[string]uint64
 	// SHA-256 of the modules the proxy has: from Hello, then those sent.
 	wasm map[string]bool
 	// replaced is closed when a newer connection takes over the node ID.
@@ -257,6 +264,8 @@ func (d *Distributor) register(hello *distribv1.Hello) *node {
 		wake:     make(chan struct{}, 1),
 		replaced: make(chan struct{}),
 		wasm:     map[string]bool{},
+
+		sentDiscovered: map[string]uint64{},
 	}
 	for _, h := range hello.GetWasmModules() {
 		n.wasm[h] = true
@@ -297,7 +306,14 @@ func (d *Distributor) sendLoop(ctx context.Context, stream distribv1.Distributio
 		}
 		sentTap := n.sentTap
 		purges := n.takePurges()
+		discovered := n.takeDiscovered(d.discovered)
 		d.mu.Unlock()
+		for _, t := range discovered {
+			resp := &distribv1.SyncResponse{Kind: &distribv1.SyncResponse_Discovered{Discovered: t}}
+			if err := stream.Send(resp); err != nil {
+				return err
+			}
+		}
 		for _, p := range purges {
 			resp := &distribv1.SyncResponse{Kind: &distribv1.SyncResponse_Purge{Purge: p}}
 			if err := stream.Send(resp); err != nil {

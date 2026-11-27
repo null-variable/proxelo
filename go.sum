@@ -50,6 +50,8 @@ github.com/null-variable/proxelo-api v0.18.0 h1:3YDKWrxVC5oIhzS+FV1konK7eQ2iwQ68
 github.com/null-variable/proxelo-api v0.18.0/go.mod h1:jSsmn6+bg1+L1E8qtXc+vrCWKE2QMECXUpdZYtTGgxU=
 github.com/null-variable/proxelo-api v0.19.0 h1:C5/TGZqO6oWZ5GicbYXRYMRVnpxJZ4ybn3OVNJJW3rk=
 github.com/null-variable/proxelo-api v0.19.0/go.mod h1:jSsmn6+bg1+L1E8qtXc+vrCWKE2QMECXUpdZYtTGgxU=
+github.com/null-variable/proxelo-api v0.20.0 h1:XHoP3jx/YG/vGik7Rqhm8s2xsB9NygcZUf+wUpLPek8=
+github.com/null-variable/proxelo-api v0.20.0/go.mod h1:jSsmn6+bg1+L1E8qtXc+vrCWKE2QMECXUpdZYtTGgxU=
 github.com/oklog/ulid/v2 v2.1.2 h1:IEclFb9JNvzYA6MW2SCxbLzcHTVsfqm3PrqGQJH5zec=
 github.com/oklog/ulid/v2 v2.1.2/go.mod h1:rcEKHmBBKfef9DhnvX7y1HZBYxjXb0cP5ExxNsTT1QQ=
 github.com/pborman/getopt v0.0.0-20170112200414-7148bc3a4c30/go.mod h1:85jBQOZwpVEaDAr341tbn15RS4fCAsIst0qp7i8ex1o=

@@ -8,6 +8,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -746,5 +747,37 @@ func TestValidateWasmAndWAF(t *testing.T) {
 		if es := model.Validate(p); len(es) == 0 {
 			t.Errorf("case %d: no error", i)
 		}
+	}
+}
+
+func TestValidateDiscovery(t *testing.T) {
+	ok := []model.Discovery{
+		{Provider: model.DiscoveryDocker, Selector: []string{"app=web"}, Port: "8080"},
+		{Provider: model.DiscoveryKubernetes, Selector: []string{"shop/web"}, Port: "http"},
+		{Provider: model.DiscoveryConsul, Selector: []string{"web"}, Tag: "v2", Interval: "5s"},
+	}
+	for _, d := range ok {
+		u := &model.Upstream{Meta: model.Meta{ID: "up_1", Name: "u"}, Spec: model.UpstreamSpec{Discovery: &d}}
+		if es := model.Validate(u); len(es) != 0 {
+			t.Errorf("%s: %v", d.Provider, es)
+		}
+	}
+	bad := map[string]model.Discovery{
+		"spec.discovery.port":     {Provider: model.DiscoveryDocker, Selector: []string{"app"}},
+		"spec.discovery.selector": {Provider: model.DiscoveryKubernetes, Selector: []string{"web"}},
+		"spec.discovery.provider": {Provider: "etcd"},
+		"spec.discovery.network":  {Provider: model.DiscoveryConsul, Selector: []string{"web"}, Network: "n"},
+		"spec.discovery.interval": {Provider: model.DiscoveryConsul, Selector: []string{"web"}, Interval: "soon"},
+	}
+	for path, d := range bad {
+		u := &model.Upstream{Meta: model.Meta{ID: "up_1", Name: "u"}, Spec: model.UpstreamSpec{Discovery: &d}}
+		es := model.Validate(u)
+		if !slices.ContainsFunc(es, func(e model.FieldError) bool { return e.Path == path }) {
+			t.Errorf("%s: got %v", path, es)
+		}
+	}
+	u := &model.Upstream{Meta: model.Meta{ID: "up_1", Name: "u"}}
+	if es := model.Validate(u); len(es) == 0 {
+		t.Error("an upstream with neither targets nor discovery must fail")
 	}
 }

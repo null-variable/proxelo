@@ -471,6 +471,50 @@ type UpstreamSpec struct {
 	// TLS to the targets (nginx proxy_pass https:// and proxy_ssl_*). Nil:
 	// plain TCP.
 	TLS *UpstreamTLS `json:"tls,omitempty"`
+	// Targets found at run time and added to Targets, which may then be
+	// empty. Nil: only Targets.
+	Discovery *Discovery `json:"discovery,omitempty"`
+}
+
+type DiscoveryProvider string
+
+const (
+	DiscoveryDocker     DiscoveryProvider = "docker"
+	DiscoveryKubernetes DiscoveryProvider = "kubernetes"
+	DiscoveryConsul     DiscoveryProvider = "consul"
+)
+
+// Discovery finds an upstream's targets with a service registry. The
+// control plane polls it and sends what it finds to every proxy; the rest
+// of the upstream (balancing, health checks, keepalive) applies to them as
+// to configured targets. When the registry cannot be read the last targets
+// found stay.
+type Discovery struct {
+	// "docker", "kubernetes" or "consul".
+	Provider DiscoveryProvider `json:"provider"`
+	// docker: the Engine API, "unix:///var/run/docker.sock" by default or
+	// "http://host:port". kubernetes: the API server, by default the
+	// in-cluster one (KUBERNETES_SERVICE_HOST, service account token and
+	// CA). consul: the agent, "http://127.0.0.1:8500" by default.
+	Endpoint string `json:"endpoint,omitempty"`
+	// docker: running containers with every one of these labels
+	// ("key=value" or "key"). kubernetes: the Service whose
+	// EndpointSlices give the targets, as "namespace/name". consul: the
+	// service name.
+	Selector []string `json:"selector,omitempty"`
+	// Port on the targets. docker: the container port, used with the
+	// container's address on network; kubernetes: the port name or number
+	// of the EndpointSlice; consul: overrides the service port.
+	Port string `json:"port,omitempty"`
+	// docker: the network whose container address is used. Empty: the
+	// first one.
+	Network string `json:"network,omitempty"`
+	// consul: only services with this tag; kubernetes and consul: a token
+	// for the API (kubernetes default: the service account's).
+	Tag   string `json:"tag,omitempty"`
+	Token string `json:"token,omitempty"`
+	// How often the registry is read. Default "10s".
+	Interval string `json:"interval,omitempty"`
 }
 
 // UpstreamTLS configures connections to an upstream's targets.

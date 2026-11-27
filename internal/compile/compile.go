@@ -301,6 +301,7 @@ func (c *compiler) compile(cfg model.Config, revision uint64) *snapshotv1.Snapsh
 				ResolveIntervalMs: millis(t.ResolveInterval), Route: t.Route,
 			})
 		}
+		out.Discovered = sp.Discovery != nil
 		snap.Upstreams = append(snap.Upstreams, out)
 	}
 	listenerAddrs := map[string]string{}

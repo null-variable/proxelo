@@ -21,6 +21,7 @@ import (
 	"github.com/null-variable/proxelo/internal/auth"
 	"github.com/null-variable/proxelo/internal/compile"
 	"github.com/null-variable/proxelo/internal/deploy"
+	"github.com/null-variable/proxelo/internal/discovery"
 	"github.com/null-variable/proxelo/internal/distrib"
 	"github.com/null-variable/proxelo/internal/model"
 	"github.com/null-variable/proxelo/internal/store"
@@ -48,6 +49,10 @@ type Simulator interface {
 type Options struct {
 	// Called after a certificate is created or changed, to issue ACME ones.
 	CertsChanged func()
+	// UpstreamsChanged is called after upstreams reach the head.
+	UpstreamsChanged func()
+	// Discovery gives what discovery last found per upstream. Nil: none.
+	Discovery func() []discovery.Status
 	// Admin API address, for the admin-access safety check.
 	AdminAddr string
 	// Mark session cookies Secure even on plain HTTP, for a TLS-terminating
@@ -58,7 +63,7 @@ type Options struct {
 // Handler returns the API handler. sim may be nil: applies then skip the
 // engine dry-load and /simulate answers 503.
 func Handler(st *store.Store, d Distributor, dep *deploy.Manager, sim Simulator, opts Options, log *slog.Logger) http.Handler {
-	a := &api{st: st, d: d, dep: dep, sim: sim, certsChanged: opts.CertsChanged, adminAddr: opts.AdminAddr, secureCookies: opts.SecureCookies, log: log}
+	a := &api{st: st, d: d, dep: dep, sim: sim, certsChanged: opts.CertsChanged, upstreamsChanged: opts.UpstreamsChanged, discovery: opts.Discovery, adminAddr: opts.AdminAddr, secureCookies: opts.SecureCookies, log: log}
 	mux := http.NewServeMux()
 	v, ed, op, adm := auth.Viewer, auth.Editor, auth.Operator, auth.Admin
 	g := auth.Guest
@@ -114,6 +119,7 @@ func Handler(st *store.Store, d Distributor, dep *deploy.Manager, sim Simulator,
 	mux.HandleFunc("PUT /api/v1/revisions/{rev}/tag", a.require(op, a.tag))
 	mux.HandleFunc("POST /api/v1/cache/{zone}", a.require(op, a.purgeRoute))
 	mux.HandleFunc("GET /api/v1/wasm", a.require(v, a.wasmModules))
+	mux.HandleFunc("GET /api/v1/discovery", a.require(v, a.discoveryStatus))
 	mux.HandleFunc("POST /api/v1/wasm", a.require(ed, a.uploadWasm))
 	mux.HandleFunc("DELETE /api/v1/wasm/{sha}", a.require(ed, a.deleteWasm))
 	mux.HandleFunc("GET /api/v1/nodes", a.require(v, a.nodes))
@@ -144,15 +150,33 @@ type api struct {
 	secureCookies bool
 	log           *slog.Logger
 	oidc          oidcClient
+
+	upstreamsChanged func()
+	discovery        func() []discovery.Status
 }
 
-// changed kicks ACME after a certificate reaches the head.
+// discoveryStatus lists what discovery last found for each upstream.
+func (a *api) discoveryStatus(w http.ResponseWriter, _ *http.Request) {
+	out := []discovery.Status{}
+	if a.discovery != nil {
+		out = a.discovery()
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": out})
+}
+
+// changed kicks ACME after a certificate reaches the head, and discovery
+// after an upstream does.
 func (a *api) changed(touched []store.ItemState) {
+	certs, ups := false, false
 	for _, it := range touched {
-		if it.Kind == model.CertificateKind.Plural && a.certsChanged != nil {
-			a.certsChanged()
-			return
-		}
+		certs = certs || it.Kind == model.CertificateKind.Plural
+		ups = ups || it.Kind == model.UpstreamKind.Plural
+	}
+	if certs && a.certsChanged != nil {
+		a.certsChanged()
+	}
+	if ups && a.upstreamsChanged != nil {
+		a.upstreamsChanged()
 	}
 }
 
