@@ -177,6 +177,12 @@ func meta(k model.Kind, name string) model.Meta {
 type scope struct {
 	root, alias string
 	index       []string
+	// Content handlers of static locations.
+	autoindexOn bool
+	autoindex   model.Autoindex
+	randomIndex bool
+	dav         *model.DAV
+	flv         bool
 	addHeader   []header
 	setHeader   []header
 	hideHeader  []string
@@ -239,6 +245,11 @@ func (s scope) clone() scope {
 		out.gzip = &g
 	}
 	out.cache = cloneCache(s.cache)
+	if s.dav != nil {
+		d := *s.dav
+		d.Methods = slices.Clone(d.Methods)
+		out.dav = &d
+	}
 	out.jwt.Audiences = slices.Clone(s.jwt.Audiences)
 	return out
 }
@@ -308,6 +319,50 @@ func (c *converter) common(d *Directive, s *scope) bool {
 		s.alias = arg(0)
 	case "index":
 		s.index = slices.Clone(a)
+	case "autoindex", "autoindex_format", "autoindex_localtime", "autoindex_exact_size":
+		ai := &s.autoindex
+		switch d.Name {
+		case "autoindex":
+			s.autoindexOn = arg(0) == "on"
+		case "autoindex_format":
+			ai.Format = model.AutoindexFormat(arg(0))
+			if ai.Format == model.AutoindexHTML {
+				ai.Format = ""
+			}
+		case "autoindex_localtime":
+			ai.LocalTime = arg(0) == "on"
+		case "autoindex_exact_size":
+			ai.ApproximateSize = arg(0) == "off"
+		}
+	case "random_index":
+		s.randomIndex = arg(0) == "on"
+	case "flv":
+		s.flv = true
+	case "dav_methods", "create_full_put_path", "min_delete_depth", "dav_access":
+		if s.dav == nil {
+			s.dav = &model.DAV{}
+		}
+		dv := s.dav
+		switch d.Name {
+		case "dav_methods":
+			dv.Methods = nil
+			if arg(0) != "off" {
+				for _, m := range a {
+					dv.Methods = append(dv.Methods, strings.ToLower(m))
+				}
+			}
+		case "create_full_put_path":
+			dv.CreateFullPutPath = arg(0) == "on"
+		case "min_delete_depth":
+			dv.MinDeleteDepth = atou(arg(0))
+		case "dav_access":
+			acc, ok := davAccess(a)
+			if !ok {
+				c.note(d, Unsupported, "could not read the permissions")
+				return true
+			}
+			dv.Access = acc
+		}
 	case "add_header":
 		s.addHeader = append(slices.Clip(fresh(s, "add_header", s.addHeader)), header{arg(0), arg(1), arg(2) == "always"})
 	case "proxy_set_header":
@@ -607,6 +662,40 @@ func fresh[T any](s *scope, family string, cur []T) []T {
 	}
 	s.set[family] = true
 	return nil
+}
+
+// davAccess reads nginx dav_access ("user:rw group:r all:r") as octal
+// permission bits.
+func davAccess(a []string) (string, bool) {
+	var mode uint32
+	for _, x := range a {
+		who, perm, ok := strings.Cut(x, ":")
+		if !ok {
+			return "", false
+		}
+		var bits uint32
+		switch perm {
+		case "r":
+			bits = 4
+		case "w":
+			bits = 2
+		case "rw":
+			bits = 6
+		default:
+			return "", false
+		}
+		switch who {
+		case "user":
+			mode |= bits << 6
+		case "group":
+			mode |= bits << 3
+		case "all":
+			mode |= bits
+		default:
+			return "", false
+		}
+	}
+	return fmt.Sprintf("0%o", mode), true
 }
 
 func atou(s string) uint32 {

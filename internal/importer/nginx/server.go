@@ -473,7 +473,16 @@ func (c *converter) staticAction(sc scope) model.Action {
 	if root == "" {
 		root = "/usr/share/nginx/html"
 	}
-	return model.Action{Type: model.ActionStatic, Static: &model.StaticAction{Root: root, Index: sc.index}}
+	st := &model.StaticAction{Root: root, Index: sc.index, RandomIndex: sc.randomIndex, FLV: sc.flv}
+	if sc.autoindexOn {
+		ai := sc.autoindex
+		st.Autoindex = &ai
+	}
+	if d := sc.dav; d != nil && len(d.Methods) > 0 {
+		dv := *d
+		st.DAV = &dv
+	}
+	return model.Action{Type: model.ActionStatic, Static: st}
 }
 
 // pathMatch reads location's modifier and pattern.

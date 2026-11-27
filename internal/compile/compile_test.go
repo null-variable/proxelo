@@ -781,3 +781,45 @@ func TestValidateDiscovery(t *testing.T) {
 		t.Error("an upstream with neither targets nor discovery must fail")
 	}
 }
+
+func TestCompileStaticHandlers(t *testing.T) {
+	cfg := validConfig()
+	st := cfg.Routes[1].Spec.Action.Static
+	st.Autoindex = &model.Autoindex{Format: model.AutoindexXML, ApproximateSize: true}
+	st.RandomIndex, st.FLV = true, true
+	st.DAV = &model.DAV{Methods: []string{"put", "move"}, Access: "0644", MinDeleteDepth: 1}
+	if es := model.Validate(cfg.Routes[1]); es != nil {
+		t.Fatal(es)
+	}
+	snap, err := Compile(cfg, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sa *snapshotv1.StaticAction
+	for _, r := range snap.GetSites()[0].GetRoutes() {
+		if r.GetId() == "rt_root" {
+			sa = r.GetAction().GetStatic()
+		}
+	}
+	ai, d := sa.GetAutoindex(), sa.GetDav()
+	if ai.GetFormat() != snapshotv1.Autoindex_FORMAT_XML || !ai.GetApproximateSize() || !sa.GetRandomIndex() || !sa.GetFlv() {
+		t.Errorf("static = %v", sa)
+	}
+	if !d.GetPut() || !d.GetMove() || d.GetDelete() || d.GetAccess() != 0o644 || d.GetMinDeleteDepth() != 1 {
+		t.Errorf("dav = %v", d)
+	}
+
+	bad := map[string]func(*model.StaticAction){
+		"spec.action.static.autoindex.format": func(s *model.StaticAction) { s.Autoindex = &model.Autoindex{Format: "yaml"} },
+		"spec.action.static.dav.methods":      func(s *model.StaticAction) { s.DAV = &model.DAV{} },
+		"spec.action.static.dav.methods[0]":   func(s *model.StaticAction) { s.DAV = &model.DAV{Methods: []string{"propfind"}} },
+		"spec.action.static.dav.access":       func(s *model.StaticAction) { s.DAV = &model.DAV{Methods: []string{"put"}, Access: "0999"} },
+	}
+	for path, f := range bad {
+		r := validConfig().Routes[1]
+		f(r.Spec.Action.Static)
+		if es := model.Validate(r); !slices.ContainsFunc(es, func(e model.FieldError) bool { return e.Path == path }) {
+			t.Errorf("%s: got %v", path, es)
+		}
+	}
+}

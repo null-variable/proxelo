@@ -404,7 +404,52 @@ type StaticAction struct {
 	Root     string    `json:"root"`
 	Index    []string  `json:"index,omitempty"`
 	TryFiles *TryFiles `json:"tryFiles,omitempty"`
+	// List directories without an index file (nginx autoindex). Nil: off.
+	Autoindex *Autoindex `json:"autoindex,omitempty"`
+	// Send a request for a directory to a random file in it (nginx
+	// random_index).
+	RandomIndex bool `json:"randomIndex,omitempty"`
+	// WebDAV methods on the files under Root (nginx dav_methods). Nil: off.
+	DAV *DAV `json:"dav,omitempty"`
+	// Serve .flv files from ?start=N (nginx flv).
+	FLV bool `json:"flv,omitempty"`
 }
+
+type AutoindexFormat string
+
+const (
+	AutoindexHTML  AutoindexFormat = "html"
+	AutoindexJSON  AutoindexFormat = "json"
+	AutoindexJSONP AutoindexFormat = "jsonp"
+	AutoindexXML   AutoindexFormat = "xml"
+)
+
+// Autoindex is nginx autoindex and its settings.
+type Autoindex struct {
+	// "html" (default), "json", "jsonp" (with ?callback=) or "xml".
+	Format AutoindexFormat `json:"format,omitempty"`
+	// HTML times in the proxy's local time zone instead of UTC.
+	LocalTime bool `json:"localTime,omitempty"`
+	// HTML sizes rounded to K, M and G (autoindex_exact_size off).
+	ApproximateSize bool `json:"approximateSize,omitempty"`
+}
+
+// DAV is nginx dav_methods with create_full_put_path, min_delete_depth and
+// dav_access.
+type DAV struct {
+	// Any of "put", "delete", "mkcol", "copy", "move".
+	Methods []string `json:"methods"`
+	// PUT creates missing parent directories.
+	CreateFullPutPath bool `json:"createFullPutPath,omitempty"`
+	// DELETE needs at least this many path segments.
+	MinDeleteDepth uint32 `json:"minDeleteDepth,omitempty"`
+	// Permission bits of created files as octal, "0644". Directories also
+	// get x where r is set. Default "0600".
+	Access string `json:"access,omitempty"`
+}
+
+// DAVMethods are the methods DAV.Methods takes.
+var DAVMethods = []string{"put", "delete", "mkcol", "copy", "move"}
 
 // TryFiles is nginx try_files. Exactly one of URI, Status and Route is the
 // fallback.

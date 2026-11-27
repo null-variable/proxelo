@@ -183,19 +183,23 @@ directives:
   - name: autoindex
     module: ngx_http_autoindex_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.static.autoindex
   - name: autoindex_format
     module: ngx_http_autoindex_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.static.autoindex.format
   - name: autoindex_localtime
     module: ngx_http_autoindex_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.static.autoindex.localTime
   - name: autoindex_exact_size
     module: ngx_http_autoindex_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.static.autoindex.approximateSize
   - name: modern_browser
     module: ngx_http_browser_module
     contexts: [http, server, location]
@@ -613,19 +617,25 @@ directives:
   - name: dav_methods
     module: ngx_http_dav_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.static.dav.methods
+    note: PUT bodies up to 1m
   - name: create_full_put_path
     module: ngx_http_dav_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.static.dav.createFullPutPath
   - name: min_delete_depth
     module: ngx_http_dav_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.static.dav.minDeleteDepth
   - name: dav_access
     module: ngx_http_dav_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.static.dav.access
+    note: octal bits
   - name: degradation
     module: ngx_http_degradation_module
     contexts: [http]
@@ -858,7 +868,8 @@ directives:
   - name: flv
     module: ngx_http_flv_module
     contexts: [location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.static.flv
   - name: geo
     module: ngx_http_geo_module
     contexts: [http]
@@ -1652,7 +1663,8 @@ directives:
   - name: random_index
     module: ngx_http_random_index_module
     contexts: [location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.static.randomIndex
   - name: set_real_ip_from
     module: ngx_http_realip_module
     contexts: [http, server, location]

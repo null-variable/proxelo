@@ -1,6 +1,7 @@
 package nginx
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -236,5 +237,47 @@ http {
 	}
 	if oidc == nil || oidc.Spec.OIDC.Issuer != "https://login.example.com/realms/a" || oidc.Spec.OIDC.ClientSecret != "s3cret" || oidc.Spec.OIDC.LogoutURI != "/logout" {
 		t.Errorf("oidc: %+v", oidc)
+	}
+}
+
+func TestStaticHandlers(t *testing.T) {
+	cfg, rep := convert(t, Files{"/etc/nginx/nginx.conf": `events {}
+http {
+    autoindex_exact_size off;
+    server {
+        listen 80;
+        root /srv;
+        location /files/ { autoindex on; autoindex_format json; autoindex_localtime on; }
+        location /pick/ { random_index on; }
+        location /up/ { dav_methods PUT DELETE; create_full_put_path on; dav_access user:rw group:r; min_delete_depth 2; }
+        location /video/ { flv; }
+        location /off/ { autoindex off; dav_methods off; }
+    }
+}`})
+	by := map[string]*model.StaticAction{}
+	for _, r := range cfg.Routes {
+		if r.Spec.Action.Static != nil {
+			by[r.Spec.Match.Path.Value] = r.Spec.Action.Static
+		}
+	}
+	if a := by["/files/"].Autoindex; a == nil || a.Format != model.AutoindexJSON || !a.LocalTime || !a.ApproximateSize {
+		t.Errorf("autoindex: %+v", a)
+	}
+	if !by["/pick/"].RandomIndex || !by["/video/"].FLV {
+		t.Errorf("random_index or flv: %+v %+v", by["/pick/"], by["/video/"])
+	}
+	d := by["/up/"].DAV
+	if d == nil || !slices.Equal(d.Methods, []string{"put", "delete"}) || !d.CreateFullPutPath || d.Access != "0640" || d.MinDeleteDepth != 2 {
+		t.Errorf("dav: %+v", d)
+	}
+	if o := by["/off/"]; o.Autoindex != nil || o.DAV != nil {
+		t.Errorf("off: %+v", o)
+	}
+	for _, e := range rep.Entries {
+		if strings.HasPrefix(e.Directive, "autoindex") || strings.HasPrefix(e.Directive, "dav_") || e.Directive == "flv" || e.Directive == "random_index" {
+			if e.Class != Converted {
+				t.Errorf("%s: %s", e.Directive, e.Class)
+			}
+		}
 	}
 }

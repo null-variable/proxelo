@@ -1,0 +1,25 @@
+directives: [autoindex, autoindex_format, autoindex_exact_size, random_index, flv]
+# File times come from the bind mount; the listings below show them, so
+# the tree's mtimes are fixed when the case is written.
+ignore: [last-modified, etag]
+requests:
+  - {target: "/list/", headers: {Host: example.com}}
+  - {target: "/list/sub/", headers: {Host: example.com}}
+  - {target: "/list/odd%20%26name/", headers: {Host: example.com}}
+  - {target: "/list/missing/", headers: {Host: example.com}}
+  - {target: "/list", headers: {Host: example.com}}
+  - {target: "/json/", headers: {Host: example.com}}
+  - {target: "/approx/", headers: {Host: example.com}}
+  - {target: "/xml/", headers: {Host: example.com}}
+  - {target: "/jsonp/", headers: {Host: example.com}}
+  - {target: "/jsonp/?callback=cb.x_1", headers: {Host: example.com}}
+  - {target: "/jsonp/?callback=bad(", headers: {Host: example.com}}
+  - {target: "/one/", headers: {Host: example.com}}
+  - {target: "/empty/", headers: {Host: example.com}}
+  - {target: "/media/clip.flv", headers: {Host: example.com}}
+  - {target: "/media/clip.flv?start=100", headers: {Host: example.com}}
+  - {target: "/media/clip.flv?start=0", headers: {Host: example.com}}
+  - {target: "/media/clip.flv?start=99999", headers: {Host: example.com}}
+  - {target: "/media/clip.flv?start=x", headers: {Host: example.com}}
+  - {method: HEAD, target: /list/, headers: {Host: example.com}}
+  - {method: POST, target: /list/, headers: {Host: example.com}}

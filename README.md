@@ -31,6 +31,9 @@ location kinds (exact, prefix, `^~`, `~`, `~*`) and nesting, rewrite, return,
 error_page and try_files; error pages and try_files can hand off to another
 route like an nginx named location. Routes can also match on methods, headers,
 query arguments and a CEL expression; expressions are type-checked when saved.
+Static routes serve files with index, try_files and gzip_static, and can list
+directories (autoindex as HTML, JSON, JSONP or XML), pick a random index file,
+take WebDAV PUT, DELETE, MKCOL, COPY and MOVE, and seek FLV files.
 
 Listeners can terminate TLS and offer HTTP/2 and HTTP/3 (QUIC on the same UDP
 address, advertised with Alt-Svc); sites pick certificates by SNI

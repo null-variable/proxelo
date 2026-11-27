@@ -87,6 +87,35 @@
         "type"
       ]
     },
+    "Autoindex": {
+      "type": "object",
+      "description": "Autoindex is nginx autoindex and its settings.",
+      "properties": {
+        "approximateSize": {
+          "type": "boolean",
+          "description": "HTML sizes rounded to K, M and G (autoindex_exact_size off)."
+        },
+        "format": {
+          "type": "string",
+          "description": "\"html\" (default), \"json\", \"jsonp\" (with ?callback=) or \"xml\".",
+          "enum": [
+            "html",
+            "json",
+            "jsonp",
+            "xml"
+          ]
+        },
+        "localTime": {
+          "type": "boolean",
+          "description": "HTML times in the proxy's local time zone instead of UTC."
+        }
+      },
+      "x-order": [
+        "format",
+        "localTime",
+        "approximateSize"
+      ]
+    },
     "Balancing": {
       "type": "object",
       "properties": {
@@ -538,6 +567,41 @@
       ],
       "required": [
         "max"
+      ]
+    },
+    "DAV": {
+      "type": "object",
+      "description": "DAV is nginx dav_methods with create_full_put_path, min_delete_depth and dav_access.",
+      "properties": {
+        "access": {
+          "type": "string",
+          "description": "Permission bits of created files as octal, \"0644\". Directories also get x where r is set. Default \"0600\"."
+        },
+        "createFullPutPath": {
+          "type": "boolean",
+          "description": "PUT creates missing parent directories."
+        },
+        "methods": {
+          "type": "array",
+          "description": "Any of \"put\", \"delete\", \"mkcol\", \"copy\", \"move\".",
+          "items": {
+            "type": "string"
+          }
+        },
+        "minDeleteDepth": {
+          "type": "integer",
+          "description": "DELETE needs at least this many path segments.",
+          "minimum": 0
+        }
+      },
+      "x-order": [
+        "methods",
+        "createFullPutPath",
+        "minDeleteDepth",
+        "access"
+      ],
+      "required": [
+        "methods"
       ]
     },
     "Discovery": {
@@ -1990,11 +2054,29 @@
     "StaticAction": {
       "type": "object",
       "properties": {
+        "autoindex": {
+          "$ref": "#/$defs/Autoindex",
+          "description": "List directories without an index file (nginx autoindex). Nil: off.",
+          "x-nullable": true
+        },
+        "dav": {
+          "$ref": "#/$defs/DAV",
+          "description": "WebDAV methods on the files under Root (nginx dav_methods). Nil: off.",
+          "x-nullable": true
+        },
+        "flv": {
+          "type": "boolean",
+          "description": "Serve .flv files from ?start=N (nginx flv)."
+        },
         "index": {
           "type": "array",
           "items": {
             "type": "string"
           }
+        },
+        "randomIndex": {
+          "type": "boolean",
+          "description": "Send a request for a directory to a random file in it (nginx random_index)."
         },
         "root": {
           "type": "string",
@@ -2008,7 +2090,11 @@
       "x-order": [
         "root",
         "index",
-        "tryFiles"
+        "tryFiles",
+        "autoindex",
+        "randomIndex",
+        "dav",
+        "flv"
       ],
       "required": [
         "root"

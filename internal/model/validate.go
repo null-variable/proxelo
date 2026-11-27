@@ -1085,6 +1085,28 @@ func (s *RouteSpec) validate(es *FieldErrors) {
 		if t := a.Static.TryFiles; t != nil {
 			t.validate(es, "spec.action.static.tryFiles")
 		}
+		if ai := a.Static.Autoindex; ai != nil {
+			switch ai.Format {
+			case "", AutoindexHTML, AutoindexJSON, AutoindexJSONP, AutoindexXML:
+			default:
+				es.add("spec.action.static.autoindex.format", "must be html, json, jsonp or xml")
+			}
+		}
+		if d := a.Static.DAV; d != nil {
+			if len(d.Methods) == 0 {
+				es.add("spec.action.static.dav.methods", "at least one method is required")
+			}
+			for i, m := range d.Methods {
+				if !slices.Contains(DAVMethods, m) {
+					es.add(fmt.Sprintf("spec.action.static.dav.methods[%d]", i), "must be one of %s", strings.Join(DAVMethods, ", "))
+				}
+			}
+			if d.Access != "" {
+				if v, err := strconv.ParseUint(d.Access, 8, 32); err != nil || v > 0o777 {
+					es.add("spec.action.static.dav.access", "must be octal permission bits such as 0644")
+				}
+			}
+		}
 	case ActionProxy:
 		if a.Proxy == nil {
 			es.add("spec.action.proxy", "is required when type is %q", a.Type)

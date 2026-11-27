@@ -1,0 +1,220 @@
+{
+  "listeners": [
+    {
+      "id": "lst_main",
+      "name": "main",
+      "spec": {
+        "address": "127.0.0.1:18480",
+        "defaultSite": "site_main"
+      }
+    }
+  ],
+  "sites": [
+    {
+      "id": "site_main",
+      "name": "main",
+      "spec": {
+        "listeners": [
+          "lst_main"
+        ],
+        "hostnames": [
+          {
+            "type": "exact",
+            "value": "example.com"
+          }
+        ],
+        "routes": [
+          "rt_root",
+          "rt_list",
+          "rt_json",
+          "rt_approx",
+          "rt_xml",
+          "rt_jsonp",
+          "rt_one",
+          "rt_empty",
+          "rt_media"
+        ]
+      }
+    }
+  ],
+  "routes": [
+    {
+      "id": "rt_root",
+      "name": "root",
+      "spec": {
+        "match": {
+          "path": {
+            "type": "prefix",
+            "value": "/"
+          }
+        },
+        "action": {
+          "type": "static",
+          "static": {
+            "root": "/srv/www"
+          }
+        }
+      }
+    },
+    {
+      "id": "rt_list",
+      "name": "list",
+      "spec": {
+        "match": {
+          "path": {
+            "type": "prefix",
+            "value": "/list/"
+          }
+        },
+        "action": {
+          "type": "static",
+          "static": {
+            "root": "/srv/www",
+            "autoindex": {}
+          }
+        }
+      }
+    },
+    {
+      "id": "rt_json",
+      "name": "json",
+      "spec": {
+        "match": {
+          "path": {
+            "type": "prefix",
+            "value": "/json/"
+          }
+        },
+        "action": {
+          "type": "static",
+          "static": {
+            "root": "/srv/www",
+            "autoindex": {
+              "format": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "rt_approx",
+      "name": "approx",
+      "spec": {
+        "match": {
+          "path": {
+            "type": "prefix",
+            "value": "/approx/"
+          }
+        },
+        "action": {
+          "type": "static",
+          "static": {
+            "root": "/srv/www",
+            "autoindex": {
+              "approximateSize": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "rt_xml",
+      "name": "xml",
+      "spec": {
+        "match": {
+          "path": {
+            "type": "prefix",
+            "value": "/xml/"
+          }
+        },
+        "action": {
+          "type": "static",
+          "static": {
+            "root": "/srv/www",
+            "autoindex": {
+              "format": "xml"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "rt_jsonp",
+      "name": "jsonp",
+      "spec": {
+        "match": {
+          "path": {
+            "type": "prefix",
+            "value": "/jsonp/"
+          }
+        },
+        "action": {
+          "type": "static",
+          "static": {
+            "root": "/srv/www",
+            "autoindex": {
+              "format": "jsonp"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "rt_one",
+      "name": "one",
+      "spec": {
+        "match": {
+          "path": {
+            "type": "prefix",
+            "value": "/one/"
+          }
+        },
+        "action": {
+          "type": "static",
+          "static": {
+            "root": "/srv/www",
+            "randomIndex": true
+          }
+        }
+      }
+    },
+    {
+      "id": "rt_empty",
+      "name": "empty",
+      "spec": {
+        "match": {
+          "path": {
+            "type": "prefix",
+            "value": "/empty/"
+          }
+        },
+        "action": {
+          "type": "static",
+          "static": {
+            "root": "/srv/www",
+            "randomIndex": true
+          }
+        }
+      }
+    },
+    {
+      "id": "rt_media",
+      "name": "media",
+      "spec": {
+        "match": {
+          "path": {
+            "type": "prefix",
+            "value": "/media/"
+          }
+        },
+        "action": {
+          "type": "static",
+          "static": {
+            "root": "/srv/www",
+            "flv": true
+          }
+        }
+      }
+    }
+  ]
+}

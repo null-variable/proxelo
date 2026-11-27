@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -564,7 +565,24 @@ func (st *site) route(r *model.Route, pols []*model.Policy) *snapshotv1.Route {
 	a := r.Spec.Action
 	switch {
 	case a.Type == model.ActionStatic && a.Static != nil:
-		sa := &snapshotv1.StaticAction{Root: a.Static.Root, Index: a.Static.Index}
+		sa := &snapshotv1.StaticAction{Root: a.Static.Root, Index: a.Static.Index, RandomIndex: a.Static.RandomIndex, Flv: a.Static.FLV}
+		if ai := a.Static.Autoindex; ai != nil {
+			sa.Autoindex = &snapshotv1.Autoindex{
+				Format: map[model.AutoindexFormat]snapshotv1.Autoindex_Format{
+					model.AutoindexJSON: snapshotv1.Autoindex_FORMAT_JSON, model.AutoindexJSONP: snapshotv1.Autoindex_FORMAT_JSONP, model.AutoindexXML: snapshotv1.Autoindex_FORMAT_XML,
+				}[ai.Format],
+				Localtime:       ai.LocalTime,
+				ApproximateSize: ai.ApproximateSize,
+			}
+		}
+		if d := a.Static.DAV; d != nil {
+			access, _ := strconv.ParseUint(d.Access, 8, 32)
+			sa.Dav = &snapshotv1.Dav{
+				Put: slices.Contains(d.Methods, "put"), Delete: slices.Contains(d.Methods, "delete"), Mkcol: slices.Contains(d.Methods, "mkcol"),
+				Copy: slices.Contains(d.Methods, "copy"), Move: slices.Contains(d.Methods, "move"),
+				CreateFullPutPath: d.CreateFullPutPath, MinDeleteDepth: d.MinDeleteDepth, Access: uint32(access),
+			}
+		}
 		if t := a.Static.TryFiles; t != nil {
 			tf := &snapshotv1.TryFiles{Files: t.Files}
 			switch {
