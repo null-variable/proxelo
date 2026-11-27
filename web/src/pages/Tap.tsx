@@ -1,9 +1,83 @@
 // Live Tap: requests matching a filter as proxies finish them. Proxies
 // filter and sample; only matches reach the console.
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { api, errorText } from "../api/client";
+import type { Resource } from "../api/types";
 import { useApp } from "../app/context";
-import { Card, Empty, ErrorBanner, Field, PageHeader, Status, type Tone } from "../components/ui";
+import { Card, Dialog, Empty, ErrorBanner, Field, PageHeader, Status, toast, type Tone } from "../components/ui";
 import { refName, useList, useRefs } from "./Resources";
+
+// Rules the anomaly scoring of the Core Rule Set adds up to; an exception
+// for one of them would turn the whole set off.
+const SCORING = new Set([949110, 959100, 980130, 980140, 980170]);
+
+interface WAFException {
+  rule: number;
+  path?: string;
+  note?: string;
+}
+
+// Makes a WAF exception from a tapped request: one rule it matched, turned
+// off under its path or everywhere, added to a waf policy in the change set.
+function ExceptionDialog({ ev, onClose }: { ev: TapEvent; onClose: () => void }) {
+  const app = useApp();
+  const policies = useList("policies", app.changeset);
+  const wafs = (policies.data?.items ?? []).filter((p) => p.spec?.type === "waf");
+  const rules = (ev.wafRules ?? []).filter((r) => !SCORING.has(r));
+  const path = ev.uri.split("?")[0] ?? "/";
+  const [pol, setPol] = useState("");
+  const [rule, setRule] = useState(rules[0] ?? 0);
+  const [scope, setScope] = useState<"path" | "all">("path");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const policy = pol || wafs[0]?.id || "";
+  const save = () =>
+    app.withChangeSet(async (cs) => {
+      setBusy(true);
+      setErr("");
+      try {
+        const cur = await api.get<Resource>(`/policies/${policy}?changeset=${cs}`);
+        const { id: _i, resourceVersion: _v, createdAt: _c, updatedAt: _u, ...body } = cur;
+        const exc: WAFException = { rule, note: `From ${ev.method} ${ev.uri} at ${ev.time}` };
+        if (scope === "path") exc.path = path;
+        body.spec.waf.exceptions = [...(body.spec.waf.exceptions ?? []), exc];
+        await api.put<Resource>(`/policies/${policy}?changeset=${cs}`, body);
+        toast("Exception added", `Rule ${rule} in change set ${cs}`);
+        app.refresh();
+        onClose();
+      } catch (e) {
+        setErr(errorText(e));
+      } finally {
+        setBusy(false);
+      }
+    });
+  return (
+    <Dialog title="Make a WAF exception" onClose={onClose} actions={<>
+      <button className="btn" onClick={onClose}>Cancel</button>
+      <button className="btn btn--primary" disabled={busy || !policy || !rule} onClick={save}>{busy ? "Adding…" : "Add exception"}</button>
+    </>}>
+      <div className="stack">
+        {err && <p className="danger-text small">{err}</p>}
+        <Field id="exc-p" label="WAF policy">
+          <select id="exc-p" className="input" value={policy} onChange={(e) => setPol(e.target.value)}>
+            {wafs.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </Field>
+        <Field id="exc-r" label="Rule" hint="Rules the request matched, without the anomaly scoring ones.">
+          <select id="exc-r" className="input mono" value={rule} onChange={(e) => setRule(Number(e.target.value))}>
+            {rules.map((r) => <option key={r} value={r}>{r}</option>)}
+          </select>
+        </Field>
+        <Field id="exc-s" label="Where">
+          <select id="exc-s" className="input" value={scope} onChange={(e) => setScope(e.target.value as "path" | "all")}>
+            <option value="path">Paths starting with {path}</option>
+            <option value="all">Everywhere</option>
+          </select>
+        </Field>
+      </div>
+    </Dialog>
+  );
+}
 
 interface TapEvent {
   time: string;
@@ -21,6 +95,7 @@ interface TapEvent {
   upstreamStatus?: number;
   bytesSent: number;
   headers?: Record<string, string>;
+  wafRules?: number[];
 }
 
 // Rows kept on screen; older ones scroll off.
@@ -42,6 +117,7 @@ export function Tap() {
   const [dropped, setDropped] = useState(0);
   const [err, setErr] = useState<unknown>(null);
   const [open, setOpen] = useState<TapEvent | null>(null);
+  const [excFor, setExcFor] = useState<TapEvent | null>(null);
   const src = useRef<EventSource | null>(null);
   // Whether the current stream opened, to tell a refused filter apart
   // from a dropped connection that EventSource retries.
@@ -162,7 +238,12 @@ export function Tap() {
         </Card>
       )}
       {open && (
-        <Card title={`${open.method} ${open.uri}`} actions={<button className="btn btn--sm" onClick={() => setOpen(null)}>Close</button>}>
+        <Card title={`${open.method} ${open.uri}`} actions={<div className="row">
+          {(open.wafRules ?? []).some((r) => !SCORING.has(r)) && app.canAny("editor") && (
+            <button className="btn btn--sm" onClick={() => setExcFor(open)}>Make a WAF exception from this request</button>
+          )}
+          <button className="btn btn--sm" onClick={() => setOpen(null)}>Close</button>
+        </div>}>
           <table className="data-table">
             <tbody>
               {([
@@ -170,6 +251,7 @@ export function Tap() {
                 ["Host", open.host], ["Protocol", `HTTP/${open.protocol}`], ["Client", open.client], ["Status", String(open.status)],
                 ["Upstream", open.upstream], ["Upstream status", open.upstreamStatus ? String(open.upstreamStatus) : ""],
                 ["Duration", `${open.durationMs.toFixed(3)} ms`], ["Bytes sent", String(open.bytesSent)],
+                ["WAF rules", (open.wafRules ?? []).join(", ")],
                 ...Object.entries(open.headers ?? {}).map(([k, v]) => [k, v]),
               ] as [string, string | undefined][]).filter(([, v]) => v).map(([k, v]) => (
                 <tr key={k}><th scope="row">{k}</th><td className="mono break">{v}</td></tr>
@@ -178,6 +260,7 @@ export function Tap() {
           </table>
         </Card>
       )}
+      {excFor && <ExceptionDialog ev={excFor} onClose={() => setExcFor(null)} />}
     </div>
   );
 }

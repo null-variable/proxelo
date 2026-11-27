@@ -166,6 +166,7 @@ type tapEvent struct {
 	UpstreamStatus uint32            `json:"upstreamStatus,omitempty"`
 	BytesSent      uint64            `json:"bytesSent"`
 	Headers        map[string]string `json:"headers,omitempty"`
+	WAFRules       []uint32          `json:"wafRules,omitempty"`
 }
 
 func tapJSON(e distrib.TapEvent) tapEvent {
@@ -173,7 +174,7 @@ func tapJSON(e distrib.TapEvent) tapEvent {
 		Time: time.UnixMicro(e.GetTimeUs()).UTC(), Node: e.Node, Site: e.GetSiteId(), Route: e.GetRouteId(),
 		Client: e.GetClient(), Method: e.GetMethod(), Host: e.GetHost(), URI: e.GetUri(), Protocol: e.GetProtocol(),
 		Status: e.GetStatus(), DurationMS: float64(e.GetDurationUs()) / 1000, Upstream: e.GetUpstream(),
-		UpstreamStatus: e.GetUpstreamStatus(), BytesSent: e.GetBytesSent(),
+		UpstreamStatus: e.GetUpstreamStatus(), BytesSent: e.GetBytesSent(), WAFRules: e.GetWafRules(),
 	}
 	if hs := e.GetHeaders(); len(hs) > 0 {
 		out.Headers = make(map[string]string, len(hs))
