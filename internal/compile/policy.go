@@ -171,9 +171,24 @@ func (st *site) effective(all []*model.Policy) effect {
 			}
 		case model.PolicyForwardAuth:
 			a.ForwardAuth = st.forwardAuth(p)
+		case model.PolicyJWT:
+			if j := p.Spec.JWT; j != nil {
+				a.Jwt = &snapshotv1.Jwt{
+					Realm: j.Realm, Token: j.Token, Jwks: []byte(j.JWKS), JwksUrl: j.JWKSURL,
+					KeyCacheS: seconds(j.KeyCache), Issuer: j.Issuer, Audiences: j.Audiences, LeewayS: seconds(j.Leeway),
+				}
+			}
+		case model.PolicyOIDC:
+			if o := p.Spec.OIDC; o != nil {
+				a.Oidc = &snapshotv1.Oidc{
+					Issuer: o.Issuer, ClientId: o.ClientID, ClientSecret: o.ClientSecret, RedirectUri: o.RedirectURI,
+					Scopes: o.Scopes, Cookie: o.Cookie, SessionTimeoutS: seconds(o.SessionTimeout),
+					LogoutUri: o.LogoutURI, PostLogoutUri: o.PostLogoutURI,
+				}
+			}
 		}
 	}
-	if len(a.RateLimits) > 0 || len(a.ConnLimits) > 0 || len(a.Rules) > 0 || a.BasicAuth != nil || a.ForwardAuth != nil {
+	if len(a.RateLimits) > 0 || len(a.ConnLimits) > 0 || len(a.Rules) > 0 || a.BasicAuth != nil || a.ForwardAuth != nil || a.Jwt != nil || a.Oidc != nil {
 		e.access = a
 	}
 	e.response, e.request = resp.ops(), req.ops()

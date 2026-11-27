@@ -949,6 +949,56 @@
         "from"
       ]
     },
+    "JWTPolicy": {
+      "type": "object",
+      "description": "JWTPolicy is nginx auth_jwt: requests need a JSON Web Token signed by one of the keys, unexpired and, when set, from the issuer for one of the audiences. Others get 401 with WWW-Authenticate: Bearer. The claims are variables $jwt_claim_<name> and the token header $jwt_header_<name>. The closest policy applies.",
+      "properties": {
+        "audiences": {
+          "type": "array",
+          "description": "The aud claim must hold one of these.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "issuer": {
+          "type": "string"
+        },
+        "jwks": {
+          "type": "string",
+          "description": "A JSON Web Key Set (RFC 7517) with the signing keys."
+        },
+        "jwksUrl": {
+          "type": "string",
+          "description": "Or where to fetch it; both may be set."
+        },
+        "keyCache": {
+          "type": "string",
+          "description": "How long fetched keys are kept. Default 1h."
+        },
+        "leeway": {
+          "type": "string",
+          "description": "Clock skew allowed for exp and nbf."
+        },
+        "realm": {
+          "type": "string",
+          "description": "Realm of the challenge. Default \"proxelo\"."
+        },
+        "token": {
+          "type": "string",
+          "description": "A template giving the token, for example \"$cookie_token\". Default: the Bearer credentials of the Authorization header."
+        }
+      },
+      "x-order": [
+        "realm",
+        "token",
+        "jwks",
+        "jwksUrl",
+        "keyCache",
+        "issuer",
+        "audiences",
+        "leeway"
+      ]
+    },
     "Keepalive": {
       "type": "object",
       "properties": {
@@ -1267,6 +1317,64 @@
         "upstream"
       ]
     },
+    "OIDCPolicy": {
+      "type": "object",
+      "description": "OIDCPolicy signs users in with an OpenID Connect provider before their requests are served: the authorization code flow with PKCE, then a signed session cookie. The user's sub and email are variables $oidc_sub and $oidc_email. The closest policy applies.",
+      "properties": {
+        "clientId": {
+          "type": "string"
+        },
+        "clientSecret": {
+          "type": "string",
+          "description": "Never returned by the API; empty on update keeps the stored one."
+        },
+        "cookie": {
+          "type": "string",
+          "description": "Session cookie name. Default \"proxelo_oidc\"."
+        },
+        "issuer": {
+          "type": "string",
+          "description": "The provider, found through <issuer>/.well-known/openid-configuration."
+        },
+        "logoutUri": {
+          "type": "string",
+          "description": "A path that signs the user out, then goes to the provider's logout or to PostLogoutURI."
+        },
+        "postLogoutUri": {
+          "type": "string"
+        },
+        "redirectUri": {
+          "type": "string",
+          "description": "Where the provider sends users back, a path on the site or a URL whose path reaches a route with this policy. Default \"/oidc_callback\"."
+        },
+        "scopes": {
+          "type": "array",
+          "description": "Default [\"openid\"]; \"openid\" is always asked for.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "sessionTimeout": {
+          "type": "string",
+          "description": "Default 8h."
+        }
+      },
+      "x-order": [
+        "issuer",
+        "clientId",
+        "clientSecret",
+        "redirectUri",
+        "scopes",
+        "cookie",
+        "sessionTimeout",
+        "logoutUri",
+        "postLogoutUri"
+      ],
+      "required": [
+        "issuer",
+        "clientId"
+      ]
+    },
     "PassiveHealth": {
       "type": "object",
       "description": "PassiveHealth is nginx max_fails and fail_timeout.",
@@ -1353,6 +1461,14 @@
           "$ref": "#/$defs/IPAccessPolicy",
           "x-nullable": true
         },
+        "jwt": {
+          "$ref": "#/$defs/JWTPolicy",
+          "x-nullable": true
+        },
+        "oidc": {
+          "$ref": "#/$defs/OIDCPolicy",
+          "x-nullable": true
+        },
         "rateLimit": {
           "$ref": "#/$defs/RateLimitPolicy",
           "x-nullable": true
@@ -1372,6 +1488,8 @@
             "ipAccess",
             "basicAuth",
             "forwardAuth",
+            "jwt",
+            "oidc",
             "realIp",
             "compression",
             "cache"
@@ -1388,6 +1506,8 @@
         "ipAccess",
         "basicAuth",
         "forwardAuth",
+        "jwt",
+        "oidc",
         "realIp",
         "compression",
         "cache"

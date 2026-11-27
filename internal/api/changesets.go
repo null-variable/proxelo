@@ -144,7 +144,7 @@ func (a *api) resourceDiffs(r *http.Request, cs string) ([]resourceDiff, error) 
 				d.Changes = append(d.Changes, c)
 			}
 		}
-		d.Changes = diff.Redact(d.Changes, "keyPem")
+		d.Changes = diff.Redact(d.Changes, model.SecretFields...)
 		out = append(out, d)
 	}
 	return out, nil
@@ -166,7 +166,7 @@ func (a *api) latestSnapshot(r *http.Request) (*snapshotv1.Snapshot, error) {
 
 func redactEffective(es []diff.Effective) []diff.Effective {
 	for i := range es {
-		es[i].Changes = diff.Redact(es[i].Changes, "keyPem")
+		es[i].Changes = diff.Redact(es[i].Changes, model.SecretFields...)
 	}
 	return es
 }

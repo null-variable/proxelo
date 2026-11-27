@@ -625,3 +625,57 @@ func TestValidateCache(t *testing.T) {
 		}
 	}
 }
+
+func TestCompileTokenAuth(t *testing.T) {
+	cfg := validConfig()
+	cfg.Policies = []*model.Policy{
+		{Meta: meta("pol_jwt", "jwt"), Spec: model.PolicySpec{Type: model.PolicyJWT, JWT: &model.JWTPolicy{
+			JWKSURL: "https://idp.example.com/keys", KeyCache: "10m", Audiences: []string{"api"}, Leeway: "30s",
+		}}},
+		{Meta: meta("pol_oidc", "oidc"), Spec: model.PolicySpec{Type: model.PolicyOIDC, OIDC: &model.OIDCPolicy{
+			Issuer: "https://idp.example.com", ClientID: "app", ClientSecret: "s", SessionTimeout: "1h",
+		}}},
+	}
+	cfg.Routes[0].Spec.Policies = []string{"pol_jwt", "pol_oidc"}
+	for _, p := range cfg.Policies {
+		if es := model.Validate(p); es != nil {
+			t.Fatalf("%s: %v", p.ID, es)
+		}
+	}
+	snap, err := Compile(cfg, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var a *snapshotv1.Access
+	for _, r := range snap.GetSites()[0].GetRoutes() {
+		if r.GetId() == "rt_api" {
+			a = r.GetAccess()
+		}
+	}
+	j, o := a.GetJwt(), a.GetOidc()
+	if j.GetJwksUrl() != "https://idp.example.com/keys" || j.GetKeyCacheS() != 600 || j.GetLeewayS() != 30 || j.GetAudiences()[0] != "api" {
+		t.Errorf("jwt = %v", j)
+	}
+	if o.GetIssuer() != "https://idp.example.com" || o.GetClientSecret() != "s" || o.GetSessionTimeoutS() != 3600 {
+		t.Errorf("oidc = %v", o)
+	}
+}
+
+func TestValidateTokenAuth(t *testing.T) {
+	bad := []model.PolicySpec{
+		{Type: model.PolicyJWT, JWT: &model.JWTPolicy{}},
+		{Type: model.PolicyJWT, JWT: &model.JWTPolicy{JWKS: "{nope"}},
+		{Type: model.PolicyJWT, JWT: &model.JWTPolicy{JWKS: `{"keys":[{}]}`}},
+		{Type: model.PolicyJWT, JWT: &model.JWTPolicy{JWKSURL: "ftp://x"}},
+		{Type: model.PolicyOIDC, OIDC: &model.OIDCPolicy{Issuer: "idp", ClientID: "a"}},
+		{Type: model.PolicyOIDC, OIDC: &model.OIDCPolicy{Issuer: "https://idp"}},
+		{Type: model.PolicyOIDC, OIDC: &model.OIDCPolicy{Issuer: "https://idp", ClientID: "a", RedirectURI: "/cb?x=1"}},
+		{Type: model.PolicyOIDC, OIDC: &model.OIDCPolicy{Issuer: "https://idp", ClientID: "a", LogoutURI: "logout"}},
+	}
+	for i, s := range bad {
+		p := &model.Policy{Meta: meta("pol_x", "x"), Spec: s}
+		if es := model.Validate(p); len(es) == 0 {
+			t.Errorf("case %d: no error", i)
+		}
+	}
+}

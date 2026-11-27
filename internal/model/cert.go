@@ -51,13 +51,42 @@ func Prepare(r Resource) {
 	}
 }
 
-// Redacted returns r as the API shows it: private keys are never returned.
+// SecretFields are the JSON names of fields the API never returns.
+var SecretFields = []string{"keyPem", "clientSecret"}
+
+// Redacted returns r as the API shows it: private keys and client secrets
+// are never returned.
 func Redacted(r Resource) Resource {
-	c, ok := r.(*Certificate)
-	if !ok || c.Spec.KeyPEM == "" {
-		return r
+	switch v := r.(type) {
+	case *Certificate:
+		if v.Spec.KeyPEM != "" {
+			out := *v
+			out.Spec.KeyPEM = ""
+			return &out
+		}
+	case *Policy:
+		if o := v.Spec.OIDC; o != nil && o.ClientSecret != "" {
+			out := *v
+			oc := *o
+			oc.ClientSecret = ""
+			out.Spec.OIDC = &oc
+			return &out
+		}
 	}
-	out := *c
-	out.Spec.KeyPEM = ""
-	return &out
+	return r
+}
+
+// KeepSecrets fills the secret fields r leaves empty from cur, the stored
+// version, so a resource read back from the API can be written again.
+func KeepSecrets(r, cur Resource) {
+	switch v := r.(type) {
+	case *Certificate:
+		if c, ok := cur.(*Certificate); ok && v.Spec.KeyPEM == "" {
+			v.Spec.KeyPEM = c.Spec.KeyPEM
+		}
+	case *Policy:
+		if c, ok := cur.(*Policy); ok && v.Spec.OIDC != nil && v.Spec.OIDC.ClientSecret == "" && c.Spec.OIDC != nil {
+			v.Spec.OIDC.ClientSecret = c.Spec.OIDC.ClientSecret
+		}
+	}
 }

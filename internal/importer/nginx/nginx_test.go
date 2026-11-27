@@ -194,3 +194,47 @@ http {
 		t.Errorf("http3: %v", got)
 	}
 }
+
+func TestAuthJWTAndOIDC(t *testing.T) {
+	cfg, _ := convert(t, Files{
+		"/etc/nginx/nginx.conf": `events {}
+http {
+    oidc_provider idp {
+        issuer https://login.example.com/realms/a;
+        client_id app;
+        client_secret s3cret;
+        logout_uri /logout;
+    }
+    server {
+        listen 80;
+        server_name example.com;
+        location /api/ {
+            auth_jwt "api" token=$cookie_auth;
+            auth_jwt_key_file /etc/nginx/keys.json;
+            auth_jwt_leeway 30;
+            return 200;
+        }
+        location /app/ {
+            auth_oidc idp;
+            return 200;
+        }
+    }
+}`,
+		"/etc/nginx/keys.json": `{"keys":[{"kty":"oct","k":"c2VjcmV0"}]}`,
+	})
+	var jwt, oidc *model.Policy
+	for _, p := range cfg.Policies {
+		switch p.Spec.Type {
+		case model.PolicyJWT:
+			jwt = p
+		case model.PolicyOIDC:
+			oidc = p
+		}
+	}
+	if jwt == nil || jwt.Spec.JWT.Realm != "api" || jwt.Spec.JWT.Token != "$cookie_auth" || jwt.Spec.JWT.Leeway != "30s" || jwt.Spec.JWT.JWKS == "" {
+		t.Errorf("jwt: %+v", jwt)
+	}
+	if oidc == nil || oidc.Spec.OIDC.Issuer != "https://login.example.com/realms/a" || oidc.Spec.OIDC.ClientSecret != "s3cret" || oidc.Spec.OIDC.LogoutURI != "/logout" {
+		t.Errorf("oidc: %+v", oidc)
+	}
+}

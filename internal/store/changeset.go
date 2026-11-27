@@ -438,9 +438,7 @@ func (s *Store) Import(ctx context.Context, cs string, cfg model.Config) error {
 				default:
 					m.ResourceVersion = cur.Common().ResourceVersion + 1
 					m.CreatedAt = cur.Common().CreatedAt
-					if c, ok := r.(*model.Certificate); ok && c.Spec.KeyPEM == "" {
-						c.Spec.KeyPEM = cur.(*model.Certificate).Spec.KeyPEM
-					}
+					model.KeepSecrets(r, cur)
 				}
 				m.UpdatedAt = s.now()
 				body, err := json.Marshal(r)

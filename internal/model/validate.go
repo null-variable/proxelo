@@ -1,12 +1,15 @@
 package model
 
 import (
+	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"maps"
 	"math"
 	"net"
 	"net/netip"
+	"net/url"
 	"regexp"
 	"slices"
 	"strconv"
@@ -260,6 +263,8 @@ func (s *PolicySpec) validate(es *FieldErrors) {
 		PolicyIPAccess:    s.IPAccess != nil,
 		PolicyBasicAuth:   s.BasicAuth != nil,
 		PolicyForwardAuth: s.ForwardAuth != nil,
+		PolicyJWT:         s.JWT != nil,
+		PolicyOIDC:        s.OIDC != nil,
 		PolicyRealIP:      s.RealIP != nil,
 		PolicyCompression: s.Compression != nil,
 		PolicyCache:       s.Cache != nil,
@@ -371,6 +376,54 @@ func (s *PolicySpec) validate(es *FieldErrors) {
 		for i, h := range f.CopyHeaders {
 			checkHeaderName(es, fmt.Sprintf("spec.forwardAuth.copyHeaders[%d]", i), h)
 		}
+	case PolicyJWT:
+		j := s.JWT
+		checkOneLine(es, "spec.jwt.realm", j.Realm)
+		checkOneLine(es, "spec.jwt.token", j.Token)
+		if j.JWKS == "" && j.JWKSURL == "" {
+			es.add("spec.jwt.jwks", "jwks or jwksUrl is required")
+		}
+		if j.JWKS != "" {
+			if err := checkJWKS(j.JWKS); err != nil {
+				es.add("spec.jwt.jwks", "%s", err)
+			}
+		}
+		if j.JWKSURL != "" && !httpURL(j.JWKSURL) {
+			es.add("spec.jwt.jwksUrl", "must be an http or https URL")
+		}
+		checkDuration(es, "spec.jwt.keyCache", j.KeyCache)
+		checkDuration(es, "spec.jwt.leeway", j.Leeway)
+		checkOneLine(es, "spec.jwt.issuer", j.Issuer)
+	case PolicyOIDC:
+		o := s.OIDC
+		if !httpURL(o.Issuer) {
+			es.add("spec.oidc.issuer", "must be an http or https URL")
+		}
+		if o.ClientID == "" {
+			es.add("spec.oidc.clientId", "is required")
+		}
+		checkOneLine(es, "spec.oidc.clientId", o.ClientID)
+		checkOneLine(es, "spec.oidc.clientSecret", o.ClientSecret)
+		if o.RedirectURI != "" && !strings.HasPrefix(o.RedirectURI, "/") && !httpURL(o.RedirectURI) {
+			es.add("spec.oidc.redirectUri", "must be a path or an http or https URL")
+		}
+		if strings.Contains(o.RedirectURI, "?") {
+			es.add("spec.oidc.redirectUri", "must not have a query")
+		}
+		for i, sc := range o.Scopes {
+			if sc == "" || strings.ContainsAny(sc, " \t\r\n\"\\") {
+				es.add(fmt.Sprintf("spec.oidc.scopes[%d]", i), "must be one word")
+			}
+		}
+		if o.Cookie != "" && !headerNameRE.MatchString(o.Cookie) {
+			es.add("spec.oidc.cookie", "must be a cookie name")
+		}
+		checkDuration(es, "spec.oidc.sessionTimeout", o.SessionTimeout)
+		if o.LogoutURI != "" && !strings.HasPrefix(o.LogoutURI, "/") {
+			es.add("spec.oidc.logoutUri", "must start with /")
+		}
+		checkOneLine(es, "spec.oidc.logoutUri", o.LogoutURI)
+		checkOneLine(es, "spec.oidc.postLogoutUri", o.PostLogoutURI)
 	case PolicyRealIP:
 		r := s.RealIP
 		if len(r.From) == 0 {
@@ -666,6 +719,32 @@ func checkLimitStatus(es *FieldErrors, path string, s uint32) {
 	if s != 0 && (s < 400 || s > 599) {
 		es.add(path, "must be 400-599")
 	}
+}
+
+// httpURL reports whether s is an absolute http or https URL with a host.
+func httpURL(s string) bool {
+	u, err := url.Parse(s)
+	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" && u.User == nil && u.Fragment == ""
+}
+
+// checkJWKS reports whether s is a JSON Web Key Set or a single key.
+func checkJWKS(s string) error {
+	var set struct {
+		Keys []map[string]any `json:"keys"`
+		Kty  string           `json:"kty"`
+	}
+	if err := json.Unmarshal([]byte(s), &set); err != nil {
+		return fmt.Errorf("is not JSON: %v", err)
+	}
+	if len(set.Keys) == 0 && set.Kty == "" {
+		return errors.New("has no keys")
+	}
+	for i, k := range set.Keys {
+		if _, ok := k["kty"].(string); !ok {
+			return fmt.Errorf("keys[%d] has no kty", i)
+		}
+	}
+	return nil
 }
 
 func checkOneLine(es *FieldErrors, path, v string) {

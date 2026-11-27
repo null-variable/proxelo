@@ -679,6 +679,8 @@ const (
 	PolicyIPAccess    PolicyType = "ipAccess"
 	PolicyBasicAuth   PolicyType = "basicAuth"
 	PolicyForwardAuth PolicyType = "forwardAuth"
+	PolicyJWT         PolicyType = "jwt"
+	PolicyOIDC        PolicyType = "oidc"
 	PolicyRealIP      PolicyType = "realIp"
 	PolicyCompression PolicyType = "compression"
 	PolicyCache       PolicyType = "cache"
@@ -695,6 +697,8 @@ type PolicySpec struct {
 	IPAccess    *IPAccessPolicy    `json:"ipAccess,omitempty"`
 	BasicAuth   *BasicAuthPolicy   `json:"basicAuth,omitempty"`
 	ForwardAuth *ForwardAuthPolicy `json:"forwardAuth,omitempty"`
+	JWT         *JWTPolicy         `json:"jwt,omitempty"`
+	OIDC        *OIDCPolicy        `json:"oidc,omitempty"`
 	RealIP      *RealIPPolicy      `json:"realIp,omitempty"`
 	Compression *CompressionPolicy `json:"compression,omitempty"`
 	Cache       *CachePolicy       `json:"cache,omitempty"`
@@ -826,6 +830,55 @@ type ForwardAuthPolicy struct {
 	// Response headers of a successful check added to the request sent
 	// upstream; also variables $auth_resp_<name>.
 	CopyHeaders []string `json:"copyHeaders,omitempty"`
+}
+
+// JWTPolicy is nginx auth_jwt: requests need a JSON Web Token signed by
+// one of the keys, unexpired and, when set, from the issuer for one of the
+// audiences. Others get 401 with WWW-Authenticate: Bearer. The claims are
+// variables $jwt_claim_<name> and the token header $jwt_header_<name>.
+// The closest policy applies.
+type JWTPolicy struct {
+	// Realm of the challenge. Default "proxelo".
+	Realm string `json:"realm,omitempty"`
+	// A template giving the token, for example "$cookie_token". Default:
+	// the Bearer credentials of the Authorization header.
+	Token string `json:"token,omitempty"`
+	// A JSON Web Key Set (RFC 7517) with the signing keys.
+	JWKS string `json:"jwks,omitempty"`
+	// Or where to fetch it; both may be set.
+	JWKSURL string `json:"jwksUrl,omitempty"`
+	// How long fetched keys are kept. Default 1h.
+	KeyCache string `json:"keyCache,omitempty"`
+	Issuer   string `json:"issuer,omitempty"`
+	// The aud claim must hold one of these.
+	Audiences []string `json:"audiences,omitempty"`
+	// Clock skew allowed for exp and nbf.
+	Leeway string `json:"leeway,omitempty"`
+}
+
+// OIDCPolicy signs users in with an OpenID Connect provider before their
+// requests are served: the authorization code flow with PKCE, then a
+// signed session cookie. The user's sub and email are variables $oidc_sub
+// and $oidc_email. The closest policy applies.
+type OIDCPolicy struct {
+	// The provider, found through <issuer>/.well-known/openid-configuration.
+	Issuer   string `json:"issuer"`
+	ClientID string `json:"clientId"`
+	// Never returned by the API; empty on update keeps the stored one.
+	ClientSecret string `json:"clientSecret,omitempty"`
+	// Where the provider sends users back, a path on the site or a URL
+	// whose path reaches a route with this policy. Default "/oidc_callback".
+	RedirectURI string `json:"redirectUri,omitempty"`
+	// Default ["openid"]; "openid" is always asked for.
+	Scopes []string `json:"scopes,omitempty"`
+	// Session cookie name. Default "proxelo_oidc".
+	Cookie string `json:"cookie,omitempty"`
+	// Default 8h.
+	SessionTimeout string `json:"sessionTimeout,omitempty"`
+	// A path that signs the user out, then goes to the provider's logout
+	// or to PostLogoutURI.
+	LogoutURI     string `json:"logoutUri,omitempty"`
+	PostLogoutURI string `json:"postLogoutUri,omitempty"`
 }
 
 // RealIPPolicy is nginx set_real_ip_from, real_ip_header and

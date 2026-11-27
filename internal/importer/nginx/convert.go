@@ -59,6 +59,8 @@ type converter struct {
 	connZones map[string]*model.ConnLimitPolicy
 	// proxy_cache_path zones by name.
 	cacheZones map[string]*model.CachePolicy
+	// oidc_provider blocks by name.
+	oidcProviders map[string]*model.OIDCPolicy
 	// Policies made per zone and settings, to share one per zone.
 	policies map[string]string
 	// Log formats by name.
@@ -187,10 +189,15 @@ type scope struct {
 	reqDry, connDry       bool
 	basicRealm            string
 	basicUsers            []model.BasicUser
-	authRequest           string
-	accessLog             *model.AccessLogPolicy
-	logOff                bool
-	gzip                  *model.CompressionPolicy
+	// auth_jwt: realm "" for off; jwt the auth_jwt_* settings.
+	jwtRealm string
+	jwt      model.JWTPolicy
+	// auth_oidc: the provider name, "" for off.
+	oidc        string
+	authRequest string
+	accessLog   *model.AccessLogPolicy
+	logOff      bool
+	gzip        *model.CompressionPolicy
 	// proxy_cache: the zone name, "" for off; cache the proxy_cache_*
 	// settings, which apply only with a zone.
 	cacheZone    string
@@ -232,6 +239,7 @@ func (s scope) clone() scope {
 		out.gzip = &g
 	}
 	out.cache = cloneCache(s.cache)
+	out.jwt.Audiences = slices.Clone(s.jwt.Audiences)
 	return out
 }
 
@@ -261,13 +269,15 @@ func (c *converter) http(h *Directive) {
 			c.limitConnZone(d)
 		case "proxy_cache_path":
 			c.cachePath(d)
+		case "oidc_provider":
+			c.oidcProvider(d)
 		case "map", "geo", "split_clients":
 			c.lookup(d)
 		}
 	}
 	for _, d := range h.Block {
 		switch d.Name {
-		case "upstream", "log_format", "limit_req_zone", "limit_conn_zone", "proxy_cache_path", "map", "geo", "split_clients":
+		case "upstream", "log_format", "limit_req_zone", "limit_conn_zone", "proxy_cache_path", "oidc_provider", "map", "geo", "split_clients":
 		case "server":
 			servers = append(servers, d)
 		default:
@@ -374,6 +384,51 @@ func (c *converter) common(d *Directive, s *scope) bool {
 			return true
 		}
 		s.basicUsers = users
+	case "auth_jwt":
+		if arg(0) == "off" {
+			s.jwtRealm = ""
+		} else {
+			s.jwtRealm = arg(0)
+			if arg(1) != "" {
+				tok, ok := strings.CutPrefix(arg(1), "token=")
+				if !ok {
+					c.note(d, Unsupported, "expected token=$variable")
+					return true
+				}
+				s.jwt.Token = tok
+			}
+		}
+	case "auth_jwt_key_file":
+		src, ok := c.lookupFile(arg(0))
+		if !ok {
+			c.note(d, ConvertedWithNote, "key file "+arg(0)+" is not in the upload; add the keys to the jwt policy")
+			return true
+		}
+		s.jwt.JWKS = src
+	case "auth_jwt_key_request":
+		c.note(d, ConvertedWithNote, "set jwt.jwksUrl to the URL the location fetches")
+		return true
+	case "auth_jwt_key_cache":
+		s.jwt.KeyCache = duration(arg(0))
+	case "auth_jwt_leeway":
+		s.jwt.Leeway = duration(arg(0))
+	case "auth_jwt_require", "auth_jwt_claim_set", "auth_jwt_header_set":
+		c.note(d, Replaced, "claims are variables $jwt_claim_<name>; issuer and audiences are jwt policy settings")
+		return true
+	case "auth_jwt_type":
+		if arg(0) != "" && arg(0) != "signed" {
+			c.note(d, Unsupported, "only signed tokens (JWS) are verified")
+			return true
+		}
+	case "auth_oidc":
+		if arg(0) == "off" {
+			s.oidc = ""
+		} else if _, ok := c.oidcProviders[arg(0)]; ok {
+			s.oidc = arg(0)
+		} else {
+			c.note(d, Unsupported, "oidc_provider "+arg(0)+" is not defined")
+			return true
+		}
 	case "auth_request":
 		if arg(0) == "off" {
 			s.authRequest = ""

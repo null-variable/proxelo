@@ -172,8 +172,8 @@ func (a *api) update(w http.ResponseWriter, r *http.Request, ac *access, merge b
 		a.fail(w, err)
 		return
 	}
-	if c, ok := res.(*model.Certificate); ok && !merge && c.Spec.KeyPEM == "" {
-		c.Spec.KeyPEM = cur.(*model.Certificate).Spec.KeyPEM
+	if !merge {
+		model.KeepSecrets(res, cur)
 	}
 	if err := model.Validate(res).Err(); err != nil {
 		a.fail(w, err)
@@ -304,6 +304,10 @@ func redactConfig(cfg model.Config) model.Config {
 	out.Certificates = nil
 	for _, c := range cfg.Certificates {
 		out.Certificates = append(out.Certificates, model.Redacted(c).(*model.Certificate))
+	}
+	out.Policies = nil
+	for _, p := range cfg.Policies {
+		out.Policies = append(out.Policies, model.Redacted(p).(*model.Policy))
 	}
 	return out
 }

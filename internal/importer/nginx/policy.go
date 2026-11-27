@@ -15,8 +15,8 @@ func defaultParams(p model.GatewayProtocol) []model.GatewayParam { return compil
 // spec.
 func (c *converter) policy(name string, spec model.PolicySpec) string {
 	key := fmt.Sprintf("%#v", spec)
-	if spec.Headers != nil || spec.BasicAuth != nil || spec.Compression != nil || spec.IPAccess != nil || spec.AccessLog != nil || spec.RealIP != nil {
-		key = fmt.Sprintf("%s:%+v%+v%+v%+v%+v%+v", spec.Type, spec.Headers, spec.BasicAuth, spec.Compression, spec.IPAccess, spec.AccessLog, spec.RealIP)
+	if spec.Headers != nil || spec.BasicAuth != nil || spec.Compression != nil || spec.IPAccess != nil || spec.AccessLog != nil || spec.RealIP != nil || spec.JWT != nil || spec.OIDC != nil {
+		key = fmt.Sprintf("%s:%+v%+v%+v%+v%+v%+v%+v%+v", spec.Type, spec.Headers, spec.BasicAuth, spec.Compression, spec.IPAccess, spec.AccessLog, spec.RealIP, spec.JWT, spec.OIDC)
 	}
 	if id, ok := c.policies[key]; ok {
 		return id
@@ -96,6 +96,15 @@ func (c *converter) scopePolicies(s, parent scope) []string {
 	if s.basicRealm != "" && len(s.basicUsers) > 0 && (s.basicRealm != parent.basicRealm || !slices.Equal(s.basicUsers, parent.basicUsers)) {
 		out = append(out, c.policy("basic-auth", model.PolicySpec{Type: model.PolicyBasicAuth, BasicAuth: &model.BasicAuthPolicy{Realm: s.basicRealm, Users: s.basicUsers}}))
 	}
+	if s.jwtRealm != "" && (s.jwt.JWKS != "" || s.jwt.JWKSURL != "") && (s.jwtRealm != parent.jwtRealm || fmt.Sprintf("%+v", s.jwt) != fmt.Sprintf("%+v", parent.jwt)) {
+		j := s.jwt
+		j.Realm = s.jwtRealm
+		out = append(out, c.policy("jwt", model.PolicySpec{Type: model.PolicyJWT, JWT: &j}))
+	}
+	if s.oidc != "" && s.oidc != parent.oidc {
+		o := *c.oidcProviders[s.oidc]
+		out = append(out, c.policy("oidc-"+s.oidc, model.PolicySpec{Type: model.PolicyOIDC, OIDC: &o}))
+	}
 	if s.accessLog != nil && (parent.accessLog == nil || *s.accessLog != *parent.accessLog) {
 		l := *s.accessLog
 		out = append(out, c.policy("log-"+strings.Trim(l.Path, "/"), model.PolicySpec{Type: model.PolicyAccessLog, AccessLog: &l}))
@@ -111,6 +120,56 @@ func (c *converter) scopePolicies(s, parent scope) []string {
 		out = append(out, c.policy("bandwidth", model.PolicySpec{Type: model.PolicyBandwidth, Bandwidth: &model.BandwidthPolicy{Rate: s.rate, After: s.after}}))
 	}
 	return out
+}
+
+// oidcProvider reads an nginx Plus oidc_provider block.
+func (c *converter) oidcProvider(d *Directive) {
+	if len(d.Args) != 1 {
+		c.note(d, Unsupported, "needs a name")
+		return
+	}
+	o := &model.OIDCPolicy{}
+	for _, x := range d.Block {
+		a := x.Args
+		v := ""
+		if len(a) > 0 {
+			v = a[0]
+		}
+		switch x.Name {
+		case "issuer":
+			o.Issuer = v
+		case "client_id":
+			o.ClientID = v
+		case "client_secret":
+			o.ClientSecret = v
+		case "redirect_uri":
+			o.RedirectURI = v
+		case "scope":
+			o.Scopes = slices.Clone(a)
+		case "cookie_name":
+			o.Cookie = v
+		case "session_timeout":
+			o.SessionTimeout = duration(v)
+		case "logout_uri":
+			o.LogoutURI = v
+		case "post_logout_uri":
+			o.PostLogoutURI = v
+		default:
+			c.note(x, Unsupported, "")
+			continue
+		}
+		c.note(x, Converted, "")
+	}
+	if strings.Contains(o.ClientSecret, "$") {
+		c.note(d, ConvertedWithNote, "client_secret from a variable; set it in the oidc policy")
+		o.ClientSecret = ""
+	} else {
+		c.note(d, Converted, "")
+	}
+	if c.oidcProviders == nil {
+		c.oidcProviders = map[string]*model.OIDCPolicy{}
+	}
+	c.oidcProviders[d.Args[0]] = o
 }
 
 // cachePath reads proxy_cache_path into a zone the cache policies of its

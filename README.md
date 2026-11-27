@@ -61,7 +61,12 @@ each policy one zone shared by the routes it applies to; `ipAccess` allow
 and deny rules, the first match deciding; `basicAuth` with inline users
 hashed by htpasswd or openssl passwd; and `forwardAuth`, which asks an
 upstream about each request as auth_request does and can copy its response
-headers upstream. `bandwidth` throttles response bodies (limit_rate,
+headers upstream; `jwt`, which needs a JSON Web Token signed by keys
+given inline or fetched from a JWKS URL, as auth_jwt does, with the claims
+as `$jwt_claim_<name>`; and `oidc`, which signs users in with an OpenID
+Connect provider (code flow with PKCE) and keeps them in a signed session
+cookie, with `$oidc_sub` and `$oidc_email`. Client secrets are never
+returned by the API. `bandwidth` throttles response bodies (limit_rate,
 limit_rate_after), and `realIp`, on sites, takes the client address from a
 header set by trusted proxies. Refusals go through the error pages.
 

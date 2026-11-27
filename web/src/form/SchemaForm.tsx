@@ -18,6 +18,9 @@ interface Ctx {
   errors: FieldError[];
 }
 
+
+// Fields the API never returns; empty keeps the stored value.
+const SECRETS = new Set(["clientSecret"]);
 function errorAt(errors: FieldError[], path: string): string | undefined {
   return errors.find((e) => e.path === path)?.message;
 }
@@ -112,13 +115,13 @@ function Prop({ ctx, name, s, value, onChange, path, required }: { ctx: Ctx; nam
         {title}
         {!required && <span className="muted"> (optional)</span>}
       </label>
-      <Scalar id={id} ctx={ctx} s={r} value={value} onChange={onChange} err={err} nullable={!!s["x-nullable"]} label={title} />
+      <Scalar id={id} ctx={ctx} s={r} value={value} onChange={onChange} err={err} nullable={!!s["x-nullable"]} label={title} secret={SECRETS.has(name)} />
       {err ? <span className="field__error" role="alert">{err}</span> : desc && <span className="field__hint">{desc}</span>}
     </div>
   );
 }
 
-function Scalar({ id, ctx, s, value, onChange, err, nullable, label: name }: { id: string; ctx: Ctx; s: Schema; value: JSONValue; onChange: (v: JSONValue) => void; err?: string; nullable?: boolean; label: string }) {
+function Scalar({ id, ctx, s, value, onChange, err, nullable, label: name, secret }: { id: string; ctx: Ctx; s: Schema; value: JSONValue; onChange: (v: JSONValue) => void; err?: string; nullable?: boolean; label: string; secret?: boolean }) {
   const cls = "input" + (err ? " input--error" : "");
   const kind = s["x-ref"];
   if (kind) {
@@ -161,8 +164,8 @@ function Scalar({ id, ctx, s, value, onChange, err, nullable, label: name }: { i
     );
   }
   return (
-    <input id={id} className={cls} value={(value as string) ?? ""} onChange={(e) => onChange(e.target.value)}
-      autoComplete="off" spellCheck={false} aria-invalid={!!err} />
+    <input id={id} className={cls} type={secret ? "password" : undefined} value={(value as string) ?? ""} onChange={(e) => onChange(e.target.value)}
+      autoComplete="off" spellCheck={false} aria-invalid={!!err} placeholder={secret ? "Unchanged when empty" : undefined} />
   );
 }
 
