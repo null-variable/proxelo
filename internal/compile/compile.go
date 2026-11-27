@@ -126,7 +126,7 @@ func (c *compiler) compile(cfg model.Config, revision uint64) *snapshotv1.Snapsh
 
 	for _, l := range listeners.items {
 		base := fmt.Sprintf("listeners[%s].spec", l.ID)
-		out := &snapshotv1.Listener{Id: l.ID, Address: l.Spec.Address, ReusePort: l.Spec.ReusePort, Backlog: l.Spec.Backlog, Http2: l.Spec.HTTP2}
+		out := &snapshotv1.Listener{Id: l.ID, Address: l.Spec.Address, ReusePort: l.Spec.ReusePort, Backlog: l.Spec.Backlog, Http2: l.Spec.HTTP2, Http3: l.Spec.HTTP3}
 		if id := l.Spec.DefaultSite; id != "" {
 			if i, ok := sites.resolve(c, base+".defaultSite", "site", id); ok {
 				out.DefaultSite = proto.Uint32(i)

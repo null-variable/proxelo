@@ -176,3 +176,21 @@ http {
 		t.Errorf("cached routes %d, zones %v", cached, snap.GetCacheZones())
 	}
 }
+
+func TestListenQuic(t *testing.T) {
+	cfg, _ := convert(t, Files{"/etc/nginx/nginx.conf": `events {}
+http {
+    server { listen 443 ssl; listen 443 quic reuseport; server_name a.example.com; }
+    server { listen 8443 quic; http3 off; server_name b.example.com; }
+}`})
+	got := map[string]bool{}
+	for _, l := range cfg.Listeners {
+		got[l.Spec.Address] = l.Spec.HTTP3
+		if l.Spec.TLS == nil {
+			t.Errorf("%s: no tls", l.Spec.Address)
+		}
+	}
+	if !got["0.0.0.0:443"] || got["0.0.0.0:8443"] {
+		t.Errorf("http3: %v", got)
+	}
+}

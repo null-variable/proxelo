@@ -13,8 +13,11 @@ import (
 
 // listen is one parsed listen directive.
 type listen struct {
-	addr          string
-	ssl, http2    bool
+	addr       string
+	ssl, http2 bool
+	// quic is nginx's UDP listen for HTTP/3; here it is the same
+	// listener's http3 flag.
+	quic          bool
 	defaultServer bool
 	reusePort     bool
 	backlog       uint32
@@ -59,7 +62,9 @@ func parseListen(a []string) (listen, string) {
 			l.backlog = atou(v)
 		case "udp":
 			l.udp = true
-		case "quic", "proxy_protocol":
+		case "quic":
+			l.quic, l.ssl = true, true
+		case "proxy_protocol":
 			notes = append(notes, k+" is not supported")
 		default:
 			notes = append(notes, k+" ignored")
@@ -76,6 +81,7 @@ func (c *converter) listener(l listen) *model.Listener {
 			x.Spec.TLS = &model.ListenerTLS{}
 		}
 		x.Spec.HTTP2 = x.Spec.HTTP2 || l.http2 && x.Spec.TLS != nil
+		x.Spec.HTTP3 = x.Spec.HTTP3 || l.quic
 		return x
 	}
 	x := &model.Listener{Meta: meta(model.ListenerKind, c.name("listeners", l.addr))}
@@ -85,6 +91,7 @@ func (c *converter) listener(l listen) *model.Listener {
 	if l.ssl {
 		x.Spec.TLS = &model.ListenerTLS{}
 		x.Spec.HTTP2 = l.http2
+		x.Spec.HTTP3 = l.quic
 	}
 	c.listeners[l.addr] = x
 	c.cfg.Listeners = append(c.cfg.Listeners, x)
@@ -167,6 +174,14 @@ func (c *converter) server(d *Directive, sc scope) {
 			if firstArg(a) == "on" {
 				for i := range listens {
 					listens[i].http2 = true
+				}
+			}
+			c.note(e, Converted, "")
+		case "http3":
+			// On by default for quic listens; off drops HTTP/3.
+			if firstArg(a) == "off" {
+				for i := range listens {
+					listens[i].quic = false
 				}
 			}
 			c.note(e, Converted, "")

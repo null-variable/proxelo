@@ -124,6 +124,9 @@ func (s *ListenerSpec) validate(es *FieldErrors) {
 	if s.HTTP2 && s.TLS == nil {
 		es.add("spec.http2", "requires tls")
 	}
+	if s.HTTP3 && s.TLS == nil {
+		es.add("spec.http3", "requires tls")
+	}
 }
 
 func (s *StreamSpec) validate(es *FieldErrors) {

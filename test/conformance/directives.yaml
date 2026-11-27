@@ -306,7 +306,7 @@ directives:
     contexts: [server]
     status: partial
     field: Listener.spec.address
-    note: address, reuseport, backlog, ssl and http2; no default_server flag (Listener.spec.defaultSite instead), no ipv6only, so_keepalive, fastopen, deferred, bind
+    note: address, reuseport, backlog, ssl, http2 and quic (Listener.spec.http3); no default_server flag (Listener.spec.defaultSite instead), no ipv6only, so_keepalive, fastopen, deferred, bind
   - name: server_name
     module: ngx_http_core_module
     contexts: [server]
@@ -2617,7 +2617,8 @@ directives:
   - name: http3
     module: ngx_http_v3_module
     contexts: [http, server]
-    status: missing
+    status: implemented
+    field: Listener.spec.http3
   - name: http3_hq
     module: ngx_http_v3_module
     contexts: [http, server]
@@ -2625,7 +2626,8 @@ directives:
   - name: http3_max_concurrent_streams
     module: ngx_http_v3_module
     contexts: [http, server]
-    status: missing
+    status: fixed
+    note: "128"
   - name: http3_stream_buffer_size
     module: ngx_http_v3_module
     contexts: [http, server]

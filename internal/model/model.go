@@ -94,6 +94,9 @@ type ListenerSpec struct {
 	TLS *ListenerTLS `json:"tls,omitempty"`
 	// Offer HTTP/2 through ALPN; requires TLS.
 	HTTP2 bool `json:"http2,omitempty"`
+	// HTTP3 also serves HTTP/3 over QUIC on the same UDP address
+	// (TLS 1.3, the same certificates) and advertises it with Alt-Svc.
+	HTTP3 bool `json:"http3,omitempty"`
 }
 
 type ListenerTLS struct {

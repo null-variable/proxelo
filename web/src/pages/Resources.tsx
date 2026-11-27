@@ -72,6 +72,7 @@ function summary(kind: Kind, r: Resource, refs: Refs | undefined): ReactNode {
           <span className="mono">{s.address}</span>
           {s.tls && <> <span className="badge badge--info">TLS</span></>}
           {s.http2 && <> <span className="badge badge--outline">h2</span></>}
+          {s.http3 && <> <span className="badge badge--outline">h3</span></>}
         </>
       );
     case "upstreams":
