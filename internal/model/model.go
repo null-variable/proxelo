@@ -678,6 +678,7 @@ const (
 	PolicyForwardAuth PolicyType = "forwardAuth"
 	PolicyRealIP      PolicyType = "realIp"
 	PolicyCompression PolicyType = "compression"
+	PolicyCache       PolicyType = "cache"
 )
 
 // PolicySpec carries the settings for Type and nothing else.
@@ -693,6 +694,7 @@ type PolicySpec struct {
 	ForwardAuth *ForwardAuthPolicy `json:"forwardAuth,omitempty"`
 	RealIP      *RealIPPolicy      `json:"realIp,omitempty"`
 	Compression *CompressionPolicy `json:"compression,omitempty"`
+	Cache       *CachePolicy       `json:"cache,omitempty"`
 }
 
 // HeadersPolicy replaces nginx add_header, proxy_set_header and
@@ -871,6 +873,76 @@ type CompressionPolicy struct {
 	// (nginx gzip_disable).
 	Disable string `json:"disable,omitempty"`
 }
+
+// CachePolicy is nginx proxy_cache_path with proxy_cache and the
+// proxy_cache_* directives. Each policy is one cache zone shared by every
+// proxy route it applies to; the closest policy applies. Other routes
+// ignore it.
+type CachePolicy struct {
+	// Directory of the entries. Relative or empty: under the proxy data
+	// directory in proxy/cache, named after the policy ID by default.
+	Path string `json:"path,omitempty"`
+	// Subdirectory name lengths, each 1 or 2, at most three (nginx
+	// levels=1:2). Default [1, 2].
+	Levels []uint32 `json:"levels,omitempty"`
+	// Disk size at most, such as "1g"; least recently used entries go
+	// first. Empty: unlimited.
+	MaxSize string `json:"maxSize,omitempty"`
+	// Entries kept at most (keys_zone). Default 100000.
+	MaxEntries uint32 `json:"maxEntries,omitempty"`
+	// Entries not used for this long are removed. Default "10m".
+	Inactive string `json:"inactive,omitempty"`
+	// Template. Default "$scheme$proxy_host$request_uri".
+	Key string `json:"key,omitempty"`
+	// Freshness by status when the upstream does not say
+	// (proxy_cache_valid). Responses without either are not stored.
+	Valid []CacheValid `json:"valid,omitempty"`
+	// Methods cached. Default GET and HEAD.
+	Methods []string `json:"methods,omitempty"`
+	// Requests for a key before its response is stored. Default 1.
+	MinUses uint32 `json:"minUses,omitempty"`
+	// CEL expressions over request, as route matches. Bypass answers from
+	// the upstream and still stores (proxy_cache_bypass); noStore does not
+	// store (proxy_no_cache).
+	Bypass  string `json:"bypass,omitempty"`
+	NoStore string `json:"noStore,omitempty"`
+	// One request per key goes upstream; the others wait up to lockTimeout
+	// (default "5s") for its response.
+	Lock        bool   `json:"lock,omitempty"`
+	LockTimeout string `json:"lockTimeout,omitempty"`
+	// When an expired entry answers instead (proxy_cache_use_stale):
+	// "error", "timeout", "updating", "http_500", "http_502", "http_503",
+	// "http_504", "http_403", "http_404", "http_429".
+	UseStale []string `json:"useStale,omitempty"`
+	// Answer expired entries at once and refresh after; needs useStale
+	// "updating".
+	BackgroundUpdate bool `json:"backgroundUpdate,omitempty"`
+	// Refresh expired entries with conditional requests.
+	Revalidate bool `json:"revalidate,omitempty"`
+	// Upstream headers whose caching instructions are ignored:
+	// "X-Accel-Expires", "Expires", "Cache-Control", "Set-Cookie", "Vary".
+	Ignore []string `json:"ignore,omitempty"`
+	// HEAD goes upstream as HEAD, not GET (proxy_cache_convert_head off).
+	KeepHead bool `json:"keepHead,omitempty"`
+	// False turns caching off for the routes it applies to (proxy_cache
+	// off); the other settings are then unused.
+	Enabled *bool `json:"enabled,omitempty"`
+}
+
+// CacheValid is one proxy_cache_valid line.
+type CacheValid struct {
+	// Empty: 200, 301 and 302. "any" alone: every status.
+	Statuses []string `json:"statuses,omitempty"`
+	// Such as "10m".
+	Time string `json:"time"`
+}
+
+// CacheUseStale and CacheIgnore are the accepted values of
+// CachePolicy.UseStale and CachePolicy.Ignore.
+var (
+	CacheUseStale = []string{"error", "timeout", "updating", "http_500", "http_502", "http_503", "http_504", "http_403", "http_404", "http_429"}
+	CacheIgnore   = []string{"X-Accel-Expires", "Expires", "Cache-Control", "Set-Cookie", "Vary"}
+)
 
 // Stream is an L4 proxy (nginx stream server): TCP connections or UDP
 // datagrams on an address are relayed to an upstream.

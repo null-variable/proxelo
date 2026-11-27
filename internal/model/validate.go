@@ -259,6 +259,7 @@ func (s *PolicySpec) validate(es *FieldErrors) {
 		PolicyForwardAuth: s.ForwardAuth != nil,
 		PolicyRealIP:      s.RealIP != nil,
 		PolicyCompression: s.Compression != nil,
+		PolicyCache:       s.Cache != nil,
 	}
 	for _, t := range slices.Sorted(maps.Keys(set)) {
 		if set[t] && t != s.Type {
@@ -382,6 +383,94 @@ func (s *PolicySpec) validate(es *FieldErrors) {
 		}
 	case PolicyCompression:
 		s.Compression.validate(es)
+	case PolicyCache:
+		s.Cache.validate(es)
+	}
+}
+
+func (c *CachePolicy) validate(es *FieldErrors) {
+	for _, part := range strings.Split(c.Path, "/") {
+		if part == "." || part == ".." {
+			es.add("spec.cache.path", "must not have . or .. parts")
+			break
+		}
+	}
+	if strings.ContainsAny(c.Path, "\x00\n") {
+		es.add("spec.cache.path", "must be one line")
+	}
+	if len(c.Levels) > 3 {
+		es.add("spec.cache.levels", "at most three levels")
+	}
+	for i, l := range c.Levels {
+		if l != 1 && l != 2 {
+			es.add(fmt.Sprintf("spec.cache.levels[%d]", i), "must be 1 or 2")
+		}
+	}
+	if c.MaxSize != "" {
+		if _, err := ParseSize(c.MaxSize); err != nil {
+			es.add("spec.cache.maxSize", "must be a size such as \"1g\"")
+		}
+	}
+	checkSeconds(es, "spec.cache.inactive", c.Inactive)
+	checkOneLine(es, "spec.cache.key", c.Key)
+	for i, v := range c.Valid {
+		p := fmt.Sprintf("spec.cache.valid[%d]", i)
+		if v.Time == "" {
+			es.add(p+".time", "is required")
+		}
+		checkSeconds(es, p+".time", v.Time)
+		for j, s := range v.Statuses {
+			if s == "any" && len(v.Statuses) == 1 {
+				continue
+			}
+			if n, err := strconv.Atoi(s); err != nil || n < 100 || n > 599 {
+				es.add(fmt.Sprintf("%s.statuses[%d]", p, j), "must be a status 100-599, or \"any\" alone")
+			}
+		}
+	}
+	for i, m := range c.Methods {
+		if m == "" || strings.ToUpper(m) != m || strings.ContainsAny(m, " \t\r\n") {
+			es.add(fmt.Sprintf("spec.cache.methods[%d]", i), "must be an uppercase method")
+		}
+	}
+	for _, e := range []struct{ path, src string }{{"spec.cache.bypass", c.Bypass}, {"spec.cache.noStore", c.NoStore}} {
+		if e.src == "" {
+			continue
+		}
+		if err := CheckExpr(e.src); err != nil {
+			es.add(e.path, "%s", err)
+		}
+	}
+	checkDuration(es, "spec.cache.lockTimeout", c.LockTimeout)
+	for i, u := range c.UseStale {
+		if !slices.Contains(CacheUseStale, u) {
+			es.add(fmt.Sprintf("spec.cache.useStale[%d]", i), "must be one of %s", strings.Join(CacheUseStale, ", "))
+		}
+	}
+	if c.BackgroundUpdate && !slices.Contains(c.UseStale, "updating") {
+		es.add("spec.cache.backgroundUpdate", "needs useStale \"updating\"")
+	}
+	for i, h := range c.Ignore {
+		if !slices.ContainsFunc(CacheIgnore, func(v string) bool { return strings.EqualFold(v, h) }) {
+			es.add(fmt.Sprintf("spec.cache.ignore[%d]", i), "must be one of %s", strings.Join(CacheIgnore, ", "))
+		}
+	}
+}
+
+// checkSeconds reports v unless it is empty or a positive whole number of
+// seconds that fits 32 bits.
+func checkSeconds(es *FieldErrors, path, v string) {
+	if v == "" {
+		return
+	}
+	d, err := time.ParseDuration(v)
+	switch {
+	case err != nil:
+		es.add(path, "must be a duration such as \"10m\"")
+	case d <= 0 || d%time.Second != 0:
+		es.add(path, "must be a positive whole number of seconds")
+	case d > time.Duration(math.MaxUint32)*time.Second:
+		es.add(path, "is too long")
 	}
 }
 
@@ -617,6 +706,8 @@ func ParseSize(s string) (uint64, error) {
 		mult, s = 1024, s[:len(s)-1]
 	case strings.HasSuffix(s, "m"), strings.HasSuffix(s, "M"):
 		mult, s = 1024*1024, s[:len(s)-1]
+	case strings.HasSuffix(s, "g"), strings.HasSuffix(s, "G"):
+		mult, s = 1024*1024*1024, s[:len(s)-1]
 	}
 	v, err := strconv.ParseUint(s, 10, 64)
 	if err != nil || v > math.MaxUint64/mult {

@@ -112,6 +112,7 @@ func Handler(st *store.Store, d Distributor, dep *deploy.Manager, sim Simulator,
 	mux.HandleFunc("POST /api/v1/revisions/{rev}/confirm", a.requireAny(op, a.confirm))
 	mux.HandleFunc("POST /api/v1/revisions/{rev}/rollback", a.require(op, a.rollback))
 	mux.HandleFunc("PUT /api/v1/revisions/{rev}/tag", a.require(op, a.tag))
+	mux.HandleFunc("POST /api/v1/cache/{zone}", a.require(op, a.purgeRoute))
 	mux.HandleFunc("GET /api/v1/nodes", a.require(v, a.nodes))
 	mux.HandleFunc("GET /api/v1/traffic", a.require(v, a.traffic))
 	mux.HandleFunc("GET /api/v1/tap", a.requireAny(v, a.tap))

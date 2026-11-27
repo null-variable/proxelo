@@ -557,3 +557,71 @@ func TestValidateLookupsAndCompression(t *testing.T) {
 		}
 	}
 }
+
+func TestCompileCache(t *testing.T) {
+	cfg := validConfig()
+	cfg.Policies = []*model.Policy{{Meta: meta("pol_micro", "micro"), Spec: model.PolicySpec{Type: model.PolicyCache, Cache: &model.CachePolicy{
+		MaxSize: "1g", Inactive: "1h", Lock: true, UseStale: []string{"updating", "http_502"}, BackgroundUpdate: true,
+		Valid:  []model.CacheValid{{Time: "1s"}, {Statuses: []string{"any"}, Time: "1m"}, {Statuses: []string{"404"}, Time: "10s"}},
+		Ignore: []string{"set-cookie"},
+	}}}}
+	cfg.Sites[0].Spec.Policies = []string{"pol_micro"}
+	for _, p := range cfg.Policies {
+		if es := model.Validate(p); len(es) > 0 {
+			t.Fatal(es)
+		}
+	}
+	snap, err := Compile(cfg, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := snap.GetCacheZones(); len(got) != 1 || got[0].GetPath() != "pol_micro" || got[0].GetMaxSize() != 1<<30 ||
+		got[0].GetInactiveS() != 3600 || len(got[0].GetLevels()) != 2 {
+		t.Fatalf("zones: %v", got)
+	}
+	var api, root *snapshotv1.Route
+	for _, r := range snap.GetSites()[0].GetRoutes() {
+		switch r.GetId() {
+		case "rt_api":
+			api = r
+		case "rt_root":
+			root = r
+		}
+	}
+	if root.GetCache() != nil {
+		t.Error("static route got a cache")
+	}
+	c := api.GetCache()
+	want := []*snapshotv1.CacheValid{{Seconds: 1}, {Any: true, Seconds: 60}, {Statuses: []uint32{404}, Seconds: 10}}
+	if !c.GetLock() || !c.GetBackgroundUpdate() || len(c.GetValid()) != 3 || len(c.GetUseStale()) != 2 ||
+		c.GetIgnore()[0] != snapshotv1.Cache_IGNORE_SET_COOKIE {
+		t.Fatalf("cache: %v", c)
+	}
+	for i, v := range c.GetValid() {
+		if !proto.Equal(v, want[i]) {
+			t.Errorf("valid[%d] = %v, want %v", i, v, want[i])
+		}
+	}
+}
+
+func TestValidateCache(t *testing.T) {
+	bad := []model.CachePolicy{
+		{Path: "../x"},
+		{Levels: []uint32{3}},
+		{MaxSize: "lots"},
+		{Inactive: "500ms"},
+		{Valid: []model.CacheValid{{Time: ""}}},
+		{Valid: []model.CacheValid{{Statuses: []string{"any", "200"}, Time: "1m"}}},
+		{Methods: []string{"get"}},
+		{Bypass: "request.nope"},
+		{UseStale: []string{"sometimes"}},
+		{BackgroundUpdate: true},
+		{Ignore: []string{"Date"}},
+	}
+	for i, c := range bad {
+		p := &model.Policy{Meta: meta("pol_x", "x"), Spec: model.PolicySpec{Type: model.PolicyCache, Cache: &c}}
+		if es := model.Validate(p); len(es) == 0 {
+			t.Errorf("case %d: no error", i)
+		}
+	}
+}

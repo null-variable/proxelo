@@ -6,7 +6,7 @@ require (
 	cel.dev/cel-go v0.32.0
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/mholt/acmez/v3 v3.1.7
-	github.com/null-variable/proxelo-api v0.14.0
+	github.com/null-variable/proxelo-api v0.15.1
 	github.com/oklog/ulid/v2 v2.1.2
 	go.yaml.in/yaml/v3 v3.0.4
 	golang.org/x/crypto v0.59.0

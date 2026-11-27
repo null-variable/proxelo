@@ -1,6 +1,7 @@
 package nginx
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/null-variable/proxelo/internal/compile"
@@ -115,5 +116,63 @@ func TestSplitDump(t *testing.T) {
 	files, main, err := Load([]byte("# configuration file /etc/nginx/nginx.conf:\nevents {}\n\n# configuration file /etc/nginx/x.conf:\nserver {}\n"))
 	if err != nil || main != "/etc/nginx/nginx.conf" || files["/etc/nginx/x.conf"] != "server {}\n" {
 		t.Errorf("%v %q %q", err, main, files)
+	}
+}
+
+func TestProxyCache(t *testing.T) {
+	cfg, _ := convert(t, Files{
+		"/etc/nginx/nginx.conf": `events {}
+http {
+    proxy_cache_path /var/cache/nginx levels=1:2 keys_zone=micro:10m max_size=1g inactive=1h;
+    upstream app { server 127.0.0.1:8080; }
+    server {
+        listen 80;
+        proxy_cache micro;
+        proxy_cache_valid 200 302 1s;
+        proxy_cache_valid any 1m;
+        proxy_cache_lock on;
+        proxy_cache_use_stale updating error;
+        proxy_cache_background_update on;
+        proxy_cache_bypass $http_pragma $arg_nocache;
+        location / { proxy_pass http://app; }
+        location /live/ {
+            proxy_cache off;
+            proxy_pass http://app;
+        }
+    }
+}`,
+	})
+	var cache, off *model.CachePolicy
+	for _, p := range cfg.Policies {
+		if c := p.Spec.Cache; c != nil {
+			if c.Enabled != nil {
+				off = c
+			} else {
+				cache = c
+			}
+		}
+	}
+	if cache == nil || off == nil {
+		t.Fatalf("policies: %+v", cfg.Policies)
+	}
+	if cache.Path != "/var/cache/nginx" || cache.MaxSize != "1g" || cache.Inactive != "1h" || cache.MaxEntries != 81920 ||
+		len(cache.Valid) != 2 || cache.Valid[0].Time != "1s" || !cache.Lock || !cache.BackgroundUpdate {
+		t.Errorf("cache: %+v", cache)
+	}
+	if want := `("pragma" in request.headers && request.headers["pragma"] != "" && request.headers["pragma"] != "0")`; !strings.HasPrefix(cache.Bypass, want) {
+		t.Errorf("bypass: %s", cache.Bypass)
+	}
+	snap, err := compile.Compile(cfg, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cached := 0
+	for _, r := range snap.GetSites()[0].GetRoutes() {
+		if r.GetCache() != nil {
+			cached++
+		}
+	}
+	if cached != 1 || len(snap.GetCacheZones()) != 1 {
+		t.Errorf("cached routes %d, zones %v", cached, snap.GetCacheZones())
 	}
 }

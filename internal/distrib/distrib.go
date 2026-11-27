@@ -107,7 +107,8 @@ type Distributor struct {
 	chVersion  uint64
 	nodes      map[string]*node
 
-	taps taps
+	taps   taps
+	purges purges
 }
 
 // published is a snapshot as sent: the exact bytes the hash covers.
@@ -126,6 +127,8 @@ type node struct {
 	sentChallenges uint64
 	// ID of the tap filter last sent; "" for none (an empty filter).
 	sentTap string
+	// Purges to send on this connection.
+	purges []*distribv1.Purge
 	// replaced is closed when a newer connection takes over the node ID.
 	replaced chan struct{}
 }
@@ -269,7 +272,14 @@ func (d *Distributor) sendLoop(ctx context.Context, stream distribv1.Distributio
 			}
 		}
 		sentTap := n.sentTap
+		purges := n.takePurges()
 		d.mu.Unlock()
+		for _, p := range purges {
+			resp := &distribv1.SyncResponse{Kind: &distribv1.SyncResponse_Purge{Purge: p}}
+			if err := stream.Send(resp); err != nil {
+				return err
+			}
+		}
 		if tf := d.tapFilter(); tf.GetId() != sentTap {
 			resp := &distribv1.SyncResponse{Kind: &distribv1.SyncResponse_Tap{Tap: tf}}
 			if err := stream.Send(resp); err != nil {
@@ -329,9 +339,13 @@ func (d *Distributor) recvLoop(stream distribv1.DistributionService_SyncServer, 
 			d.deliver(n.status.NodeID, ev)
 			continue
 		}
+		if done := req.GetPurgeDone(); done != nil {
+			d.purgeDone(n, done)
+			continue
+		}
 		ack := req.GetAck()
 		if ack == nil {
-			return status.Error(codes.InvalidArgument, "expected ack, stats or tap events")
+			return status.Error(codes.InvalidArgument, "expected ack, stats, tap events or purge done")
 		}
 		d.mu.Lock()
 		if ack.GetApplied() {

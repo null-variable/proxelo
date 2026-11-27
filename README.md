@@ -64,6 +64,16 @@ headers upstream. `bandwidth` throttles response bodies (limit_rate,
 limit_rate_after), and `realIp`, on sites, takes the client address from a
 header set by trusted proxies. Refusals go through the error pages.
 
+`cache` policies store proxied responses as nginx proxy_cache does. Each
+policy is one zone on the proxy's disk (`<data>/proxy/cache/<policy>` unless
+`path` says otherwise) shared by the proxy routes it applies to, with
+`valid` times by status, Cache-Control, Expires and X-Accel-Expires,
+`lock`, `useStale` (including stale-while-revalidate and stale-if-error),
+`backgroundUpdate`, `revalidate`, `bypass` and `noStore` as CEL conditions,
+and `minUses`. A microcache is `valid: [{time: "1s"}]` with `lock` and
+`useStale: ["updating"]`. Upstream responses are tagged with their
+`Cache-Tag` header for purges; `$upstream_cache_status` names the outcome.
+
 ### Changes
 
 Every edit happens in a change set: `POST /api/v1/changesets`, then resource
@@ -214,6 +224,7 @@ without a successor. Under systemd, use `Type=notify`, `NotifyAccess=all` and
 | `GET /api/v1/revisions[/{rev}]` | Revision history (status, author, guard), or one revision with its resources |
 | `POST /api/v1/revisions/{rev}/confirm`, `/rollback`, `PUT .../tag` | Commit-confirm, rollback (`0` empties), retention tag |
 | `GET /api/v1/revisions/{rev}/snapshot` | Compiled snapshot (protobuf, includes keys; admin) |
+| `POST /api/v1/cache/{policy}:purge` | Remove cached responses of a `cache` policy on every connected proxy: `{"keys"}`, `{"prefixes"}`, `{"tags"}` (upstream `Cache-Tag`) or `{"all":true}`; answers per node. Operator |
 | `GET /api/v1/nodes` | Connected proxies: active, last sent and last rejected revision |
 | `GET /api/v1/traffic?window=5m` | Requests, 5xx, upstream attempts and failures summed over every proxy (window up to 15m) |
 | `GET /api/v1/schema` | JSON Schema of every resource spec, generated from `internal/model` (`go generate ./internal/model`) |

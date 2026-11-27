@@ -304,6 +304,7 @@ export function ResourceEdit({ kind, id }: { kind: Kind; id: string }) {
         </div>
       </Card>
       {kind === "lookups" && canEdit && view === "form" && <LookupImport spec={doc.spec ?? {}} onChange={(spec) => setDoc({ ...doc, spec })} />}
+      {kind === "policies" && !isNew && doc.spec?.type === "cache" && app.can("operator") && <CachePurge zone={id} />}
       <Card title="Specification">
         {view === "form" ? (
           <fieldset className="fieldset-plain" disabled={!canEdit}>
@@ -447,6 +448,52 @@ function LookupImport({ spec, onChange }: { spec: Record<string, any>; onChange:
           </label>
           <span className="grow" />
           <button type="button" className="btn btn--sm" disabled={!text.trim()} onClick={run}>Import</button>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+// CachePurge removes stored responses of a cache policy's zone on every
+// proxy, by key, key prefix, Cache-Tag or all of them.
+function CachePurge({ zone }: { zone: string }) {
+  const [by, setBy] = useState<"keys" | "prefixes" | "tags" | "all">("prefixes");
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const values = text.split("\n").map((v) => v.trim()).filter(Boolean);
+  const run = async () => {
+    setBusy(true);
+    try {
+      const body = by === "all" ? { all: true } : { [by]: values };
+      const res = await api.post<{ removed: number; nodes: { nodeId: string; error?: string }[] }>(`/cache/${zone}:purge`, body);
+      const failed = res.nodes.filter((n) => n.error);
+      toast(`Purged ${res.removed} entr${res.removed === 1 ? "y" : "ies"}`, failed.length ? `Failed on ${failed.map((n) => `${n.nodeId}: ${n.error}`).join(", ")}` : `On ${res.nodes.length} proxy node${res.nodes.length === 1 ? "" : "s"}`);
+      setText("");
+    } catch (e) {
+      toastError(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Card title="Purge cache">
+      <div className="stack">
+        <Field id="purge-by" label="Remove" hint="Applies to the active configuration on every connected proxy, not to the change set.">
+          <select id="purge-by" className="input" value={by} onChange={(e) => setBy(e.target.value as typeof by)}>
+            <option value="prefixes">Keys starting with</option>
+            <option value="keys">Exact keys</option>
+            <option value="tags">Cache-Tag values</option>
+            <option value="all">Everything</option>
+          </select>
+        </Field>
+        {by !== "all" && (
+          <Field id="purge-values" label="Values" hint="One per line. Keys are the expanded cache key, such as httpexample.com/path.">
+            <textarea id="purge-values" className="input mono" rows={4} value={text} onChange={(e) => setText(e.target.value)} spellCheck={false} />
+          </Field>
+        )}
+        <div className="row">
+          <span className="grow" />
+          <button type="button" className="btn btn--destructive" disabled={busy || (by !== "all" && values.length === 0)} onClick={run}>Purge</button>
         </div>
       </div>
     </Card>

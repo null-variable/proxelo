@@ -143,7 +143,7 @@ func (c *compiler) compile(cfg model.Config, revision uint64) *snapshotv1.Snapsh
 		snap.Listeners = append(snap.Listeners, out)
 	}
 	logs := map[logKey]uint32{}
-	zs := zones{rate: map[string]uint32{}, conn: map[string]uint32{}}
+	zs := zones{rate: map[string]uint32{}, conn: map[string]uint32{}, cache: map[string]uint32{}}
 
 	// Hostnames must be unique per listener, as nginx server_name selection
 	// would otherwise depend on declaration order.
@@ -591,6 +591,7 @@ func (st *site) route(r *model.Route, pols []*model.Policy) *snapshotv1.Route {
 			return nil
 		}
 		out.Action = &snapshotv1.Action{Kind: &snapshotv1.Action_Proxy{Proxy: pa}}
+		out.Cache = st.cache(pols)
 	case a.Type == model.ActionGrpc && a.Grpc != nil:
 		pa := st.proxyAction(r.ID, "grpc", a.Grpc)
 		if pa == nil {

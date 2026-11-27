@@ -177,6 +177,150 @@
         "hash"
       ]
     },
+    "CachePolicy": {
+      "type": "object",
+      "description": "CachePolicy is nginx proxy_cache_path with proxy_cache and the proxy_cache_* directives. Each policy is one cache zone shared by every proxy route it applies to; the closest policy applies. Other routes ignore it.",
+      "properties": {
+        "backgroundUpdate": {
+          "type": "boolean",
+          "description": "Answer expired entries at once and refresh after; needs useStale \"updating\"."
+        },
+        "bypass": {
+          "type": "string",
+          "description": "CEL expressions over request, as route matches. Bypass answers from the upstream and still stores (proxy_cache_bypass); noStore does not store (proxy_no_cache)."
+        },
+        "enabled": {
+          "type": "boolean",
+          "description": "False turns caching off for the routes it applies to (proxy_cache off); the other settings are then unused.",
+          "x-nullable": true
+        },
+        "ignore": {
+          "type": "array",
+          "description": "Upstream headers whose caching instructions are ignored: \"X-Accel-Expires\", \"Expires\", \"Cache-Control\", \"Set-Cookie\", \"Vary\".",
+          "items": {
+            "type": "string"
+          }
+        },
+        "inactive": {
+          "type": "string",
+          "description": "Entries not used for this long are removed. Default \"10m\"."
+        },
+        "keepHead": {
+          "type": "boolean",
+          "description": "HEAD goes upstream as HEAD, not GET (proxy_cache_convert_head off)."
+        },
+        "key": {
+          "type": "string",
+          "description": "Template. Default \"$scheme$proxy_host$request_uri\"."
+        },
+        "levels": {
+          "type": "array",
+          "description": "Subdirectory name lengths, each 1 or 2, at most three (nginx levels=1:2). Default [1, 2].",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "lock": {
+          "type": "boolean",
+          "description": "One request per key goes upstream; the others wait up to lockTimeout (default \"5s\") for its response."
+        },
+        "lockTimeout": {
+          "type": "string"
+        },
+        "maxEntries": {
+          "type": "integer",
+          "description": "Entries kept at most (keys_zone). Default 100000.",
+          "minimum": 0
+        },
+        "maxSize": {
+          "type": "string",
+          "description": "Disk size at most, such as \"1g\"; least recently used entries go first. Empty: unlimited."
+        },
+        "methods": {
+          "type": "array",
+          "description": "Methods cached. Default GET and HEAD.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "minUses": {
+          "type": "integer",
+          "description": "Requests for a key before its response is stored. Default 1.",
+          "minimum": 0
+        },
+        "noStore": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string",
+          "description": "Directory of the entries. Relative or empty: under the proxy data directory in proxy/cache, named after the policy ID by default."
+        },
+        "revalidate": {
+          "type": "boolean",
+          "description": "Refresh expired entries with conditional requests."
+        },
+        "useStale": {
+          "type": "array",
+          "description": "When an expired entry answers instead (proxy_cache_use_stale): \"error\", \"timeout\", \"updating\", \"http_500\", \"http_502\", \"http_503\", \"http_504\", \"http_403\", \"http_404\", \"http_429\".",
+          "items": {
+            "type": "string"
+          }
+        },
+        "valid": {
+          "type": "array",
+          "description": "Freshness by status when the upstream does not say (proxy_cache_valid). Responses without either are not stored.",
+          "items": {
+            "$ref": "#/$defs/CacheValid"
+          }
+        }
+      },
+      "x-order": [
+        "path",
+        "levels",
+        "maxSize",
+        "maxEntries",
+        "inactive",
+        "key",
+        "valid",
+        "methods",
+        "minUses",
+        "bypass",
+        "noStore",
+        "lock",
+        "lockTimeout",
+        "useStale",
+        "backgroundUpdate",
+        "revalidate",
+        "ignore",
+        "keepHead",
+        "enabled"
+      ]
+    },
+    "CacheValid": {
+      "type": "object",
+      "description": "CacheValid is one proxy_cache_valid line.",
+      "properties": {
+        "statuses": {
+          "type": "array",
+          "description": "Empty: 200, 301 and 302. \"any\" alone: every status.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "time": {
+          "type": "string",
+          "description": "Such as \"10m\"."
+        }
+      },
+      "x-order": [
+        "statuses",
+        "time"
+      ],
+      "required": [
+        "time"
+      ]
+    },
     "CertStatus": {
       "type": "object",
       "description": "CertStatus is what the control plane read from the chain, or the last issuance error.",
@@ -1175,6 +1319,10 @@
           "$ref": "#/$defs/BasicAuthPolicy",
           "x-nullable": true
         },
+        "cache": {
+          "$ref": "#/$defs/CachePolicy",
+          "x-nullable": true
+        },
         "compression": {
           "$ref": "#/$defs/CompressionPolicy",
           "x-nullable": true
@@ -1215,7 +1363,8 @@
             "basicAuth",
             "forwardAuth",
             "realIp",
-            "compression"
+            "compression",
+            "cache"
           ]
         }
       },
@@ -1230,7 +1379,8 @@
         "basicAuth",
         "forwardAuth",
         "realIp",
-        "compression"
+        "compression",
+        "cache"
       ],
       "required": [
         "type"

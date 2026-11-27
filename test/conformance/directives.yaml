@@ -1453,67 +1453,88 @@ directives:
   - name: proxy_cache
     module: ngx_http_proxy_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.cache
+    note: cache policy; off becomes enabled false
   - name: proxy_cache_key
     module: ngx_http_proxy_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.cache.key
   - name: proxy_cache_path
     module: ngx_http_proxy_module
     contexts: [http]
-    status: missing
+    status: implemented
+    field: Policy.spec.cache.path
+    note: one cache policy per zone; keys_zone size becomes maxEntries
   - name: proxy_cache_bypass
     module: ngx_http_proxy_module
     contexts: [http, server, location]
-    status: missing
+    status: partial
+    field: Policy.spec.cache.bypass
+    note: a CEL condition
   - name: proxy_no_cache
     module: ngx_http_proxy_module
     contexts: [http, server, location]
-    status: missing
+    status: partial
+    field: Policy.spec.cache.noStore
+    note: a CEL condition
   - name: proxy_cache_valid
     module: ngx_http_proxy_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.cache.valid
   - name: proxy_cache_min_uses
     module: ngx_http_proxy_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.cache.minUses
   - name: proxy_cache_max_range_offset
     module: ngx_http_proxy_module
     contexts: [http, server, location]
-    status: missing
+    status: fixed
+    note: ranges are served from whole entries
   - name: proxy_cache_use_stale
     module: ngx_http_proxy_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.cache.useStale
+    note: also stale-while-revalidate and stale-if-error
   - name: proxy_cache_methods
     module: ngx_http_proxy_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.cache.methods
   - name: proxy_cache_lock
     module: ngx_http_proxy_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.cache.lock
   - name: proxy_cache_lock_timeout
     module: ngx_http_proxy_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.cache.lockTimeout
   - name: proxy_cache_lock_age
     module: ngx_http_proxy_module
     contexts: [http, server, location]
-    status: missing
+    status: fixed
+    note: the lock lasts as long as the request holding it
   - name: proxy_cache_revalidate
     module: ngx_http_proxy_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.cache.revalidate
   - name: proxy_cache_convert_head
     module: ngx_http_proxy_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.cache.keepHead
   - name: proxy_cache_background_update
     module: ngx_http_proxy_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.cache.backgroundUpdate
   - name: proxy_temp_path
     module: ngx_http_proxy_module
     contexts: [http, server, location]
@@ -1553,7 +1574,8 @@ directives:
   - name: proxy_ignore_headers
     module: ngx_http_proxy_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.cache.ignore
   - name: proxy_http_version
     module: ngx_http_proxy_module
     contexts: [http, server, location]

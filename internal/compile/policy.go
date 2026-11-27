@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
+	"time"
 
 	snapshotv1 "github.com/null-variable/proxelo-api/gen/go/proxelo/snapshot/v1"
 	"google.golang.org/protobuf/proto"
@@ -67,8 +69,9 @@ type effect struct {
 
 // zones are the limit zones of the snapshot, one per policy, by policy ID.
 type zones struct {
-	rate map[string]uint32
-	conn map[string]uint32
+	rate  map[string]uint32
+	conn  map[string]uint32
+	cache map[string]uint32
 }
 
 // The default key of limit policies, nginx's usual $binary_remote_addr.
@@ -274,4 +277,87 @@ func routePolicies(parent []*model.Policy, own []*model.Policy, inherit *bool) [
 		return own
 	}
 	return append(slices.Clip(parent), own...)
+}
+
+// cache compiles the closest cache policy of pols, adding its zone on first
+// use.
+func (st *site) cache(pols []*model.Policy) *snapshotv1.Cache {
+	var p *model.Policy
+	for _, q := range pols {
+		if q.Spec.Type == model.PolicyCache && q.Spec.Cache != nil {
+			p = q
+		}
+	}
+	if p == nil || (p.Spec.Cache.Enabled != nil && !*p.Spec.Cache.Enabled) {
+		return nil
+	}
+	c := p.Spec.Cache
+	zi, ok := st.zones.cache[p.ID]
+	if !ok {
+		levels := c.Levels
+		if levels == nil {
+			levels = []uint32{1, 2}
+		}
+		size, _ := model.ParseSize(c.MaxSize)
+		zi = uint32(len(st.snap.CacheZones))
+		st.snap.CacheZones = append(st.snap.CacheZones, &snapshotv1.CacheZone{
+			Id: p.ID, Path: cmp.Or(c.Path, p.ID), Levels: levels, MaxSize: size,
+			MaxEntries: c.MaxEntries, InactiveS: seconds(c.Inactive),
+		})
+		st.zones.cache[p.ID] = zi
+	}
+	out := &snapshotv1.Cache{
+		Zone: zi, Key: c.Key, Methods: c.Methods, MinUses: c.MinUses, Bypass: c.Bypass, NoStore: c.NoStore,
+		Lock: c.Lock, LockTimeoutMs: millis(c.LockTimeout), BackgroundUpdate: c.BackgroundUpdate,
+		Revalidate: c.Revalidate, KeepHead: c.KeepHead,
+	}
+	for _, v := range c.Valid {
+		cv := &snapshotv1.CacheValid{Seconds: seconds(v.Time)}
+		for _, s := range v.Statuses {
+			if s == "any" {
+				cv.Any = true
+				continue
+			}
+			n, _ := strconv.Atoi(s)
+			cv.Statuses = append(cv.Statuses, uint32(n))
+		}
+		out.Valid = append(out.Valid, cv)
+	}
+	for _, u := range c.UseStale {
+		out.UseStale = append(out.UseStale, useStale[u])
+	}
+	for _, h := range c.Ignore {
+		out.Ignore = append(out.Ignore, cacheIgnore[strings.ToLower(h)])
+	}
+	return out
+}
+
+var useStale = map[string]snapshotv1.Cache_UseStale{
+	"error":    snapshotv1.Cache_USE_STALE_ERROR,
+	"timeout":  snapshotv1.Cache_USE_STALE_TIMEOUT,
+	"updating": snapshotv1.Cache_USE_STALE_UPDATING,
+	"http_500": snapshotv1.Cache_USE_STALE_HTTP_500,
+	"http_502": snapshotv1.Cache_USE_STALE_HTTP_502,
+	"http_503": snapshotv1.Cache_USE_STALE_HTTP_503,
+	"http_504": snapshotv1.Cache_USE_STALE_HTTP_504,
+	"http_403": snapshotv1.Cache_USE_STALE_HTTP_403,
+	"http_404": snapshotv1.Cache_USE_STALE_HTTP_404,
+	"http_429": snapshotv1.Cache_USE_STALE_HTTP_429,
+}
+
+var cacheIgnore = map[string]snapshotv1.Cache_Ignore{
+	"x-accel-expires": snapshotv1.Cache_IGNORE_X_ACCEL_EXPIRES,
+	"expires":         snapshotv1.Cache_IGNORE_EXPIRES,
+	"cache-control":   snapshotv1.Cache_IGNORE_CACHE_CONTROL,
+	"set-cookie":      snapshotv1.Cache_IGNORE_SET_COOKIE,
+	"vary":            snapshotv1.Cache_IGNORE_VARY,
+}
+
+// seconds is a validated duration in whole seconds; 0 when empty.
+func seconds(d string) uint32 {
+	v, err := time.ParseDuration(d)
+	if err != nil {
+		return 0 // empty, or reported by model.Validate
+	}
+	return uint32(v / time.Second)
 }

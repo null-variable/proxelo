@@ -57,6 +57,8 @@ type converter struct {
 	// Zones by name (limit_req_zone, limit_conn_zone).
 	reqZones  map[string]*model.RateLimitPolicy
 	connZones map[string]*model.ConnLimitPolicy
+	// proxy_cache_path zones by name.
+	cacheZones map[string]*model.CachePolicy
 	// Policies made per zone and settings, to share one per zone.
 	policies map[string]string
 	// Log formats by name.
@@ -73,15 +75,16 @@ type logFormat struct {
 // entries means the conversion is partial.
 func Convert(tree []*Directive, files Files) (model.Config, Report) {
 	c := &converter{
-		files:     files,
-		upstreams: map[string]string{},
-		listeners: map[string]*model.Listener{},
-		certs:     map[[2]string]string{},
-		names:     map[string]map[string]bool{},
-		reqZones:  map[string]*model.RateLimitPolicy{},
-		connZones: map[string]*model.ConnLimitPolicy{},
-		policies:  map[string]string{},
-		formats:   map[string]logFormat{},
+		files:      files,
+		upstreams:  map[string]string{},
+		listeners:  map[string]*model.Listener{},
+		certs:      map[[2]string]string{},
+		names:      map[string]map[string]bool{},
+		reqZones:   map[string]*model.RateLimitPolicy{},
+		connZones:  map[string]*model.ConnLimitPolicy{},
+		cacheZones: map[string]*model.CachePolicy{},
+		policies:   map[string]string{},
+		formats:    map[string]logFormat{},
 	}
 	c.report.Counts = map[Class]int{}
 	for _, d := range tree {
@@ -188,14 +191,18 @@ type scope struct {
 	accessLog             *model.AccessLogPolicy
 	logOff                bool
 	gzip                  *model.CompressionPolicy
-	rate, after           string
-	timeouts              model.ProxyTimeouts
-	nextUpstream          []string
-	nextTries             uint32
-	fastcgi               []model.GatewayParam
-	gatewayIndex          string
-	splitPath             string
-	realIP                *model.RealIPPolicy
+	// proxy_cache: the zone name, "" for off; cache the proxy_cache_*
+	// settings, which apply only with a zone.
+	cacheZone    string
+	cache        model.CachePolicy
+	rate, after  string
+	timeouts     model.ProxyTimeouts
+	nextUpstream []string
+	nextTries    uint32
+	fastcgi      []model.GatewayParam
+	gatewayIndex string
+	splitPath    string
+	realIP       *model.RealIPPolicy
 	// Array families this level set, so the first of each drops the
 	// inherited list.
 	set map[string]bool
@@ -224,7 +231,17 @@ func (s scope) clone() scope {
 		g := *s.gzip
 		out.gzip = &g
 	}
+	out.cache = cloneCache(s.cache)
 	return out
+}
+
+func cloneCache(c model.CachePolicy) model.CachePolicy {
+	c.Levels = slices.Clone(c.Levels)
+	c.Valid = slices.Clone(c.Valid)
+	c.Methods = slices.Clone(c.Methods)
+	c.UseStale = slices.Clone(c.UseStale)
+	c.Ignore = slices.Clone(c.Ignore)
+	return c
 }
 
 func (c *converter) http(h *Directive) {
@@ -242,13 +259,15 @@ func (c *converter) http(h *Directive) {
 			c.limitReqZone(d)
 		case "limit_conn_zone":
 			c.limitConnZone(d)
+		case "proxy_cache_path":
+			c.cachePath(d)
 		case "map", "geo", "split_clients":
 			c.lookup(d)
 		}
 	}
 	for _, d := range h.Block {
 		switch d.Name {
-		case "upstream", "log_format", "limit_req_zone", "limit_conn_zone", "map", "geo", "split_clients":
+		case "upstream", "log_format", "limit_req_zone", "limit_conn_zone", "proxy_cache_path", "map", "geo", "split_clients":
 		case "server":
 			servers = append(servers, d)
 		default:
@@ -432,6 +451,14 @@ func (c *converter) common(d *Directive, s *scope) bool {
 		}
 	case "gzip_buffers", "gzip_window", "gzip_hash":
 		c.note(d, Replaced, "buffers are sized by the proxy")
+		return true
+	case "proxy_cache", "proxy_cache_key", "proxy_cache_valid", "proxy_cache_methods", "proxy_cache_min_uses",
+		"proxy_cache_bypass", "proxy_no_cache", "proxy_cache_lock", "proxy_cache_lock_timeout", "proxy_cache_use_stale",
+		"proxy_cache_background_update", "proxy_cache_revalidate", "proxy_cache_convert_head", "proxy_ignore_headers":
+		c.cacheDirective(d, s)
+		return true
+	case "proxy_cache_lock_age", "proxy_cache_max_range_offset":
+		c.note(d, Replaced, "the lock lasts as long as the request that holds it; ranges are served from whole entries")
 		return true
 	case "limit_rate":
 		s.rate = arg(0)

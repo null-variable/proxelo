@@ -90,6 +90,9 @@ func (c *converter) scopePolicies(s, parent scope) []string {
 			out = append(out, c.policy("conn-"+l.zone, model.PolicySpec{Type: model.PolicyConnLimit, ConnLimit: &z}))
 		}
 	}
+	if id, ok := c.cachePolicy(s, parent); ok {
+		out = append(out, id)
+	}
 	if s.basicRealm != "" && len(s.basicUsers) > 0 && (s.basicRealm != parent.basicRealm || !slices.Equal(s.basicUsers, parent.basicUsers)) {
 		out = append(out, c.policy("basic-auth", model.PolicySpec{Type: model.PolicyBasicAuth, BasicAuth: &model.BasicAuthPolicy{Realm: s.basicRealm, Users: s.basicUsers}}))
 	}
@@ -108,4 +111,185 @@ func (c *converter) scopePolicies(s, parent scope) []string {
 		out = append(out, c.policy("bandwidth", model.PolicySpec{Type: model.PolicyBandwidth, Bandwidth: &model.BandwidthPolicy{Rate: s.rate, After: s.after}}))
 	}
 	return out
+}
+
+// cachePath reads proxy_cache_path into a zone the cache policies of its
+// proxy_cache directives start from.
+func (c *converter) cachePath(d *Directive) {
+	if len(d.Args) < 2 {
+		c.note(d, Unsupported, "needs a path and keys_zone=")
+		return
+	}
+	z := &model.CachePolicy{Path: d.Args[0]}
+	name := ""
+	var notes []string
+	for _, x := range d.Args[1:] {
+		k, v, _ := strings.Cut(x, "=")
+		switch k {
+		case "keys_zone":
+			// The zone size is memory for keys: about 8000 per megabyte.
+			n, size, _ := strings.Cut(v, ":")
+			name = n
+			if b, err := model.ParseSize(size); err == nil && b > 0 {
+				z.MaxEntries = uint32(min(b/1024*8, 1<<31))
+			}
+		case "levels":
+			for l := range strings.SplitSeq(v, ":") {
+				z.Levels = append(z.Levels, atou(l))
+			}
+		case "max_size":
+			z.MaxSize = v
+		case "inactive":
+			z.Inactive = duration(v)
+		case "use_temp_path", "manager_files", "manager_sleep", "manager_threshold", "loader_files", "loader_sleep",
+			"loader_threshold", "min_free":
+			notes = append(notes, k+" is managed by the proxy")
+		default:
+			notes = append(notes, k+" not supported")
+		}
+	}
+	if name == "" {
+		c.note(d, Unsupported, "needs keys_zone=")
+		return
+	}
+	c.cacheZones[name] = z
+	c.noteOr(d, strings.Join(notes, "; "))
+}
+
+// cacheDirective reads proxy_cache and the proxy_cache_* settings into s.
+func (c *converter) cacheDirective(d *Directive, s *scope) {
+	a := d.Args
+	k := &s.cache
+	note := ""
+	switch d.Name {
+	case "proxy_cache":
+		switch {
+		case firstArg(a) == "off":
+			s.cacheZone = ""
+		case c.cacheZones[firstArg(a)] == nil:
+			c.note(d, Unsupported, "zone "+firstArg(a)+" not defined, or named by a variable")
+			return
+		default:
+			s.cacheZone = firstArg(a)
+		}
+	case "proxy_cache_key":
+		k.Key = firstArg(a)
+	case "proxy_cache_valid":
+		v := model.CacheValid{}
+		for i, x := range a {
+			if i == len(a)-1 {
+				v.Time = duration(x)
+			} else {
+				v.Statuses = append(v.Statuses, x)
+			}
+		}
+		k.Valid = append(k.Valid, v)
+	case "proxy_cache_methods":
+		k.Methods = nil
+		for _, m := range a {
+			k.Methods = append(k.Methods, strings.ToUpper(m))
+		}
+		if !slices.Contains(k.Methods, "HEAD") {
+			k.Methods = append(k.Methods, "HEAD")
+		}
+		if !slices.Contains(k.Methods, "GET") {
+			k.Methods = append(k.Methods, "GET")
+		}
+	case "proxy_cache_min_uses":
+		k.MinUses = atou(firstArg(a))
+	case "proxy_cache_bypass", "proxy_no_cache":
+		expr := varsExpr(a)
+		if expr == "" {
+			c.note(d, Unsupported, "only $arg_ and $http_ variables become conditions")
+			return
+		}
+		if d.Name == "proxy_cache_bypass" {
+			k.Bypass = expr
+		} else {
+			k.NoStore = expr
+		}
+		note = "becomes a CEL condition: set when the variables are non-empty"
+	case "proxy_cache_lock":
+		k.Lock = firstArg(a) == "on"
+	case "proxy_cache_lock_timeout":
+		k.LockTimeout = duration(firstArg(a))
+	case "proxy_cache_use_stale":
+		k.UseStale = nil
+		for _, x := range a {
+			switch {
+			case x == "off":
+			case x == "invalid_header":
+				note = "invalid_header counts as error"
+				if !slices.Contains(k.UseStale, "error") {
+					k.UseStale = append(k.UseStale, "error")
+				}
+			case slices.Contains(model.CacheUseStale, x):
+				k.UseStale = append(k.UseStale, x)
+			default:
+				note = x + " not supported"
+			}
+		}
+	case "proxy_cache_background_update":
+		k.BackgroundUpdate = firstArg(a) == "on"
+	case "proxy_cache_revalidate":
+		k.Revalidate = firstArg(a) == "on"
+	case "proxy_cache_convert_head":
+		k.KeepHead = firstArg(a) == "off"
+	case "proxy_ignore_headers":
+		k.Ignore = nil
+		for _, x := range a {
+			if slices.ContainsFunc(model.CacheIgnore, func(v string) bool { return strings.EqualFold(v, x) }) {
+				k.Ignore = append(k.Ignore, x)
+			} else {
+				note = x + " not supported"
+			}
+		}
+	}
+	c.noteOr(d, note)
+}
+
+// cachePolicy is the cache policy of s when it differs from its parent's.
+func (c *converter) cachePolicy(s, parent scope) (string, bool) {
+	if s.cacheZone == "" {
+		if parent.cacheZone == "" {
+			return "", false
+		}
+		off := false
+		return c.policy("cache-off", model.PolicySpec{Type: model.PolicyCache, Cache: &model.CachePolicy{Enabled: &off}}), true
+	}
+	p := cloneCache(*c.cacheZones[s.cacheZone])
+	k := s.cache
+	p.Key, p.Valid, p.Methods, p.MinUses, p.Bypass, p.NoStore = k.Key, k.Valid, k.Methods, k.MinUses, k.Bypass, k.NoStore
+	p.Lock, p.LockTimeout, p.UseStale, p.BackgroundUpdate = k.Lock, k.LockTimeout, k.UseStale, k.BackgroundUpdate
+	p.Revalidate, p.KeepHead, p.Ignore = k.Revalidate, k.KeepHead, k.Ignore
+	if p.BackgroundUpdate && !slices.Contains(p.UseStale, "updating") {
+		p.BackgroundUpdate = false
+	}
+	if s.cacheZone == parent.cacheZone && fmt.Sprintf("%+v", s.cache) == fmt.Sprintf("%+v", parent.cache) {
+		return "", false
+	}
+	return c.policy("cache-"+s.cacheZone, model.PolicySpec{Type: model.PolicyCache, Cache: &p}), true
+}
+
+// varsExpr turns proxy_cache_bypass variables into a CEL condition that
+// holds when any is non-empty and not "0", as nginx tests them.
+func varsExpr(vars []string) string {
+	var parts []string
+	for _, v := range vars {
+		name, ok := strings.CutPrefix(v, "$")
+		if !ok {
+			return ""
+		}
+		var m, k string
+		switch {
+		case strings.HasPrefix(name, "arg_"):
+			m, k = "request.query", name[4:]
+		case strings.HasPrefix(name, "http_"):
+			m, k = "request.headers", strings.ReplaceAll(name[5:], "_", "-")
+		default:
+			return ""
+		}
+		parts = append(parts, fmt.Sprintf(`(%[2]q in %[1]s && %[1]s[%[2]q] != "" && %[1]s[%[2]q] != "0")`, m, k))
+	}
+	return strings.Join(parts, " || ")
 }
