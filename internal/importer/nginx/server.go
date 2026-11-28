@@ -266,6 +266,7 @@ func (c *converter) server(d *Directive, sc scope) {
 	}) {
 		r := c.newRoute(fmt.Sprintf("%s-root", site.Name), model.PathMatch{Type: model.PathPrefix, Value: "/"})
 		r.Spec.Action = c.staticAction(sc)
+		r.Spec.Mirror = mirror(sc)
 		site.Spec.Routes = append(site.Spec.Routes, r.ID)
 	}
 	for _, f := range s.pending {
@@ -468,6 +469,13 @@ func (c *converter) newRoute(name string, m model.PathMatch) *model.Route {
 	return r
 }
 
+func mirror(sc scope) *model.Mirror {
+	if len(sc.mirror) == 0 {
+		return nil
+	}
+	return &model.Mirror{URIs: slices.Clone(sc.mirror), NoRequestBody: sc.mirrorNoBody}
+}
+
 func (c *converter) staticAction(sc scope) model.Action {
 	root := sc.root
 	if root == "" {
@@ -568,7 +576,8 @@ func (c *converter) location(s *srv, d *Directive, parentScope scope) string {
 			r.Spec.Rewrite = append(r.Spec.Rewrite, rw)
 			c.note(e, Converted, "")
 		case "internal":
-			c.note(e, ConvertedWithNote, "reachable from the outside too; use a named route for internal-only targets")
+			r.Spec.Internal = true
+			c.note(e, Converted, "")
 		case "set":
 			if len(a) == 2 {
 				c.note(e, Replaced, "use a map lookup for $"+strings.TrimPrefix(a[0], "$"))
@@ -646,6 +655,7 @@ func (c *converter) location(s *srv, d *Directive, parentScope scope) string {
 		action = &a
 	}
 	r.Spec.Action = *action
+	r.Spec.Mirror = mirror(sc)
 	if len(sc.errorPages) > 0 && sc.set["error_page"] {
 		r.Spec.ErrorPages = sc.errorPages
 		for i := range r.Spec.ErrorPages {

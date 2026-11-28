@@ -298,6 +298,7 @@ func (s *PolicySpec) validate(es *FieldErrors) {
 		PolicyCache:       s.Cache != nil,
 		PolicyWasm:        s.Wasm != nil,
 		PolicyWAF:         s.WAF != nil,
+		PolicyFilters:     s.Filters != nil,
 	}
 	for _, t := range slices.Sorted(maps.Keys(set)) {
 		if set[t] && t != s.Type {
@@ -508,8 +509,40 @@ func (s *PolicySpec) validate(es *FieldErrors) {
 		}
 	case PolicyCompression:
 		s.Compression.validate(es)
+	case PolicyFilters:
+		s.Filters.validate(es)
 	case PolicyCache:
 		s.Cache.validate(es)
+	}
+}
+
+func (f *FiltersPolicy) validate(es *FieldErrors) {
+	if f.SSI == nil && f.Addition == nil {
+		es.add("spec.filters", "needs ssi or addition")
+	}
+	if s := f.SSI; s != nil {
+		checkMediaTypes(es, "spec.filters.ssi.types", s.Types)
+	}
+	if a := f.Addition; a != nil {
+		checkMediaTypes(es, "spec.filters.addition.types", a.Types)
+		checkPath(es, "spec.filters.addition.before", a.Before)
+		checkPath(es, "spec.filters.addition.after", a.After)
+	}
+}
+
+// checkMediaTypes checks media types such as "text/css", or "*".
+func checkMediaTypes(es *FieldErrors, path string, ts []string) {
+	for i, t := range ts {
+		if t != "*" && (!strings.Contains(t, "/") || strings.ContainsAny(t, " ;,\r\n")) {
+			es.add(fmt.Sprintf("%s[%d]", path, i), "must be a media type such as \"text/css\" or \"*\"")
+		}
+	}
+}
+
+// checkPath checks an optional absolute request path without a query.
+func checkPath(es *FieldErrors, path, v string) {
+	if v != "" && (!strings.HasPrefix(v, "/") || strings.ContainsAny(v, " ?#\x00\r\n")) {
+		es.add(path, "must be a path such as \"/footer.html\"")
 	}
 }
 
@@ -624,11 +657,7 @@ func (c *CompressionPolicy) validate(es *FieldErrors) {
 		}
 		seen[e] = true
 	}
-	for i, t := range c.Types {
-		if t != "*" && (!strings.Contains(t, "/") || strings.ContainsAny(t, " ;,\r\n")) {
-			es.add(fmt.Sprintf("spec.compression.types[%d]", i), "must be a media type such as \"text/css\" or \"*\"")
-		}
-	}
+	checkMediaTypes(es, "spec.compression.types", c.Types)
 	if c.MinLength != "" {
 		if n, err := ParseSize(c.MinLength); err != nil || n > math.MaxUint32 {
 			es.add("spec.compression.minLength", "must be a size such as \"1k\"")
@@ -1055,6 +1084,18 @@ func (s *RouteSpec) validate(es *FieldErrors) {
 	}
 	checkErrorPages(es, "spec.errorPages", s.ErrorPages)
 	checkIDs(es, "spec.policies", s.Policies)
+	if m := s.Mirror; m != nil {
+		if len(m.URIs) == 0 {
+			es.add("spec.mirror.uris", "at least one path is required")
+		}
+		for i, u := range m.URIs {
+			p := fmt.Sprintf("spec.mirror.uris[%d]", i)
+			if u == "" {
+				es.add(p, "must not be empty")
+			}
+			checkPath(es, p, u)
+		}
+	}
 
 	a := s.Action
 	for _, o := range []struct {

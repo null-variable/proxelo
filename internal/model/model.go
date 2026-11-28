@@ -248,6 +248,23 @@ type RouteSpec struct {
 	Policies []string `json:"policies,omitempty"`
 	// False drops the policies of the parent route and the site.
 	InheritPolicies *bool `json:"inheritPolicies,omitempty"`
+	// Only internal redirects (error pages, try_files, rewrites) and
+	// subrequests reach the route; a client request for it gets 404 (nginx
+	// internal).
+	Internal bool `json:"internal,omitempty"`
+	// Copies of each request sent to other paths, whose answers are dropped
+	// (nginx mirror). Nil: none.
+	Mirror *Mirror `json:"mirror,omitempty"`
+}
+
+// Mirror is nginx mirror and mirror_request_body. Each copy runs through the
+// site's routes as a subrequest with the method, query and body of the
+// original; internal routes are reachable.
+type Mirror struct {
+	// Paths such as "/copy".
+	URIs []string `json:"uris"`
+	// Send copies without the request body (mirror_request_body off).
+	NoRequestBody bool `json:"noRequestBody,omitempty"`
 }
 
 // Match selects requests by path (nginx location) and, optionally, by
@@ -775,6 +792,7 @@ const (
 	PolicyCache       PolicyType = "cache"
 	PolicyWasm        PolicyType = "wasm"
 	PolicyWAF         PolicyType = "waf"
+	PolicyFilters     PolicyType = "filters"
 )
 
 // PolicySpec carries the settings for Type and nothing else.
@@ -795,6 +813,7 @@ type PolicySpec struct {
 	Cache       *CachePolicy       `json:"cache,omitempty"`
 	Wasm        *WasmPolicy        `json:"wasm,omitempty"`
 	WAF         *WAFPolicy         `json:"waf,omitempty"`
+	Filters     *FiltersPolicy     `json:"filters,omitempty"`
 }
 
 // HeadersPolicy replaces nginx add_header, proxy_set_header and
@@ -1021,6 +1040,40 @@ type CompressionPolicy struct {
 	// PCRE2 pattern; clients whose User-Agent matches get plain responses
 	// (nginx gzip_disable).
 	Disable string `json:"disable,omitempty"`
+}
+
+// FiltersPolicy holds response body filters. Each filter is taken from the
+// closest policy that sets it, as nginx merges each module on its own.
+type FiltersPolicy struct {
+	SSI      *SSIFilter      `json:"ssi,omitempty"`
+	Addition *AdditionFilter `json:"addition,omitempty"`
+}
+
+// SSIFilter is nginx ssi with ssi_silent_errors, ssi_types,
+// ssi_value_length and ssi_last_modified: include (virtual and file), echo,
+// set, if/elif/else/endif, config and block commands in responses.
+type SSIFilter struct {
+	// False turns off an ssi filter inherited from further out (ssi off).
+	Enabled *bool `json:"enabled,omitempty"`
+	// Leave no "[an error occurred while processing the directive]".
+	SilentErrors bool `json:"silentErrors,omitempty"`
+	// Media types processed besides text/html, or "*" for any.
+	Types []string `json:"types,omitempty"`
+	// Keep Last-Modified and send ETag weak.
+	LastModified bool `json:"lastModified,omitempty"`
+	// Longest parameter value in bytes. Zero: 256.
+	ValueLength uint32 `json:"valueLength,omitempty"`
+}
+
+// AdditionFilter is nginx add_before_body, add_after_body and
+// addition_types: the answers of subrequests to these paths around 200
+// responses. Both paths empty turns off an addition filter inherited from
+// further out.
+type AdditionFilter struct {
+	Before string `json:"before,omitempty"`
+	After  string `json:"after,omitempty"`
+	// Media types besides text/html, or "*" for any.
+	Types []string `json:"types,omitempty"`
 }
 
 // CachePolicy is nginx proxy_cache_path with proxy_cache and the

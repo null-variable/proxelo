@@ -197,6 +197,7 @@ func (c *compiler) compile(cfg model.Config, revision uint64) *snapshotv1.Snapsh
 		out.AccessLog = eff.log
 		out.RealIp = realIP(st.sitePolicies)
 		out.Compression = compression(st.sitePolicies)
+		out.Filters = filters(st.sitePolicies)
 		out.Rewrites = st.rewrites(s.Spec.Rewrite)
 		if r := s.Spec.Return; r != nil {
 			out.Return = &snapshotv1.ReturnAction{Status: r.Status, Text: r.Text}
@@ -561,6 +562,11 @@ func (st *site) route(r *model.Route, pols []*model.Policy) *snapshotv1.Route {
 	out.ResponseHeaders, out.RequestHeaders, out.AccessLog = eff.response, eff.request, eff.log
 	out.Access, out.Bandwidth = eff.access, eff.bandwidth
 	out.Compression = compression(pols)
+	out.Filters = filters(pols)
+	out.Internal = r.Spec.Internal
+	if m := r.Spec.Mirror; m != nil {
+		out.Mirror = &snapshotv1.Mirror{Uris: m.URIs, RequestBody: !m.NoRequestBody}
+	}
 
 	a := r.Spec.Action
 	switch {

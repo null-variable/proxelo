@@ -1,6 +1,7 @@
 package nginx
 
 import (
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -15,6 +16,10 @@ func defaultParams(p model.GatewayProtocol) []model.GatewayParam { return compil
 // spec.
 func (c *converter) policy(name string, spec model.PolicySpec) string {
 	key := fmt.Sprintf("%#v", spec)
+	if spec.Filters != nil {
+		b, _ := json.Marshal(spec)
+		key = string(b)
+	}
 	if spec.Headers != nil || spec.BasicAuth != nil || spec.Compression != nil || spec.IPAccess != nil || spec.AccessLog != nil || spec.RealIP != nil || spec.JWT != nil || spec.OIDC != nil {
 		key = fmt.Sprintf("%s:%+v%+v%+v%+v%+v%+v%+v%+v", spec.Type, spec.Headers, spec.BasicAuth, spec.Compression, spec.IPAccess, spec.AccessLog, spec.RealIP, spec.JWT, spec.OIDC)
 	}
@@ -116,10 +121,32 @@ func (c *converter) scopePolicies(s, parent scope) []string {
 		g := *s.gzip
 		out = append(out, c.policy("compression", model.PolicySpec{Type: model.PolicyCompression, Compression: &g}))
 	}
+	if f, ok := filtersPolicy(s, parent); ok {
+		out = append(out, c.policy("filters", model.PolicySpec{Type: model.PolicyFilters, Filters: f}))
+	}
 	if s.rate != "" && (s.rate != parent.rate || s.after != parent.after) && s.rate != "0" {
 		out = append(out, c.policy("bandwidth", model.PolicySpec{Type: model.PolicyBandwidth, Bandwidth: &model.BandwidthPolicy{Rate: s.rate, After: s.after}}))
 	}
 	return out
+}
+
+// filtersPolicy is the filters a level changes over its parent: an ssi or
+// addition filter set (or turned off) here.
+func filtersPolicy(s, parent scope) (*model.FiltersPolicy, bool) {
+	f := &model.FiltersPolicy{}
+	if s.ssiOn != parent.ssiOn || s.ssiOn && fmt.Sprint(s.ssi) != fmt.Sprint(parent.ssi) {
+		ssi := s.ssi
+		if !s.ssiOn {
+			off := false
+			ssi = model.SSIFilter{Enabled: &off}
+		}
+		f.SSI = &ssi
+	}
+	if fmt.Sprint(s.addition) != fmt.Sprint(parent.addition) {
+		a := s.addition
+		f.Addition = &a
+	}
+	return f, f.SSI != nil || f.Addition != nil
 }
 
 // oidcProvider reads an nginx Plus oidc_provider block.

@@ -164,6 +164,45 @@ var proxiedFlags = map[string]snapshotv1.Compression_Proxied{
 	"any":              snapshotv1.Compression_PROXIED_ANY,
 }
 
+// filters returns the response filters as the proxy takes them, each from
+// the closest policy that sets it; one turned off there is left out.
+func filters(pols []*model.Policy) *snapshotv1.Filters {
+	var ssi *model.SSIFilter
+	var add *model.AdditionFilter
+	for _, p := range pols {
+		if f := p.Spec.Filters; p.Spec.Type == model.PolicyFilters && f != nil {
+			if f.SSI != nil {
+				ssi = f.SSI
+			}
+			if f.Addition != nil {
+				add = f.Addition
+			}
+		}
+	}
+	out := &snapshotv1.Filters{}
+	if ssi != nil && (ssi.Enabled == nil || *ssi.Enabled) {
+		out.Ssi = &snapshotv1.Ssi{SilentErrors: ssi.SilentErrors, Types: lower(ssi.Types), LastModified: ssi.LastModified, ValueLength: ssi.ValueLength}
+	}
+	if add != nil && (add.Before != "" || add.After != "") {
+		out.Addition = &snapshotv1.Addition{Before: add.Before, After: add.After, Types: lower(add.Types)}
+	}
+	if out.Ssi == nil && out.Addition == nil {
+		return nil
+	}
+	return out
+}
+
+func lower(ts []string) []string {
+	if len(ts) == 0 {
+		return nil
+	}
+	out := make([]string, len(ts))
+	for i, t := range ts {
+		out[i] = strings.ToLower(t)
+	}
+	return out
+}
+
 // compression returns the closest compression policy as the proxy takes it.
 func compression(pols []*model.Policy) *snapshotv1.Compression {
 	var c *model.CompressionPolicy

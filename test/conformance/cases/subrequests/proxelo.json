@@ -1,0 +1,33 @@
+{
+  "listeners": [
+    {"id": "lst_main", "name": "main", "spec": {"address": "127.0.0.1:18480", "defaultSite": "site_main"}}
+  ],
+  "sites": [
+    {"id": "site_main", "name": "main", "spec": {"listeners": ["lst_main"],
+      "hostnames": [{"type": "exact", "value": "example.com"}],
+      "routes": ["rt_ssi", "rt_quiet", "rt_add", "rt_up", "rt_hidden", "rt_root"]}}
+  ],
+  "routes": [
+    {"id": "rt_ssi", "name": "ssi", "spec": {"match": {"path": {"type": "prefix", "value": "/ssi/"}}, "policies": ["pol_ssi"],
+      "action": {"type": "static", "static": {"root": "/srv/www"}}}},
+    {"id": "rt_quiet", "name": "quiet", "spec": {"match": {"path": {"type": "prefix", "value": "/quiet/"}}, "policies": ["pol_quiet"],
+      "rewrite": [{"regex": "^/quiet/(.*)$", "replacement": "/ssi/$1", "flag": "break"}],
+      "action": {"type": "static", "static": {"root": "/srv/www"}}}},
+    {"id": "rt_add", "name": "add", "spec": {"match": {"path": {"type": "prefix", "value": "/add/"}}, "policies": ["pol_add"],
+      "action": {"type": "static", "static": {"root": "/srv/www"}}}},
+    {"id": "rt_up", "name": "up", "spec": {"match": {"path": {"type": "prefix", "value": "/up/"}},
+      "action": {"type": "proxy", "proxy": {"upstream": "up_backend"}}}},
+    {"id": "rt_hidden", "name": "hidden", "spec": {"match": {"path": {"type": "prefix", "value": "/hidden"}}, "internal": true,
+      "action": {"type": "proxy", "proxy": {"upstream": "up_backend"}}}},
+    {"id": "rt_root", "name": "root", "spec": {"match": {"path": {"type": "prefix", "value": "/"}},
+      "action": {"type": "static", "static": {"root": "/srv/www"}}}}
+  ],
+  "upstreams": [
+    {"id": "up_backend", "name": "backend", "spec": {"targets": [{"address": "127.0.0.1:18481"}]}}
+  ],
+  "policies": [
+    {"id": "pol_ssi", "name": "ssi", "spec": {"type": "filters", "filters": {"ssi": {}}}},
+    {"id": "pol_quiet", "name": "quiet", "spec": {"type": "filters", "filters": {"ssi": {"silentErrors": true, "types": ["text/plain"]}}}},
+    {"id": "pol_add", "name": "add", "spec": {"type": "filters", "filters": {"addition": {"before": "/head.html", "after": "/foot.html"}}}}
+  ]
+}

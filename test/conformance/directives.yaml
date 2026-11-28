@@ -148,15 +148,18 @@ directives:
   - name: add_before_body
     module: ngx_http_addition_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.filters.addition.before
   - name: add_after_body
     module: ngx_http_addition_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.filters.addition.after
   - name: addition_types
     module: ngx_http_addition_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.filters.addition.types
   - name: auth_basic
     module: ngx_http_auth_basic_module
     contexts: [http, server, location, limit_except]
@@ -473,7 +476,8 @@ directives:
   - name: internal
     module: ngx_http_core_module
     contexts: [location]
-    status: missing
+    status: implemented
+    field: Route.spec.internal
   - name: lingering_close
     module: ngx_http_core_module
     contexts: [http, server, location]
@@ -1286,11 +1290,14 @@ directives:
   - name: mirror
     module: ngx_http_mirror_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.mirror.uris
+    note: request bodies up to 1m
   - name: mirror_request_body
     module: ngx_http_mirror_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.mirror.noRequestBody
   - name: http
     module: ngx_http_module
     contexts: [main]
@@ -1943,31 +1950,38 @@ directives:
   - name: ssi
     module: ngx_http_ssi_filter_module
     contexts: [http, server, location, location if]
-    status: missing
+    status: implemented
+    field: Policy.spec.filters.ssi
   - name: ssi_silent_errors
     module: ngx_http_ssi_filter_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.filters.ssi.silentErrors
   - name: ssi_ignore_recycled_buffers
     module: ngx_http_ssi_filter_module
     contexts: [http, server, location]
-    status: missing
+    status: fixed
+    note: buffers are handled by the proxy
   - name: ssi_min_file_chunk
     module: ngx_http_ssi_filter_module
     contexts: [http, server, location]
-    status: missing
+    status: fixed
+    note: buffers are handled by the proxy
   - name: ssi_value_length
     module: ngx_http_ssi_filter_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.filters.ssi.valueLength
   - name: ssi_types
     module: ngx_http_ssi_filter_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.filters.ssi.types
   - name: ssi_last_modified
     module: ngx_http_ssi_filter_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.filters.ssi.lastModified
   - name: ssl_certificate
     module: ngx_http_ssl_module
     contexts: [http, server]

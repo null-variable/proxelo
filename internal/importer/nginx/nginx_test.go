@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	snapshotv1 "github.com/null-variable/proxelo-api/gen/go/proxelo/snapshot/v1"
+
 	"github.com/null-variable/proxelo/internal/compile"
 	"github.com/null-variable/proxelo/internal/model"
 )
@@ -276,6 +278,54 @@ http {
 	for _, e := range rep.Entries {
 		if strings.HasPrefix(e.Directive, "autoindex") || strings.HasPrefix(e.Directive, "dav_") || e.Directive == "flv" || e.Directive == "random_index" {
 			if e.Class != Converted {
+				t.Errorf("%s: %s", e.Directive, e.Class)
+			}
+		}
+	}
+}
+
+func TestSubrequestFilters(t *testing.T) {
+	cfg, rep := convert(t, Files{"/etc/nginx/nginx.conf": `events {}
+http {
+    ssi on;
+    ssi_types text/plain TEXT/HTML;
+    server {
+        listen 80;
+        root /srv;
+        add_after_body /footer.html;
+        location /plain/ { ssi off; add_after_body ""; }
+        location /quiet/ { ssi_silent_errors on; ssi_value_length 1024; ssi_min_file_chunk 2k; }
+        location /api/ { mirror /copy; mirror /copy2; mirror_request_body off; }
+        location /copy { internal; }
+    }
+}`})
+	snap, err := compile.Compile(cfg, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	site := snap.GetSites()[0]
+	if f := site.GetFilters(); !slices.Equal(f.GetSsi().GetTypes(), []string{"text/plain"}) || f.GetAddition().GetAfter() != "/footer.html" {
+		t.Errorf("site filters: %v", f)
+	}
+	by := map[string]*snapshotv1.Route{}
+	for _, r := range site.GetRoutes() {
+		by[r.GetPath().GetValue()] = r
+	}
+	if f := by["/plain/"].GetFilters(); f != nil {
+		t.Errorf("plain: %v", f)
+	}
+	if s := by["/quiet/"].GetFilters().GetSsi(); !s.GetSilentErrors() || s.GetValueLength() != 1024 || by["/quiet/"].GetFilters().GetAddition() == nil {
+		t.Errorf("quiet: %v", by["/quiet/"].GetFilters())
+	}
+	if m := by["/api/"].GetMirror(); !slices.Equal(m.GetUris(), []string{"/copy", "/copy2"}) || m.GetRequestBody() {
+		t.Errorf("mirror: %v", m)
+	}
+	if !by["/copy"].GetInternal() || by["/api/"].GetInternal() || by["/copy"].GetMirror() != nil {
+		t.Errorf("internal: %v %v", by["/copy"], by["/api/"])
+	}
+	for _, e := range rep.Entries {
+		if strings.HasPrefix(e.Directive, "ssi") || strings.HasPrefix(e.Directive, "mirror") || e.Directive == "add_after_body" || e.Directive == "internal" {
+			if e.Class != Converted && e.Directive != "ssi_min_file_chunk" {
 				t.Errorf("%s: %s", e.Directive, e.Class)
 			}
 		}

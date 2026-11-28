@@ -34,6 +34,9 @@ query arguments and a CEL expression; expressions are type-checked when saved.
 Static routes serve files with index, try_files and gzip_static, and can list
 directories (autoindex as HTML, JSON, JSONP or XML), pick a random index file,
 take WebDAV PUT, DELETE, MKCOL, COPY and MOVE, and seek FLV files.
+A filters policy runs SSI (include, echo, set, if/elif/else, block) and
+nginx addition on responses; routes can be internal-only and mirror
+requests to other paths, as nginx `internal` and `mirror`.
 
 Listeners can terminate TLS and offer HTTP/2 and HTTP/3 (QUIC on the same UDP
 address, advertised with Alt-Svc); sites pick certificates by SNI

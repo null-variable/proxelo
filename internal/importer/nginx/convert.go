@@ -183,13 +183,20 @@ type scope struct {
 	randomIndex bool
 	dav         *model.DAV
 	flv         bool
-	addHeader   []header
-	setHeader   []header
-	hideHeader  []string
-	errorPages  []model.ErrorPage
-	rules       []model.IPRule
-	limitReq    []limitReq
-	limitConn   []limitConn
+	// ssi on|off and the ssi_* settings; add_before_body, add_after_body
+	// and addition_types; mirror (nil: off) and mirror_request_body off.
+	ssiOn        bool
+	ssi          model.SSIFilter
+	addition     model.AdditionFilter
+	mirror       []string
+	mirrorNoBody bool
+	addHeader    []header
+	setHeader    []header
+	hideHeader   []string
+	errorPages   []model.ErrorPage
+	rules        []model.IPRule
+	limitReq     []limitReq
+	limitConn    []limitConn
 	// limit_req_status, limit_req_dry_run and the limit_conn twins.
 	reqStatus, connStatus uint32
 	reqDry, connDry       bool
@@ -251,6 +258,9 @@ func (s scope) clone() scope {
 		out.dav = &d
 	}
 	out.jwt.Audiences = slices.Clone(s.jwt.Audiences)
+	out.ssi.Types = slices.Clone(s.ssi.Types)
+	out.addition.Types = slices.Clone(s.addition.Types)
+	out.mirror = slices.Clone(s.mirror)
 	return out
 }
 
@@ -334,6 +344,33 @@ func (c *converter) common(d *Directive, s *scope) bool {
 		case "autoindex_exact_size":
 			ai.ApproximateSize = arg(0) == "off"
 		}
+	case "ssi":
+		s.ssiOn = arg(0) == "on"
+	case "ssi_silent_errors":
+		s.ssi.SilentErrors = arg(0) == "on"
+	case "ssi_types":
+		s.ssi.Types = mediaTypes(a)
+	case "ssi_value_length":
+		s.ssi.ValueLength = atou(arg(0))
+	case "ssi_last_modified":
+		s.ssi.LastModified = arg(0) == "on"
+	case "ssi_min_file_chunk", "ssi_ignore_recycled_buffers":
+		c.note(d, Replaced, "buffers are handled by the proxy")
+		return true
+	case "add_before_body":
+		s.addition.Before = arg(0)
+	case "add_after_body":
+		s.addition.After = arg(0)
+	case "addition_types":
+		s.addition.Types = mediaTypes(a)
+	case "mirror":
+		if arg(0) == "off" {
+			s.mirror = nil
+		} else {
+			s.mirror = append(slices.Clip(fresh(s, "mirror", s.mirror)), arg(0))
+		}
+	case "mirror_request_body":
+		s.mirrorNoBody = arg(0) == "off"
 	case "random_index":
 		s.randomIndex = arg(0) == "on"
 	case "flv":
@@ -696,6 +733,21 @@ func davAccess(a []string) (string, bool) {
 		}
 	}
 	return fmt.Sprintf("0%o", mode), true
+}
+
+// mediaTypes reads a *_types list; nginx always adds text/html, so it is
+// dropped here, and "*" stands alone.
+func mediaTypes(a []string) []string {
+	if slices.Contains(a, "*") {
+		return []string{"*"}
+	}
+	var out []string
+	for _, t := range a {
+		if t = strings.ToLower(t); t != "text/html" && !slices.Contains(out, t) {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 func atou(s string) uint32 {

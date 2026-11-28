@@ -1,0 +1,15 @@
+directives: [ssi, ssi_silent_errors, ssi_types, add_before_body, add_after_body, internal]
+# The SSI pages vary their size with the includes, so nginx sends them
+# chunked without Last-Modified, as Proxelo does.
+requests:
+  - {target: /ssi/page.html, headers: {Host: example.com}}
+  - {method: HEAD, target: /ssi/page.html, headers: {Host: example.com}}
+  - {target: /ssi/plain.txt, headers: {Host: example.com}}
+  - {target: /quiet/page.html, headers: {Host: example.com}}
+  - {target: /quiet/plain.txt, headers: {Host: example.com}}
+  - {target: /ssi/page.html, headers: {Host: example.com, Range: bytes=0-3}}
+  - {target: /add/a.html, headers: {Host: example.com}}
+  - {target: /add/a.json, headers: {Host: example.com}}
+  - {target: /add/missing.html, headers: {Host: example.com}}
+  - {method: HEAD, target: /add/a.html, headers: {Host: example.com}}
+  - {target: /hidden, headers: {Host: example.com}}

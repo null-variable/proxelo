@@ -87,6 +87,30 @@
         "type"
       ]
     },
+    "AdditionFilter": {
+      "type": "object",
+      "description": "AdditionFilter is nginx add_before_body, add_after_body and addition_types: the answers of subrequests to these paths around 200 responses. Both paths empty turns off an addition filter inherited from further out.",
+      "properties": {
+        "after": {
+          "type": "string"
+        },
+        "before": {
+          "type": "string"
+        },
+        "types": {
+          "type": "array",
+          "description": "Media types besides text/html, or \"*\" for any.",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "x-order": [
+        "before",
+        "after",
+        "types"
+      ]
+    },
     "Autoindex": {
       "type": "object",
       "description": "Autoindex is nginx autoindex and its settings.",
@@ -697,6 +721,24 @@
       ],
       "required": [
         "codes"
+      ]
+    },
+    "FiltersPolicy": {
+      "type": "object",
+      "description": "FiltersPolicy holds response body filters. Each filter is taken from the closest policy that sets it, as nginx merges each module on its own.",
+      "properties": {
+        "addition": {
+          "$ref": "#/$defs/AdditionFilter",
+          "x-nullable": true
+        },
+        "ssi": {
+          "$ref": "#/$defs/SSIFilter",
+          "x-nullable": true
+        }
+      },
+      "x-order": [
+        "ssi",
+        "addition"
       ]
     },
     "ForwardAuthPolicy": {
@@ -1439,6 +1481,30 @@
         "upstream"
       ]
     },
+    "Mirror": {
+      "type": "object",
+      "description": "Mirror is nginx mirror and mirror_request_body. Each copy runs through the site's routes as a subrequest with the method, query and body of the original; internal routes are reachable.",
+      "properties": {
+        "noRequestBody": {
+          "type": "boolean",
+          "description": "Send copies without the request body (mirror_request_body off)."
+        },
+        "uris": {
+          "type": "array",
+          "description": "Paths such as \"/copy\".",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "x-order": [
+        "uris",
+        "noRequestBody"
+      ],
+      "required": [
+        "uris"
+      ]
+    },
     "OIDCPolicy": {
       "type": "object",
       "description": "OIDCPolicy signs users in with an OpenID Connect provider before their requests are served: the authorization code flow with PKCE, then a signed session cookie. The user's sub and email are variables $oidc_sub and $oidc_email. The closest policy applies.",
@@ -1571,6 +1637,10 @@
           "$ref": "#/$defs/ConnLimitPolicy",
           "x-nullable": true
         },
+        "filters": {
+          "$ref": "#/$defs/FiltersPolicy",
+          "x-nullable": true
+        },
         "forwardAuth": {
           "$ref": "#/$defs/ForwardAuthPolicy",
           "x-nullable": true
@@ -1616,7 +1686,8 @@
             "compression",
             "cache",
             "wasm",
-            "waf"
+            "waf",
+            "filters"
           ]
         },
         "waf": {
@@ -1644,7 +1715,8 @@
         "compression",
         "cache",
         "wasm",
-        "waf"
+        "waf",
+        "filters"
       ],
       "required": [
         "type"
@@ -1901,8 +1973,17 @@
           "description": "False drops the policies of the parent route and the site.",
           "x-nullable": true
         },
+        "internal": {
+          "type": "boolean",
+          "description": "Only internal redirects (error pages, try_files, rewrites) and subrequests reach the route; a client request for it gets 404 (nginx internal)."
+        },
         "match": {
           "$ref": "#/$defs/Match"
+        },
+        "mirror": {
+          "$ref": "#/$defs/Mirror",
+          "description": "Copies of each request sent to other paths, whose answers are dropped (nginx mirror). Nil: none.",
+          "x-nullable": true
         },
         "policies": {
           "type": "array",
@@ -1926,11 +2007,51 @@
         "children",
         "errorPages",
         "policies",
-        "inheritPolicies"
+        "inheritPolicies",
+        "internal",
+        "mirror"
       ],
       "required": [
         "match",
         "action"
+      ]
+    },
+    "SSIFilter": {
+      "type": "object",
+      "description": "SSIFilter is nginx ssi with ssi_silent_errors, ssi_types, ssi_value_length and ssi_last_modified: include (virtual and file), echo, set, if/elif/else/endif, config and block commands in responses.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "False turns off an ssi filter inherited from further out (ssi off).",
+          "x-nullable": true
+        },
+        "lastModified": {
+          "type": "boolean",
+          "description": "Keep Last-Modified and send ETag weak."
+        },
+        "silentErrors": {
+          "type": "boolean",
+          "description": "Leave no \"[an error occurred while processing the directive]\"."
+        },
+        "types": {
+          "type": "array",
+          "description": "Media types processed besides text/html, or \"*\" for any.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "valueLength": {
+          "type": "integer",
+          "description": "Longest parameter value in bytes. Zero: 256.",
+          "minimum": 0
+        }
+      },
+      "x-order": [
+        "enabled",
+        "silentErrors",
+        "types",
+        "lastModified",
+        "valueLength"
       ]
     },
     "SiteSpec": {

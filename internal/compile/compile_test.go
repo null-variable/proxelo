@@ -823,3 +823,81 @@ func TestCompileStaticHandlers(t *testing.T) {
 		}
 	}
 }
+
+func TestCompileFiltersMirrorInternal(t *testing.T) {
+	cfg := validConfig()
+	off := false
+	cfg.Policies = []*model.Policy{
+		{Meta: meta("pol_site", "site"), Spec: model.PolicySpec{Type: model.PolicyFilters, Filters: &model.FiltersPolicy{
+			SSI:      &model.SSIFilter{SilentErrors: true, Types: []string{"Text/Plain"}, ValueLength: 512},
+			Addition: &model.AdditionFilter{After: "/footer.html"},
+		}}},
+		{Meta: meta("pol_off", "off"), Spec: model.PolicySpec{Type: model.PolicyFilters, Filters: &model.FiltersPolicy{
+			SSI: &model.SSIFilter{Enabled: &off},
+		}}},
+	}
+	for _, p := range cfg.Policies {
+		if es := model.Validate(p); es != nil {
+			t.Fatalf("%s: %v", p.ID, es)
+		}
+	}
+	cfg.Sites[0].Spec.Policies = []string{"pol_site"}
+	cfg.Routes[0].Spec.Policies = []string{"pol_off"}
+	cfg.Routes[0].Spec.Mirror = &model.Mirror{URIs: []string{"/copy"}, NoRequestBody: true}
+	cfg.Routes[1].Spec.Internal = true
+	for _, r := range cfg.Routes {
+		if es := model.Validate(r); es != nil {
+			t.Fatalf("%s: %v", r.ID, es)
+		}
+	}
+	snap, err := Compile(cfg, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	site := snap.GetSites()[0]
+	if f := site.GetFilters(); f.GetSsi().GetValueLength() != 512 || f.GetAddition().GetAfter() != "/footer.html" {
+		t.Errorf("site filters = %v", f)
+	}
+	for _, r := range site.GetRoutes() {
+		switch r.GetId() {
+		case "rt_api":
+			// ssi off here; addition still comes from the site.
+			if f := r.GetFilters(); f.GetSsi() != nil || f.GetAddition().GetAfter() != "/footer.html" {
+				t.Errorf("api filters = %v", f)
+			}
+			if m := r.GetMirror(); len(m.GetUris()) != 1 || m.GetUris()[0] != "/copy" || m.GetRequestBody() || r.GetInternal() {
+				t.Errorf("api mirror = %v", m)
+			}
+		case "rt_root":
+			s := r.GetFilters().GetSsi()
+			if !s.GetSilentErrors() || s.GetTypes()[0] != "text/plain" || !r.GetInternal() || r.GetMirror() != nil {
+				t.Errorf("root = %v", r)
+			}
+		}
+	}
+
+	for path, f := range map[string]func(*model.Config){
+		"spec.filters":                 func(c *model.Config) { c.Policies[0].Spec.Filters = &model.FiltersPolicy{} },
+		"spec.filters.ssi.types[0]":    func(c *model.Config) { c.Policies[0].Spec.Filters.SSI.Types = []string{"html"} },
+		"spec.filters.addition.before": func(c *model.Config) { c.Policies[0].Spec.Filters.Addition.Before = "head.html" },
+	} {
+		c := cfg
+		c.Policies = []*model.Policy{{Meta: cfg.Policies[0].Meta, Spec: model.PolicySpec{Type: model.PolicyFilters, Filters: &model.FiltersPolicy{
+			SSI: &model.SSIFilter{}, Addition: &model.AdditionFilter{},
+		}}}}
+		f(&c)
+		if es := model.Validate(c.Policies[0]); !slices.ContainsFunc(es, func(e model.FieldError) bool { return e.Path == path }) {
+			t.Errorf("%s: got %v", path, es)
+		}
+	}
+	for path, m := range map[string]*model.Mirror{
+		"spec.mirror.uris":    {},
+		"spec.mirror.uris[0]": {URIs: []string{"copy"}},
+	} {
+		r := validConfig().Routes[0]
+		r.Spec.Mirror = m
+		if es := model.Validate(r); !slices.ContainsFunc(es, func(e model.FieldError) bool { return e.Path == path }) {
+			t.Errorf("%s: got %v", path, es)
+		}
+	}
+}
