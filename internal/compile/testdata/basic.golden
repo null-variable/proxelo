@@ -1,6 +1,6 @@
 {
   "revision": "1",
-  "hash": "w4M43MHCUbIhjAbr81V+fjRfpsAJlD4KnTWRvTDsmLY=",
+  "hash": "dQtYDP9501ENmdb96NJ+RfAwoecz1wf35oBC7Ck2gdM=",
   "listeners": [
     {
       "address": "0.0.0.0:8080",
@@ -26,7 +26,14 @@
             "value": "/api/"
           },
           "action": {
-            "proxy": {}
+            "proxy": {
+              "redirects": [
+                {
+                  "pattern": "http://api/",
+                  "replacement": "/"
+                }
+              ]
+            }
           },
           "id": "rt_api"
         },

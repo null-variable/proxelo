@@ -593,7 +593,7 @@ func (c *converter) location(s *srv, d *Directive, parentScope scope) string {
 		case "memcached_key":
 			memcachedKey = firstArg(a)
 			c.note(e, Converted, "")
-		case "proxy_redirect", "proxy_cookie_domain", "proxy_cookie_path", "proxy_intercept_errors", "proxy_pass_request_headers",
+		case "proxy_pass_request_headers",
 			"proxy_pass_request_body", "proxy_ssl_server_name", "proxy_ssl_name", "proxy_ssl_verify", "proxy_ssl_trusted_certificate",
 			"proxy_ssl_protocols", "proxy_ssl_ciphers", "proxy_ssl_certificate", "proxy_ssl_certificate_key", "proxy_ssl_verify_depth":
 			c.note(e, ConvertedWithNote, "set it on the upstream (tls) or the route's policies")
@@ -751,7 +751,7 @@ func (c *converter) upstreamTLS(id string) {
 }
 
 func (c *converter) proxyBase(up string, sc scope) model.ProxyAction {
-	p := model.ProxyAction{Upstream: up, Timeouts: sc.timeouts}
+	p := model.ProxyAction{Upstream: up, Timeouts: sc.timeouts, InterceptErrors: sc.intercept}
 	if len(sc.nextUpstream) > 0 {
 		on := []string{}
 		for _, x := range sc.nextUpstream {
@@ -773,6 +773,22 @@ func (c *converter) proxyPass(d *Directive, sc scope, r *model.Route) *model.Act
 		return nil
 	}
 	rest := strings.TrimPrefix(strings.TrimPrefix(target, "https://"), "http://")
+	// nginx's default proxy_redirect maps the proxy_pass URL as written,
+	// with "/" for no URI part, to the location prefix or "/".
+	redirects := sc.redirects
+	if redirects == nil || (redirects.Default && !redirects.Off) {
+		pattern, replacement := target, "/"
+		if !strings.Contains(rest, "/") {
+			pattern += "/"
+		} else if m := r.Spec.Match.Path; m.Type != model.PathRegex && m.Type != model.PathRegexCI {
+			replacement = m.Value
+		}
+		rules := []model.HeaderRewrite{{Pattern: pattern, Replacement: replacement}}
+		if redirects != nil {
+			rules = append(rules, redirects.Rules...)
+		}
+		redirects = &model.Redirects{Rules: rules}
+	}
 	if i := strings.Index(rest, "/"); i >= 0 {
 		uri := rest[i:]
 		m := r.Spec.Match.Path
@@ -787,6 +803,10 @@ func (c *converter) proxyPass(d *Directive, sc scope, r *model.Route) *model.Act
 		}
 	}
 	p := c.proxyBase(up, sc)
+	p.Redirects = redirects
+	if cs := sc.cookies; len(cs.Domains) > 0 || len(cs.Paths) > 0 || len(cs.Flags) > 0 {
+		p.Cookies = &cs
+	}
 	return &model.Action{Type: model.ActionProxy, Proxy: &p}
 }
 

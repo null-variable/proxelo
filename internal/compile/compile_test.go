@@ -983,3 +983,76 @@ func TestValidateCharset(t *testing.T) {
 		}
 	}
 }
+
+func TestCompileProxyEdits(t *testing.T) {
+	cfg := validConfig()
+	p := cfg.Routes[0].Spec.Action.Proxy
+	// Nil redirects: nginx's default rule only.
+	snap, err := Compile(cfg, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pa := snap.GetSites()[0].GetRoutes()[0].GetAction().GetProxy()
+	name := cfg.Upstreams[0].Name
+	if r := pa.GetRedirects(); len(r) != 1 || r[0].GetPattern() != "http://"+name+"/" || r[0].GetReplacement() != "/" {
+		t.Errorf("default redirects = %v", r)
+	}
+
+	p.InterceptErrors = true
+	p.Redirects = &model.Redirects{Default: true, Rules: []model.HeaderRewrite{{Match: model.RewriteRegexCI, Pattern: "^http://a/(.*)$", Replacement: "/$1"}}}
+	p.Cookies = &model.CookieEdits{
+		Domains: []model.HeaderRewrite{{Pattern: ".up", Replacement: ".example.com"}, {Match: model.RewriteRegex, Pattern: `(.*)\.up$`, Replacement: "$1.example.com"}},
+		Paths:   []model.HeaderRewrite{{Pattern: "/app/", Replacement: "/"}},
+		Flags:   []model.CookieFlags{{Cookie: "sid", Flags: []string{"secure", "samesite=lax"}}},
+	}
+	if es := model.Validate(cfg.Routes[0]); es != nil {
+		t.Fatal(es)
+	}
+	snap, err = Compile(cfg, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pa = snap.GetSites()[0].GetRoutes()[0].GetAction().GetProxy()
+	r := pa.GetRedirects()
+	if len(r) != 2 || r[1].GetKind() != snapshotv1.HeaderRewrite_KIND_REGEX_CASELESS || r[1].GetReplacement() != "/$1" {
+		t.Errorf("redirects = %v", r)
+	}
+	d := pa.GetCookieDomains()
+	if len(d) != 2 || d[0].GetKind() != snapshotv1.HeaderRewrite_KIND_DOMAIN || d[1].GetKind() != snapshotv1.HeaderRewrite_KIND_REGEX_CASELESS {
+		t.Errorf("cookie domains = %v", d)
+	}
+	if c := pa.GetCookiePaths(); len(c) != 1 || c[0].GetKind() != snapshotv1.HeaderRewrite_KIND_UNSPECIFIED {
+		t.Errorf("cookie paths = %v", c)
+	}
+	if f := pa.GetCookieFlags(); len(f) != 1 || f[0].GetCookie() != "sid" || len(f[0].GetFlags()) != 2 || !pa.GetInterceptErrors() {
+		t.Errorf("cookie flags = %v, intercept %v", f, pa.GetInterceptErrors())
+	}
+
+	p.Redirects = &model.Redirects{Off: true}
+	p.Cookies = nil
+	snap, err = Compile(cfg, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := snap.GetSites()[0].GetRoutes()[0].GetAction().GetProxy().GetRedirects(); len(r) != 0 {
+		t.Errorf("off redirects = %v", r)
+	}
+}
+
+func TestValidateProxyEdits(t *testing.T) {
+	for path, a := range map[string]model.Action{
+		"spec.action.proxy.redirects.off":              {Type: model.ActionProxy, Proxy: &model.ProxyAction{Upstream: "u", Redirects: &model.Redirects{Off: true, Default: true}}},
+		"spec.action.proxy.redirects.rules[0].pattern": {Type: model.ActionProxy, Proxy: &model.ProxyAction{Upstream: "u", Redirects: &model.Redirects{Rules: []model.HeaderRewrite{{}}}}},
+		"spec.action.proxy.redirects.rules[0].match":   {Type: model.ActionProxy, Proxy: &model.ProxyAction{Upstream: "u", Redirects: &model.Redirects{Rules: []model.HeaderRewrite{{Match: "glob", Pattern: "x"}}}}},
+		"spec.action.proxy.cookies.flags[0].cookie":    {Type: model.ActionProxy, Proxy: &model.ProxyAction{Upstream: "u", Cookies: &model.CookieEdits{Flags: []model.CookieFlags{{Flags: []string{"secure"}}}}}},
+		"spec.action.proxy.cookies.flags[0].flags[0]":  {Type: model.ActionProxy, Proxy: &model.ProxyAction{Upstream: "u", Cookies: &model.CookieEdits{Flags: []model.CookieFlags{{Cookie: "a", Flags: []string{"sekure"}}}}}},
+		"spec.action.grpc.redirects":                   {Type: model.ActionGrpc, Grpc: &model.ProxyAction{Upstream: "u", Redirects: &model.Redirects{Off: true}}},
+		"spec.action.memcached.interceptErrors":        {Type: model.ActionMemcached, Memcached: &model.MemcachedAction{ProxyAction: model.ProxyAction{Upstream: "u", InterceptErrors: true}}},
+		"spec.action.gateway.cookies":                  {Type: model.ActionGateway, Gateway: &model.GatewayAction{Protocol: model.GatewayFastCGI, ProxyAction: model.ProxyAction{Upstream: "u", Cookies: &model.CookieEdits{}}}},
+	} {
+		r := &model.Route{Meta: meta("rt_x", "x"), Spec: model.RouteSpec{Match: model.Match{Path: model.PathMatch{Type: model.PathPrefix, Value: "/"}}, Action: a}}
+		if es := model.Validate(r); !slices.ContainsFunc(es, func(e model.FieldError) bool { return e.Path == path }) {
+			t.Errorf("%s: got %v", path, es)
+		}
+	}
+}

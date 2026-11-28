@@ -5,8 +5,9 @@ go 1.26.0
 require (
 	cel.dev/cel-go v0.32.0
 	github.com/coreos/go-oidc/v3 v3.21.0
+	github.com/go-jose/go-jose/v4 v4.1.4
 	github.com/mholt/acmez/v3 v3.1.7
-	github.com/null-variable/proxelo-api v0.22.0
+	github.com/null-variable/proxelo-api v0.23.0
 	github.com/oklog/ulid/v2 v2.1.2
 	go.yaml.in/yaml/v3 v3.0.4
 	golang.org/x/crypto v0.59.0
@@ -20,7 +21,6 @@ require (
 	cel.dev/expr v0.25.3 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
 	github.com/dustin/go-humanize v1.1.0 // indirect
-	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/ncruces/go-strftime v1.1.0 // indirect

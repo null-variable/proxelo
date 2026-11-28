@@ -80,7 +80,9 @@ func (r *EchoRecord) headerSet() []string {
 // 200 with a fixed body that names the request and the port that took it,
 // so a wrong URI or a different target choice also shows in the response.
 // A request with X-Echo-Status gets that status instead, with a Basic
-// challenge for 401, so cases can make the upstream refuse.
+// challenge for 401, so cases can make the upstream refuse. X-Echo-Header
+// adds response headers, "Name: value" lines joined with "|", so cases can
+// check what the proxy does with Location or Set-Cookie.
 type echo struct {
 	lns  []net.Listener
 	mu   sync.Mutex
@@ -195,6 +197,11 @@ func (e *echo) conn(c net.Conn) {
 			fmt.Sscan(s, &status)
 			if status == 401 {
 				extra = "WWW-Authenticate: Basic realm=\"echo\"\r\n"
+			}
+		}
+		if hs, ok := rec.header("x-echo-header"); ok {
+			for _, h := range strings.Split(hs, "|") {
+				extra += strings.TrimSpace(h) + "\r\n"
 			}
 		}
 		fmt.Fprintf(c, "HTTP/1.1 %d %s\r\nContent-Type: text/plain\r\nContent-Length: %d\r\nX-Upstream: echo\r\n%sConnection: %s\r\n\r\n%s",

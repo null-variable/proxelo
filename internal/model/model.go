@@ -494,6 +494,65 @@ type ProxyAction struct {
 	Upstream string        `json:"upstream"`
 	Timeouts ProxyTimeouts `json:"timeouts,omitzero"`
 	Retry    *Retry        `json:"retry,omitempty"`
+	// Upstream responses of 300 or more that the route has an error page
+	// for get the page (nginx proxy_intercept_errors and the like). Not
+	// for memcached.
+	InterceptErrors bool `json:"interceptErrors,omitempty"`
+	// Rewrites of Location and the URL of Refresh in upstream responses,
+	// the first match wins (nginx proxy_redirect). Only for proxy actions.
+	Redirects *Redirects `json:"redirects,omitempty"`
+	// Only for proxy actions.
+	Cookies *CookieEdits `json:"cookies,omitempty"`
+}
+
+// Redirects is nginx proxy_redirect. Nil: only the default rule, which
+// maps "http://<upstream name>/" ("https://" with upstream TLS) to "/",
+// the Host the proxy sends.
+type Redirects struct {
+	// No rewriting (proxy_redirect off).
+	Off bool `json:"off,omitempty"`
+	// Tried in order after the default rule when Default is set.
+	Rules []HeaderRewrite `json:"rules,omitempty"`
+	// Keep the default rule first (proxy_redirect default).
+	Default bool `json:"default,omitempty"`
+}
+
+// HeaderRewrite replaces the start of a header value, or with regex the
+// whole value; Replacement is a template that may use $1..$9 of a regex.
+type HeaderRewrite struct {
+	// "prefix" (empty), "regex" or "regexCI".
+	Match       RewriteMatch `json:"match,omitempty"`
+	Pattern     string       `json:"pattern"`
+	Replacement string       `json:"replacement"`
+}
+
+type RewriteMatch string
+
+const (
+	RewritePrefix  RewriteMatch = "prefix"
+	RewriteRegex   RewriteMatch = "regex"
+	RewriteRegexCI RewriteMatch = "regexCI"
+)
+
+// CookieEdits rewrites Set-Cookie of upstream responses (nginx
+// proxy_cookie_domain, proxy_cookie_path and proxy_cookie_flags).
+type CookieEdits struct {
+	// Domain attributes equal to a pattern, ignoring case and a leading
+	// dot; with regex, as a PCRE2 ignoring case.
+	Domains []HeaderRewrite `json:"domains,omitempty"`
+	Paths   []HeaderRewrite `json:"paths,omitempty"`
+	// The first entry naming a cookie sets its flags.
+	Flags []CookieFlags `json:"flags,omitempty"`
+}
+
+type CookieFlags struct {
+	// Cookie name ignoring case, or a caseless PCRE2 with Regex; an empty
+	// regex matches every cookie.
+	Cookie string `json:"cookie,omitempty"`
+	Regex  bool   `json:"regex,omitempty"`
+	// "secure", "nosecure", "httponly", "nohttponly", "samesite=strict",
+	// "samesite=lax", "samesite=none" or "nosamesite"; templates.
+	Flags []string `json:"flags"`
 }
 
 // ProxyTimeouts are Go durations such as "5s". Empty: 60s, the nginx

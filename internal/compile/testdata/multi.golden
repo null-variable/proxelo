@@ -1,6 +1,6 @@
 {
   "revision": "1",
-  "hash": "Ci7kpXLKPt9Cpz03no9J0EoVmIFNXG3XUv8aJfCt0go=",
+  "hash": "w+UOhor1jcqPy175QFClPmwd/W7DpoqHk5Seuq2hoQE=",
   "listeners": [
     {
       "address": "0.0.0.0:8080",
@@ -32,7 +32,14 @@
             "value": "/"
           },
           "action": {
-            "proxy": {}
+            "proxy": {
+              "redirects": [
+                {
+                  "pattern": "http://x/",
+                  "replacement": "/"
+                }
+              ]
+            }
           },
           "id": "rt_a"
         }
@@ -58,7 +65,13 @@
           },
           "action": {
             "proxy": {
-              "upstream": 1
+              "upstream": 1,
+              "redirects": [
+                {
+                  "pattern": "http://y/",
+                  "replacement": "/"
+                }
+              ]
             }
           },
           "id": "rt_b"

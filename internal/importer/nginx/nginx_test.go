@@ -433,3 +433,61 @@ http {
 		}
 	}
 }
+
+func TestProxyEdits(t *testing.T) {
+	cfg, rep := convert(t, Files{"/etc/nginx/nginx.conf": `events {}
+http {
+    upstream app { server 127.0.0.1:9000; }
+    proxy_cookie_path /app/ /;
+    proxy_intercept_errors on;
+    server {
+        listen 80;
+        location /plain/ { proxy_pass http://app; }
+        location /uri/ { proxy_pass http://app/inner/; }
+        location /rules/ {
+            proxy_redirect default;
+            proxy_redirect ~*^http://(.*)\.internal/ http://$1.example.com/;
+            proxy_cookie_domain ~\.internal$ example.com;
+            proxy_cookie_flags ~ secure samesite=strict;
+            proxy_pass http://app;
+        }
+        location /off/ { proxy_redirect off; proxy_cookie_path off; proxy_intercept_errors off; proxy_pass http://app; }
+    }
+}`})
+	for _, e := range rep.Entries {
+		if strings.HasPrefix(e.Directive, "proxy_redirect") || strings.HasPrefix(e.Directive, "proxy_cookie") || strings.HasPrefix(e.Directive, "proxy_intercept") {
+			if e.Class != Converted {
+				t.Errorf("%s: %s %s", e.Directive, e.Class, e.Note)
+			}
+		}
+	}
+	by := map[string]*model.ProxyAction{}
+	for _, r := range cfg.Routes {
+		by[r.Spec.Match.Path.Value] = r.Spec.Action.Proxy
+	}
+	if p := by["/plain/"]; p.Redirects == nil || len(p.Redirects.Rules) != 1 || p.Redirects.Rules[0].Pattern != "http://app/" || p.Redirects.Rules[0].Replacement != "/" || !p.InterceptErrors {
+		t.Errorf("plain: %+v", p.Redirects)
+	}
+	if p := by["/plain/"]; p.Cookies == nil || p.Cookies.Paths[0].Pattern != "/app/" {
+		t.Errorf("plain cookies: %+v", p.Cookies)
+	}
+	if r := by["/uri/"].Redirects; r.Rules[0].Pattern != "http://app/inner/" || r.Rules[0].Replacement != "/uri/" {
+		t.Errorf("uri: %+v", r)
+	}
+	r := by["/rules/"].Redirects
+	if len(r.Rules) != 2 || r.Rules[1].Match != model.RewriteRegexCI || r.Rules[1].Pattern != `^http://(.*)\.internal/` {
+		t.Errorf("rules: %+v", r)
+	}
+	c := by["/rules/"].Cookies
+	if c.Domains[0].Match != model.RewriteRegex || c.Flags[0].Cookie != "" || !c.Flags[0].Regex || len(c.Paths) != 1 {
+		t.Errorf("rules cookies: %+v", c)
+	}
+	if p := by["/off/"]; !p.Redirects.Off || p.Cookies != nil || p.InterceptErrors {
+		t.Errorf("off: %+v %+v %v", p.Redirects, p.Cookies, p.InterceptErrors)
+	}
+	if _, err := compile.Compile(cfg, 1); err == nil {
+		t.Log("compiled")
+	} else {
+		t.Error(err)
+	}
+}

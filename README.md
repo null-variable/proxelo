@@ -57,7 +57,10 @@ upstream's Discovered targets card shows the last read. Passive health and activ
 HTTP or TCP health checks take failing targets out; each proxy reports the
 targets it has taken out to the control plane. Sticky sessions pin a client
 by a cookie the proxy sets or by a route value from a variable. Proxy routes
-set timeouts and retries.
+set timeouts and retries, rewrite Location, Refresh and Set-Cookie domain,
+path and flags of upstream responses (nginx proxy_redirect and
+proxy_cookie_*), and can answer upstream errors with the route's error
+pages (proxy_intercept_errors).
 
 Policies attach to sites and routes and are inherited down the route tree:
 `headers` sets, adds or removes response headers and headers

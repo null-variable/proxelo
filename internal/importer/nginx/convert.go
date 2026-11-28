@@ -225,6 +225,10 @@ type scope struct {
 	timeouts     model.ProxyTimeouts
 	nextUpstream []string
 	nextTries    uint32
+	// proxy_redirect, nil when unset; proxy_cookie_*; *_intercept_errors.
+	redirects *model.Redirects
+	cookies   model.CookieEdits
+	intercept bool
 	fastcgi      []model.GatewayParam
 	gatewayIndex string
 	splitPath    string
@@ -711,6 +715,60 @@ func (c *converter) common(d *Directive, s *scope) bool {
 		s.nextUpstream = slices.Clone(a)
 	case "proxy_next_upstream_tries":
 		s.nextTries = atou(arg(0))
+	case "proxy_intercept_errors", "fastcgi_intercept_errors", "uwsgi_intercept_errors", "scgi_intercept_errors",
+		"grpc_intercept_errors":
+		s.intercept = arg(0) == "on"
+	case "proxy_redirect":
+		r := s.redirects
+		if r == nil || !s.set["proxy_redirect"] {
+			r = &model.Redirects{}
+		}
+		s.set["proxy_redirect"] = true
+		r = &model.Redirects{Off: r.Off, Default: r.Default, Rules: slices.Clip(r.Rules)}
+		switch {
+		case len(a) == 1 && a[0] == "off":
+			r.Off = true
+		case len(a) == 1 && a[0] == "default":
+			r.Default = true
+		case len(a) == 2:
+			r.Rules = append(r.Rules, headerRewrite(a[0], a[1], true))
+		default:
+			c.note(d, Unsupported, "")
+			return true
+		}
+		// Rules without "default" drop the default rule, as in nginx.
+		s.redirects = r
+	case "proxy_cookie_domain", "proxy_cookie_path":
+		list := &s.cookies.Domains
+		if d.Name == "proxy_cookie_path" {
+			list = &s.cookies.Paths
+		}
+		*list = slices.Clip(fresh(s, d.Name, *list))
+		switch {
+		case len(a) == 1 && a[0] == "off":
+			*list = nil
+		case len(a) == 2:
+			// A domain regex is ~ only, caseless.
+			*list = append(*list, headerRewrite(a[0], a[1], d.Name == "proxy_cookie_path"))
+		default:
+			c.note(d, Unsupported, "")
+			return true
+		}
+	case "proxy_cookie_flags":
+		s.cookies.Flags = slices.Clip(fresh(s, d.Name, s.cookies.Flags))
+		switch {
+		case len(a) == 1 && a[0] == "off":
+			s.cookies.Flags = nil
+		case len(a) >= 2:
+			f := model.CookieFlags{Cookie: a[0], Flags: a[1:]}
+			if strings.HasPrefix(a[0], "~") {
+				f.Cookie, f.Regex = a[0][1:], true
+			}
+			s.cookies.Flags = append(s.cookies.Flags, f)
+		default:
+			c.note(d, Unsupported, "")
+			return true
+		}
 	case "fastcgi_param", "uwsgi_param", "scgi_param":
 		p := model.GatewayParam{Name: arg(0), Value: arg(1), IfNotEmpty: arg(2) == "if_not_empty"}
 		s.fastcgi = append(slices.Clip(fresh(s, "param", s.fastcgi)), p)
@@ -770,6 +828,19 @@ func (c *converter) common(d *Directive, s *scope) bool {
 	}
 	c.note(d, Converted, "")
 	return true
+}
+
+// headerRewrite reads a proxy_redirect or proxy_cookie_* pattern: "~" is a
+// regex, "~*" (when caseCI) a caseless one.
+func headerRewrite(pattern, replacement string, caseCI bool) model.HeaderRewrite {
+	r := model.HeaderRewrite{Pattern: pattern, Replacement: replacement}
+	switch {
+	case caseCI && strings.HasPrefix(pattern, "~*"):
+		r.Match, r.Pattern = model.RewriteRegexCI, pattern[2:]
+	case strings.HasPrefix(pattern, "~"):
+		r.Match, r.Pattern = model.RewriteRegex, pattern[1:]
+	}
+	return r
 }
 
 // fresh returns cur, or nil on the level's first directive of family: a

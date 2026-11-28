@@ -79,7 +79,8 @@ Requests listen on 127.0.0.1:18480 and the upstream on 127.0.0.1:18481 to
 18484; its answer names the port, so cases with several targets compare
 which target took each request. A request with `X-Echo-Status` gets that
 status from the echo (401 with a Basic challenge), so cases can make the
-upstream refuse, as a forward auth check does. The
+upstream refuse, as a forward auth check does; `X-Echo-Header` adds the
+response headers it lists, `Name: value` pairs joined with `|`. The
 report (stdout, and `-report file`) lists every differing request and the
 directive coverage.
 

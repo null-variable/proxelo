@@ -1,0 +1,39 @@
+{
+  "listeners": [
+    {"id": "lst_main", "name": "main", "spec": {"address": "127.0.0.1:18480", "defaultSite": "site_main"}}
+  ],
+  "sites": [
+    {"id": "site_main", "name": "main", "spec": {"listeners": ["lst_main"],
+      "hostnames": [{"type": "exact", "value": "example.com"}],
+      "routes": ["rt_plain", "rt_uri", "rt_rules", "rt_off", "rt_intercept", "rt_through", "rt_root"]}}
+  ],
+  "routes": [
+    {"id": "rt_plain", "name": "plain", "spec": {"match": {"path": {"type": "prefix", "value": "/plain/"}},
+      "action": {"type": "proxy", "proxy": {"upstream": "up_backend"}}}},
+    {"id": "rt_uri", "name": "uri", "spec": {"match": {"path": {"type": "prefix", "value": "/uri/"}},
+      "rewrite": [{"regex": "^/uri/(.*)$", "replacement": "/inner/$1", "flag": "break"}],
+      "action": {"type": "proxy", "proxy": {"upstream": "up_backend",
+        "redirects": {"rules": [{"pattern": "http://backend/inner/", "replacement": "/uri/"}]}}}}},
+    {"id": "rt_rules", "name": "rules", "spec": {"match": {"path": {"type": "prefix", "value": "/rules/"}},
+      "action": {"type": "proxy", "proxy": {"upstream": "up_backend",
+        "redirects": {"default": true, "rules": [{"match": "regexCI", "pattern": "^http://([a-z]+)\\.internal/(.*)$", "replacement": "https://$1.example.com/$2"}]},
+        "cookies": {
+          "domains": [{"match": "regex", "pattern": "\\.internal$", "replacement": "example.com"}, {"pattern": "up.local", "replacement": ".example.com"}],
+          "paths": [{"match": "regexCI", "pattern": "^/APP/(.*)$", "replacement": "/$1"}],
+          "flags": [{"cookie": "sid", "flags": ["nosecure", "httponly", "samesite=lax"]}, {"regex": true, "flags": ["secure"]}]
+        }}}}},
+    {"id": "rt_off", "name": "off", "spec": {"match": {"path": {"type": "prefix", "value": "/off/"}},
+      "action": {"type": "proxy", "proxy": {"upstream": "up_backend", "redirects": {"off": true}}}}},
+    {"id": "rt_intercept", "name": "intercept", "spec": {"match": {"path": {"type": "prefix", "value": "/intercept/"}},
+      "errorPages": [{"codes": [404, 401], "uri": "/gone.html"}],
+      "action": {"type": "proxy", "proxy": {"upstream": "up_backend", "interceptErrors": true}}}},
+    {"id": "rt_through", "name": "through", "spec": {"match": {"path": {"type": "prefix", "value": "/through/"}},
+      "errorPages": [{"codes": [404], "uri": "/gone.html"}],
+      "action": {"type": "proxy", "proxy": {"upstream": "up_backend"}}}},
+    {"id": "rt_root", "name": "root", "spec": {"match": {"path": {"type": "prefix", "value": "/"}},
+      "action": {"type": "static", "static": {"root": "/srv/www"}}}}
+  ],
+  "upstreams": [
+    {"id": "up_backend", "name": "backend", "spec": {"targets": [{"address": "127.0.0.1:18481"}]}}
+  ]
+}

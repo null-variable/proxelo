@@ -665,7 +665,59 @@ func (st *site) proxyAction(routeID, kind string, p *model.ProxyAction) *snapsho
 			pa.NextUpstream = append(pa.NextUpstream, nextUpstream[on])
 		}
 	}
+	pa.InterceptErrors = p.InterceptErrors
+	if kind == "proxy" {
+		u := st.upstreams.items[ui]
+		pa.Redirects = redirects(p.Redirects, u)
+		if c := p.Cookies; c != nil {
+			pa.CookieDomains = headerRewrites(c.Domains, snapshotv1.HeaderRewrite_KIND_DOMAIN)
+			pa.CookiePaths = headerRewrites(c.Paths, snapshotv1.HeaderRewrite_KIND_UNSPECIFIED)
+			for _, f := range c.Flags {
+				pa.CookieFlags = append(pa.CookieFlags, &snapshotv1.CookieFlags{Cookie: f.Cookie, Regex: f.Regex, Flags: f.Flags})
+			}
+		}
+	}
 	return pa
+}
+
+// redirects compiles proxy_redirect for upstream u. nginx's default rule
+// for proxy_pass http://<name> maps "http://<name>/" to "/".
+func redirects(r *model.Redirects, u *model.Upstream) []*snapshotv1.HeaderRewrite {
+	if r != nil && r.Off {
+		return nil
+	}
+	var out []*snapshotv1.HeaderRewrite
+	if r == nil || r.Default {
+		scheme := "http://"
+		if u.Spec.TLS != nil {
+			scheme = "https://"
+		}
+		out = append(out, &snapshotv1.HeaderRewrite{Pattern: scheme + u.Name + "/", Replacement: "/"})
+	}
+	if r != nil {
+		out = append(out, headerRewrites(r.Rules, snapshotv1.HeaderRewrite_KIND_UNSPECIFIED)...)
+	}
+	return out
+}
+
+// headerRewrites compiles rules whose plain match is literal.
+func headerRewrites(rs []model.HeaderRewrite, literal snapshotv1.HeaderRewrite_Kind) []*snapshotv1.HeaderRewrite {
+	var out []*snapshotv1.HeaderRewrite
+	for _, r := range rs {
+		kind := literal
+		switch r.Match {
+		case model.RewriteRegex:
+			kind = snapshotv1.HeaderRewrite_KIND_REGEX
+			// A cookie domain regex is caseless in nginx.
+			if literal == snapshotv1.HeaderRewrite_KIND_DOMAIN {
+				kind = snapshotv1.HeaderRewrite_KIND_REGEX_CASELESS
+			}
+		case model.RewriteRegexCI:
+			kind = snapshotv1.HeaderRewrite_KIND_REGEX_CASELESS
+		}
+		out = append(out, &snapshotv1.HeaderRewrite{Kind: kind, Pattern: r.Pattern, Replacement: r.Replacement})
+	}
+	return out
 }
 
 var nextUpstream = map[string]snapshotv1.NextUpstream{

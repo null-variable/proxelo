@@ -740,7 +740,8 @@ directives:
   - name: fastcgi_intercept_errors
     module: ngx_http_fastcgi_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.gateway.interceptErrors
   - name: fastcgi_read_timeout
     module: ngx_http_fastcgi_module
     contexts: [http, server, location]
@@ -941,7 +942,8 @@ directives:
   - name: grpc_intercept_errors
     module: ngx_http_grpc_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.grpc.interceptErrors
   - name: grpc_buffer_size
     module: ngx_http_grpc_module
     contexts: [http, server, location]
@@ -1349,19 +1351,23 @@ directives:
   - name: proxy_redirect
     module: ngx_http_proxy_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.proxy.redirects
   - name: proxy_cookie_domain
     module: ngx_http_proxy_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.proxy.cookies.domains
   - name: proxy_cookie_path
     module: ngx_http_proxy_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.proxy.cookies.paths
   - name: proxy_cookie_flags
     module: ngx_http_proxy_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.proxy.cookies.flags
   - name: proxy_store
     module: ngx_http_proxy_module
     contexts: [http, server, location]
@@ -1415,7 +1421,8 @@ directives:
   - name: proxy_intercept_errors
     module: ngx_http_proxy_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.proxy.interceptErrors
   - name: proxy_set_header
     module: ngx_http_proxy_module
     contexts: [http, server, location]
@@ -1805,7 +1812,8 @@ directives:
   - name: scgi_intercept_errors
     module: ngx_http_scgi_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.gateway.interceptErrors
   - name: scgi_read_timeout
     module: ngx_http_scgi_module
     contexts: [http, server, location]
@@ -2414,7 +2422,8 @@ directives:
   - name: uwsgi_intercept_errors
     module: ngx_http_uwsgi_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.gateway.interceptErrors
   - name: uwsgi_read_timeout
     module: ngx_http_uwsgi_module
     contexts: [http, server, location]

@@ -662,6 +662,64 @@
         "max"
       ]
     },
+    "CookieEdits": {
+      "type": "object",
+      "description": "CookieEdits rewrites Set-Cookie of upstream responses (nginx proxy_cookie_domain, proxy_cookie_path and proxy_cookie_flags).",
+      "properties": {
+        "domains": {
+          "type": "array",
+          "description": "Domain attributes equal to a pattern, ignoring case and a leading dot; with regex, as a PCRE2 ignoring case.",
+          "items": {
+            "$ref": "#/$defs/HeaderRewrite"
+          }
+        },
+        "flags": {
+          "type": "array",
+          "description": "The first entry naming a cookie sets its flags.",
+          "items": {
+            "$ref": "#/$defs/CookieFlags"
+          }
+        },
+        "paths": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HeaderRewrite"
+          }
+        }
+      },
+      "x-order": [
+        "domains",
+        "paths",
+        "flags"
+      ]
+    },
+    "CookieFlags": {
+      "type": "object",
+      "properties": {
+        "cookie": {
+          "type": "string",
+          "description": "Cookie name ignoring case, or a caseless PCRE2 with Regex; an empty regex matches every cookie."
+        },
+        "flags": {
+          "type": "array",
+          "description": "\"secure\", \"nosecure\", \"httponly\", \"nohttponly\", \"samesite=strict\", \"samesite=lax\", \"samesite=none\" or \"nosamesite\"; templates.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "regex": {
+          "type": "boolean"
+        }
+      },
+      "x-order": [
+        "cookie",
+        "regex",
+        "flags"
+      ],
+      "required": [
+        "flags"
+      ]
+    },
     "DAV": {
       "type": "object",
       "description": "DAV is nginx dav_methods with create_full_put_path, min_delete_depth and dav_access.",
@@ -863,6 +921,11 @@
       "type": "object",
       "description": "GatewayAction passes requests to an application server (nginx fastcgi_pass, uwsgi_pass, scgi_pass). The request body is read in full first.",
       "properties": {
+        "cookies": {
+          "$ref": "#/$defs/CookieEdits",
+          "description": "Only for proxy actions.",
+          "x-nullable": true
+        },
         "documentRoot": {
           "type": "string",
           "description": "$document_root, an absolute path; SCRIPT_FILENAME of FastCGI is $document_root$fastcgi_script_name."
@@ -870,6 +933,10 @@
         "index": {
           "type": "string",
           "description": "Appended to $fastcgi_script_name for a URI ending in \"/\", for example \"index.php\" (fastcgi_index)."
+        },
+        "interceptErrors": {
+          "type": "boolean",
+          "description": "Upstream responses of 300 or more that the route has an error page for get the page (nginx proxy_intercept_errors and the like). Not for memcached."
         },
         "noDefaultParams": {
           "type": "boolean",
@@ -894,6 +961,11 @@
             "scgi"
           ]
         },
+        "redirects": {
+          "$ref": "#/$defs/Redirects",
+          "description": "Rewrites of Location and the URL of Refresh in upstream responses, the first match wins (nginx proxy_redirect). Only for proxy actions.",
+          "x-nullable": true
+        },
         "retry": {
           "$ref": "#/$defs/Retry",
           "x-nullable": true
@@ -916,6 +988,9 @@
         "upstream",
         "timeouts",
         "retry",
+        "interceptErrors",
+        "redirects",
+        "cookies",
         "params",
         "noDefaultParams",
         "noRequestHeaders",
@@ -1028,6 +1103,36 @@
         "add",
         "remove",
         "always"
+      ]
+    },
+    "HeaderRewrite": {
+      "type": "object",
+      "description": "HeaderRewrite replaces the start of a header value, or with regex the whole value; Replacement is a template that may use $1..$9 of a regex.",
+      "properties": {
+        "match": {
+          "type": "string",
+          "description": "\"prefix\" (empty), \"regex\" or \"regexCI\".",
+          "enum": [
+            "prefix",
+            "regex",
+            "regexCI"
+          ]
+        },
+        "pattern": {
+          "type": "string"
+        },
+        "replacement": {
+          "type": "string"
+        }
+      },
+      "x-order": [
+        "match",
+        "pattern",
+        "replacement"
+      ],
+      "required": [
+        "pattern",
+        "replacement"
       ]
     },
     "HeaderValue": {
@@ -1538,9 +1643,23 @@
       "type": "object",
       "description": "MemcachedAction answers GET and HEAD with the value stored under the key (nginx memcached_pass); a missing key is 404.",
       "properties": {
+        "cookies": {
+          "$ref": "#/$defs/CookieEdits",
+          "description": "Only for proxy actions.",
+          "x-nullable": true
+        },
+        "interceptErrors": {
+          "type": "boolean",
+          "description": "Upstream responses of 300 or more that the route has an error page for get the page (nginx proxy_intercept_errors and the like). Not for memcached."
+        },
         "key": {
           "type": "string",
           "description": "Template; empty: $uri."
+        },
+        "redirects": {
+          "$ref": "#/$defs/Redirects",
+          "description": "Rewrites of Location and the URL of Refresh in upstream responses, the first match wins (nginx proxy_redirect). Only for proxy actions.",
+          "x-nullable": true
         },
         "retry": {
           "$ref": "#/$defs/Retry",
@@ -1559,6 +1678,9 @@
         "upstream",
         "timeouts",
         "retry",
+        "interceptErrors",
+        "redirects",
+        "cookies",
         "key"
       ],
       "required": [
@@ -1809,6 +1931,20 @@
     "ProxyAction": {
       "type": "object",
       "properties": {
+        "cookies": {
+          "$ref": "#/$defs/CookieEdits",
+          "description": "Only for proxy actions.",
+          "x-nullable": true
+        },
+        "interceptErrors": {
+          "type": "boolean",
+          "description": "Upstream responses of 300 or more that the route has an error page for get the page (nginx proxy_intercept_errors and the like). Not for memcached."
+        },
+        "redirects": {
+          "$ref": "#/$defs/Redirects",
+          "description": "Rewrites of Location and the URL of Refresh in upstream responses, the first match wins (nginx proxy_redirect). Only for proxy actions.",
+          "x-nullable": true
+        },
         "retry": {
           "$ref": "#/$defs/Retry",
           "x-nullable": true
@@ -1825,7 +1961,10 @@
       "x-order": [
         "upstream",
         "timeouts",
-        "retry"
+        "retry",
+        "interceptErrors",
+        "redirects",
+        "cookies"
       ],
       "required": [
         "upstream"
@@ -1950,6 +2089,32 @@
       ],
       "required": [
         "from"
+      ]
+    },
+    "Redirects": {
+      "type": "object",
+      "description": "Redirects is nginx proxy_redirect. Nil: only the default rule, which maps \"http://<upstream name>/\" (\"https://\" with upstream TLS) to \"/\", the Host the proxy sends.",
+      "properties": {
+        "default": {
+          "type": "boolean",
+          "description": "Keep the default rule first (proxy_redirect default)."
+        },
+        "off": {
+          "type": "boolean",
+          "description": "No rewriting (proxy_redirect off)."
+        },
+        "rules": {
+          "type": "array",
+          "description": "Tried in order after the default rule when Default is set.",
+          "items": {
+            "$ref": "#/$defs/HeaderRewrite"
+          }
+        }
+      },
+      "x-order": [
+        "off",
+        "rules",
+        "default"
       ]
     },
     "Retry": {

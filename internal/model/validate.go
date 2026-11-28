@@ -1254,12 +1254,17 @@ func (s *RouteSpec) validate(es *FieldErrors) {
 			return
 		}
 		a.Grpc.validate(es, "spec.action.grpc")
+		a.Grpc.onlyProxy(es, "spec.action.grpc")
 	case ActionMemcached:
 		if a.Memcached == nil {
 			es.add("spec.action.memcached", "is required when type is %q", a.Type)
 			return
 		}
 		a.Memcached.ProxyAction.validate(es, "spec.action.memcached")
+		a.Memcached.onlyProxy(es, "spec.action.memcached")
+		if a.Memcached.InterceptErrors {
+			es.add("spec.action.memcached.interceptErrors", "is not supported for memcached")
+		}
 	case ActionGateway:
 		if a.Gateway == nil {
 			es.add("spec.action.gateway", "is required when type is %q", a.Type)
@@ -1293,6 +1298,59 @@ func (p *ProxyAction) validate(es *FieldErrors, path string) {
 			}
 		}
 	}
+	if r := p.Redirects; r != nil {
+		if r.Off && (r.Default || len(r.Rules) > 0) {
+			es.add(path+".redirects.off", "conflicts with default and rules")
+		}
+		checkHeaderRewrites(es, path+".redirects.rules", r.Rules)
+	}
+	if c := p.Cookies; c != nil {
+		checkHeaderRewrites(es, path+".cookies.domains", c.Domains)
+		checkHeaderRewrites(es, path+".cookies.paths", c.Paths)
+		for i, f := range c.Flags {
+			fp := fmt.Sprintf("%s.cookies.flags[%d]", path, i)
+			// An empty regex matches every cookie.
+			if f.Cookie == "" && !f.Regex {
+				es.add(fp+".cookie", "is required unless regex")
+			}
+			if len(f.Flags) == 0 {
+				es.add(fp+".flags", "at least one flag is required")
+			}
+			for j, v := range f.Flags {
+				if !strings.Contains(v, "$") && !slices.Contains(CookieFlagNames, strings.ToLower(v)) {
+					es.add(fmt.Sprintf("%s.flags[%d]", fp, j), "must be one of %s", strings.Join(CookieFlagNames, ", "))
+				}
+			}
+		}
+	}
+}
+
+// CookieFlagNames are the values of CookieFlags.Flags.
+var CookieFlagNames = []string{"secure", "nosecure", "httponly", "nohttponly", "samesite=strict", "samesite=lax", "samesite=none", "nosamesite"}
+
+func checkHeaderRewrites(es *FieldErrors, path string, rs []HeaderRewrite) {
+	for i, r := range rs {
+		p := fmt.Sprintf("%s[%d]", path, i)
+		switch r.Match {
+		case "", RewritePrefix, RewriteRegex, RewriteRegexCI:
+		default:
+			es.add(p+".match", "must be %q, %q or %q", RewritePrefix, RewriteRegex, RewriteRegexCI)
+		}
+		// PCRE2 grammar is checked by the proxy when it loads the snapshot.
+		if r.Pattern == "" {
+			es.add(p+".pattern", "must not be empty")
+		}
+	}
+}
+
+// onlyProxy rejects the settings that only proxy actions have.
+func (p *ProxyAction) onlyProxy(es *FieldErrors, path string) {
+	if p.Redirects != nil {
+		es.add(path+".redirects", "only for proxy actions")
+	}
+	if p.Cookies != nil {
+		es.add(path+".cookies", "only for proxy actions")
+	}
 }
 
 // gatewayParamRE is a CGI-style param name.
@@ -1305,6 +1363,7 @@ func (g *GatewayAction) validate(es *FieldErrors, path string) {
 		es.add(path+".protocol", "must be one of %q, %q, %q", GatewayFastCGI, GatewayUwsgi, GatewaySCGI)
 	}
 	g.ProxyAction.validate(es, path)
+	g.onlyProxy(es, path)
 	for i, p := range g.Params {
 		if !gatewayParamRE.MatchString(p.Name) {
 			es.add(fmt.Sprintf("%s.params[%d].name", path, i), "must be letters, digits, '_', '.' or '-'")

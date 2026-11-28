@@ -1,0 +1,17 @@
+directives: [proxy_redirect, proxy_cookie_domain, proxy_cookie_path, proxy_cookie_flags, proxy_intercept_errors]
+# The echo answers with the Location, Refresh and Set-Cookie headers that
+# X-Echo-Header lists; nginx rewrites them per location.
+requests:
+  - {target: /plain/a, headers: {Host: example.com, X-Echo-Status: "302", X-Echo-Header: "Location: http://backend/plain/next|Refresh: 3; URL=http://backend/r"}}
+  - {target: /plain/b, headers: {Host: example.com, X-Echo-Status: "301", X-Echo-Header: "Location: http://other/plain/next"}}
+  - {target: /uri/a, headers: {Host: example.com, X-Echo-Status: "302", X-Echo-Header: "Location: http://backend/inner/x?y=1"}}
+  - {target: /rules/a, headers: {Host: example.com, X-Echo-Status: "302", X-Echo-Header: "Location: http://backend/z"}}
+  - {target: /rules/b, headers: {Host: example.com, X-Echo-Status: "302", X-Echo-Header: "Location: HTTP://api.internal/v1/x"}}
+  - {target: /rules/c, headers: {Host: example.com, X-Echo-Header: "Set-Cookie: sid=1; Domain=.UP.local; Path=/app/x; Secure|Set-Cookie: t=2; domain=a.internal; path=/keep|Set-Cookie: plain=3|Set-Cookie: novalue"}}
+  - {target: /rules/d, headers: {Host: example.com, X-Echo-Header: "Set-Cookie: u=4;secure ;  SameSite=None"}}
+  - {target: /off/a, headers: {Host: example.com, X-Echo-Status: "302", X-Echo-Header: "Location: http://backend/off/x"}}
+  - {target: /plain/c, headers: {Host: example.com, X-Echo-Header: "Set-Cookie: k=v; Path=/app/"}}
+  - {target: /intercept/a, headers: {Host: example.com, X-Echo-Status: "404"}}
+  - {target: /intercept/b, headers: {Host: example.com, X-Echo-Status: "401"}}
+  - {target: /intercept/c, headers: {Host: example.com, X-Echo-Status: "500"}}
+  - {target: /through/a, headers: {Host: example.com, X-Echo-Status: "404"}}
