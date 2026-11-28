@@ -229,6 +229,12 @@ type scope struct {
 	redirects *model.Redirects
 	cookies   model.CookieEdits
 	intercept bool
+	// *_pass_header, *_limit_rate, *_bind; proxy_method, proxy_set_body,
+	// proxy_pass_request_headers and proxy_pass_request_body.
+	passHeaders  []string
+	limitRate    string
+	bind         string
+	request      model.UpstreamRequest
 	fastcgi      []model.GatewayParam
 	gatewayIndex string
 	splitPath    string
@@ -718,6 +724,36 @@ func (c *converter) common(d *Directive, s *scope) bool {
 	case "proxy_intercept_errors", "fastcgi_intercept_errors", "uwsgi_intercept_errors", "scgi_intercept_errors",
 		"grpc_intercept_errors":
 		s.intercept = arg(0) == "on"
+	case "proxy_pass_header", "fastcgi_pass_header", "uwsgi_pass_header", "scgi_pass_header", "grpc_pass_header":
+		s.passHeaders = append(slices.Clip(fresh(s, "pass_header", s.passHeaders)), arg(0))
+	case "proxy_limit_rate", "fastcgi_limit_rate", "uwsgi_limit_rate", "scgi_limit_rate":
+		if arg(0) == "0" {
+			s.limitRate = ""
+		} else {
+			s.limitRate = arg(0)
+		}
+	case "grpc_bind":
+		c.note(d, Unsupported, "grpc upstream connections are shared by requests")
+		return true
+	case "proxy_bind", "fastcgi_bind", "uwsgi_bind", "scgi_bind", "memcached_bind":
+		switch {
+		case len(a) > 1:
+			c.note(d, Unsupported, "transparent binding is not supported")
+			return true
+		case arg(0) == "off":
+			s.bind = ""
+		default:
+			s.bind = arg(0)
+		}
+	case "proxy_method":
+		s.request.Method = arg(0)
+	case "proxy_set_body":
+		b := arg(0)
+		s.request.Body = &b
+	case "proxy_pass_request_headers":
+		s.request.NoHeaders = arg(0) == "off"
+	case "proxy_pass_request_body":
+		s.request.NoBody = arg(0) == "off"
 	case "proxy_redirect":
 		r := s.redirects
 		if r == nil || !s.set["proxy_redirect"] {

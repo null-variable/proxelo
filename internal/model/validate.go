@@ -1255,6 +1255,12 @@ func (s *RouteSpec) validate(es *FieldErrors) {
 		}
 		a.Grpc.validate(es, "spec.action.grpc")
 		a.Grpc.onlyProxy(es, "spec.action.grpc")
+		if a.Grpc.LimitRate != "" {
+			es.add("spec.action.grpc.limitRate", "is not supported for grpc")
+		}
+		if a.Grpc.Bind != "" {
+			es.add("spec.action.grpc.bind", "is not supported for grpc")
+		}
 	case ActionMemcached:
 		if a.Memcached == nil {
 			es.add("spec.action.memcached", "is required when type is %q", a.Type)
@@ -1264,6 +1270,12 @@ func (s *RouteSpec) validate(es *FieldErrors) {
 		a.Memcached.onlyProxy(es, "spec.action.memcached")
 		if a.Memcached.InterceptErrors {
 			es.add("spec.action.memcached.interceptErrors", "is not supported for memcached")
+		}
+		if len(a.Memcached.PassHeaders) > 0 {
+			es.add("spec.action.memcached.passHeaders", "is not supported for memcached")
+		}
+		if a.Memcached.LimitRate != "" {
+			es.add("spec.action.memcached.limitRate", "is not supported for memcached")
 		}
 	case ActionGateway:
 		if a.Gateway == nil {
@@ -1303,6 +1315,27 @@ func (p *ProxyAction) validate(es *FieldErrors, path string) {
 			es.add(path+".redirects.off", "conflicts with default and rules")
 		}
 		checkHeaderRewrites(es, path+".redirects.rules", r.Rules)
+	}
+	for i, h := range p.PassHeaders {
+		l := strings.ToLower(h)
+		if !slices.Contains(PassableHeaders, l) && !(len(l) > len("x-accel-") && strings.HasPrefix(l, "x-accel-") && headerNameRE.MatchString(l)) {
+			es.add(fmt.Sprintf("%s.passHeaders[%d]", path, i), "must be Date, Server, X-Pad or X-Accel-*, which are hidden by default")
+		}
+	}
+	if p.LimitRate != "" {
+		if n, err := ParseSize(p.LimitRate); err != nil || n == 0 {
+			es.add(path+".limitRate", "must be a size such as \"100k\"")
+		}
+	}
+	if p.Bind != "" && !strings.Contains(p.Bind, "$") {
+		if _, err := netip.ParseAddr(p.Bind); err != nil {
+			if _, err := netip.ParseAddrPort(p.Bind); err != nil {
+				es.add(path+".bind", "must be an IP address, with an optional port, or a template")
+			}
+		}
+	}
+	if r := p.Request; r != nil && r.Method != "" && !strings.Contains(r.Method, "$") && !headerNameRE.MatchString(r.Method) {
+		es.add(path+".request.method", "must be an HTTP method or a template")
 	}
 	if c := p.Cookies; c != nil {
 		checkHeaderRewrites(es, path+".cookies.domains", c.Domains)
@@ -1351,7 +1384,14 @@ func (p *ProxyAction) onlyProxy(es *FieldErrors, path string) {
 	if p.Cookies != nil {
 		es.add(path+".cookies", "only for proxy actions")
 	}
+	if p.Request != nil {
+		es.add(path+".request", "only for proxy actions")
+	}
 }
+
+// PassableHeaders are the upstream response headers the proxy hides by
+// default, besides X-Accel-*.
+var PassableHeaders = []string{"date", "server", "x-pad"}
 
 // gatewayParamRE is a CGI-style param name.
 var gatewayParamRE = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,255}$`)

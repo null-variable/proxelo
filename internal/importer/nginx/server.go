@@ -593,8 +593,7 @@ func (c *converter) location(s *srv, d *Directive, parentScope scope) string {
 		case "memcached_key":
 			memcachedKey = firstArg(a)
 			c.note(e, Converted, "")
-		case "proxy_pass_request_headers",
-			"proxy_pass_request_body", "proxy_ssl_server_name", "proxy_ssl_name", "proxy_ssl_verify", "proxy_ssl_trusted_certificate",
+		case "proxy_ssl_server_name", "proxy_ssl_name", "proxy_ssl_verify", "proxy_ssl_trusted_certificate",
 			"proxy_ssl_protocols", "proxy_ssl_ciphers", "proxy_ssl_certificate", "proxy_ssl_certificate_key", "proxy_ssl_verify_depth":
 			c.note(e, ConvertedWithNote, "set it on the upstream (tls) or the route's policies")
 		case "expires":
@@ -617,11 +616,17 @@ func (c *converter) location(s *srv, d *Directive, parentScope scope) string {
 	case grpcPass != nil:
 		if up, ok := c.passUpstream(grpcPass, "grpc://", "grpcs://"); ok {
 			p := c.proxyBase(up, sc)
+			// nginx grpc has no limit_rate, and grpc_bind is not
+			// supported; the proxy_* ones around it do not apply.
+			p.LimitRate, p.Bind = "", ""
 			action = &model.Action{Type: model.ActionGrpc, Grpc: &p}
 		}
 	case memcachedPass != nil:
 		if up, ok := c.passUpstream(memcachedPass, ""); ok {
-			action = &model.Action{Type: model.ActionMemcached, Memcached: &model.MemcachedAction{ProxyAction: c.proxyBase(up, sc), Key: memcachedKey}}
+			p := c.proxyBase(up, sc)
+			// nginx memcached has neither pass_header nor limit_rate.
+			p.PassHeaders, p.LimitRate = nil, ""
+			action = &model.Action{Type: model.ActionMemcached, Memcached: &model.MemcachedAction{ProxyAction: p, Key: memcachedKey}}
 		}
 	}
 	if action == nil {
@@ -751,7 +756,10 @@ func (c *converter) upstreamTLS(id string) {
 }
 
 func (c *converter) proxyBase(up string, sc scope) model.ProxyAction {
-	p := model.ProxyAction{Upstream: up, Timeouts: sc.timeouts, InterceptErrors: sc.intercept}
+	p := model.ProxyAction{
+		Upstream: up, Timeouts: sc.timeouts, InterceptErrors: sc.intercept,
+		PassHeaders: slices.Clone(sc.passHeaders), LimitRate: sc.limitRate, Bind: sc.bind,
+	}
 	if len(sc.nextUpstream) > 0 {
 		on := []string{}
 		for _, x := range sc.nextUpstream {
@@ -806,6 +814,9 @@ func (c *converter) proxyPass(d *Directive, sc scope, r *model.Route) *model.Act
 	p.Redirects = redirects
 	if cs := sc.cookies; len(cs.Domains) > 0 || len(cs.Paths) > 0 || len(cs.Flags) > 0 {
 		p.Cookies = &cs
+	}
+	if rq := sc.request; rq != (model.UpstreamRequest{}) {
+		p.Request = &rq
 	}
 	return &model.Action{Type: model.ActionProxy, Proxy: &p}
 }

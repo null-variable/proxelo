@@ -60,7 +60,13 @@ by a cookie the proxy sets or by a route value from a variable. Proxy routes
 set timeouts and retries, rewrite Location, Refresh and Set-Cookie domain,
 path and flags of upstream responses (nginx proxy_redirect and
 proxy_cookie_*), and can answer upstream errors with the route's error
-pages (proxy_intercept_errors).
+pages (proxy_intercept_errors). They change the request sent upstream:
+the method, a body in place of the client's, or none of the client's
+headers or body (proxy_method, proxy_set_body, proxy_pass_request_*).
+Proxy, gateway, memcached and grpc actions pass on hidden headers such as
+Server or X-Accel-* (proxy_pass_header), limit the upstream read rate
+(proxy_limit_rate) and connect from a local address (proxy_bind), as far
+as nginx's module for each has the directive.
 
 Policies attach to sites and routes and are inherited down the route tree:
 `headers` sets, adds or removes response headers and headers

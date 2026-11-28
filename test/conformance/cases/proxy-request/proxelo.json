@@ -1,0 +1,31 @@
+{
+  "listeners": [
+    {"id": "lst_main", "name": "main", "spec": {"address": "127.0.0.1:18480", "defaultSite": "site_main"}}
+  ],
+  "sites": [
+    {"id": "site_main", "name": "main", "spec": {"listeners": ["lst_main"],
+      "hostnames": [{"type": "exact", "value": "example.com"}],
+      "routes": ["rt_plain", "rt_pass", "rt_method", "rt_varmethod", "rt_setbody", "rt_bare", "rt_noheaders", "rt_bind"]}}
+  ],
+  "routes": [
+    {"id": "rt_plain", "name": "plain", "spec": {"match": {"path": {"type": "prefix", "value": "/plain/"}},
+      "action": {"type": "proxy", "proxy": {"upstream": "up_backend"}}}},
+    {"id": "rt_pass", "name": "pass", "spec": {"match": {"path": {"type": "prefix", "value": "/pass/"}},
+      "action": {"type": "proxy", "proxy": {"upstream": "up_backend", "passHeaders": ["X-Pad", "X-Accel-Charset"]}}}},
+    {"id": "rt_method", "name": "method", "spec": {"match": {"path": {"type": "prefix", "value": "/method/"}},
+      "action": {"type": "proxy", "proxy": {"upstream": "up_backend", "request": {"method": "PUT"}}}}},
+    {"id": "rt_varmethod", "name": "varmethod", "spec": {"match": {"path": {"type": "prefix", "value": "/varmethod/"}},
+      "action": {"type": "proxy", "proxy": {"upstream": "up_backend", "request": {"method": "$arg_m"}}}}},
+    {"id": "rt_setbody", "name": "setbody", "spec": {"match": {"path": {"type": "prefix", "value": "/setbody/"}},
+      "action": {"type": "proxy", "proxy": {"upstream": "up_backend", "request": {"body": "uri=$uri&a=$arg_a"}}}}},
+    {"id": "rt_bare", "name": "bare", "spec": {"match": {"path": {"type": "prefix", "value": "/bare/"}},
+      "action": {"type": "proxy", "proxy": {"upstream": "up_backend", "request": {"noHeaders": true, "noBody": true}}}}},
+    {"id": "rt_noheaders", "name": "noheaders", "spec": {"match": {"path": {"type": "prefix", "value": "/noheaders/"}},
+      "action": {"type": "proxy", "proxy": {"upstream": "up_backend", "request": {"noHeaders": true}}}}},
+    {"id": "rt_bind", "name": "bind", "spec": {"match": {"path": {"type": "prefix", "value": "/bind/"}},
+      "action": {"type": "proxy", "proxy": {"upstream": "up_backend", "bind": "127.0.0.1", "limitRate": "1m"}}}}
+  ],
+  "upstreams": [
+    {"id": "up_backend", "name": "backend", "spec": {"targets": [{"address": "127.0.0.1:18481"}]}}
+  ]
+}

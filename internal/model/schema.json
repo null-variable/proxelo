@@ -921,6 +921,10 @@
       "type": "object",
       "description": "GatewayAction passes requests to an application server (nginx fastcgi_pass, uwsgi_pass, scgi_pass). The request body is read in full first.",
       "properties": {
+        "bind": {
+          "type": "string",
+          "description": "Local address of upstream connections, a template expanding to an IP address with an optional port; an empty expansion lets the system choose (nginx proxy_bind). Not for grpc."
+        },
         "cookies": {
           "$ref": "#/$defs/CookieEdits",
           "description": "Only for proxy actions.",
@@ -938,6 +942,10 @@
           "type": "boolean",
           "description": "Upstream responses of 300 or more that the route has an error page for get the page (nginx proxy_intercept_errors and the like). Not for memcached."
         },
+        "limitRate": {
+          "type": "string",
+          "description": "Bytes per second read from the upstream for one request, such as \"100k\" (nginx proxy_limit_rate). Not for grpc and memcached."
+        },
         "noDefaultParams": {
           "type": "boolean",
           "description": "Leave out the standard set."
@@ -953,6 +961,13 @@
             "$ref": "#/$defs/GatewayParam"
           }
         },
+        "passHeaders": {
+          "type": "array",
+          "description": "Upstream response headers the proxy hides by default that are passed on: Date, Server, X-Pad and X-Accel-* (nginx proxy_pass_header). A passed Date or Server replaces the proxy's own. Not for memcached.",
+          "items": {
+            "type": "string"
+          }
+        },
         "protocol": {
           "type": "string",
           "enum": [
@@ -964,6 +979,11 @@
         "redirects": {
           "$ref": "#/$defs/Redirects",
           "description": "Rewrites of Location and the URL of Refresh in upstream responses, the first match wins (nginx proxy_redirect). Only for proxy actions.",
+          "x-nullable": true
+        },
+        "request": {
+          "$ref": "#/$defs/UpstreamRequest",
+          "description": "Only for proxy actions.",
           "x-nullable": true
         },
         "retry": {
@@ -991,6 +1011,10 @@
         "interceptErrors",
         "redirects",
         "cookies",
+        "passHeaders",
+        "limitRate",
+        "bind",
+        "request",
         "params",
         "noDefaultParams",
         "noRequestHeaders",
@@ -1643,6 +1667,10 @@
       "type": "object",
       "description": "MemcachedAction answers GET and HEAD with the value stored under the key (nginx memcached_pass); a missing key is 404.",
       "properties": {
+        "bind": {
+          "type": "string",
+          "description": "Local address of upstream connections, a template expanding to an IP address with an optional port; an empty expansion lets the system choose (nginx proxy_bind). Not for grpc."
+        },
         "cookies": {
           "$ref": "#/$defs/CookieEdits",
           "description": "Only for proxy actions.",
@@ -1656,9 +1684,25 @@
           "type": "string",
           "description": "Template; empty: $uri."
         },
+        "limitRate": {
+          "type": "string",
+          "description": "Bytes per second read from the upstream for one request, such as \"100k\" (nginx proxy_limit_rate). Not for grpc and memcached."
+        },
+        "passHeaders": {
+          "type": "array",
+          "description": "Upstream response headers the proxy hides by default that are passed on: Date, Server, X-Pad and X-Accel-* (nginx proxy_pass_header). A passed Date or Server replaces the proxy's own. Not for memcached.",
+          "items": {
+            "type": "string"
+          }
+        },
         "redirects": {
           "$ref": "#/$defs/Redirects",
           "description": "Rewrites of Location and the URL of Refresh in upstream responses, the first match wins (nginx proxy_redirect). Only for proxy actions.",
+          "x-nullable": true
+        },
+        "request": {
+          "$ref": "#/$defs/UpstreamRequest",
+          "description": "Only for proxy actions.",
           "x-nullable": true
         },
         "retry": {
@@ -1681,6 +1725,10 @@
         "interceptErrors",
         "redirects",
         "cookies",
+        "passHeaders",
+        "limitRate",
+        "bind",
+        "request",
         "key"
       ],
       "required": [
@@ -1931,6 +1979,10 @@
     "ProxyAction": {
       "type": "object",
       "properties": {
+        "bind": {
+          "type": "string",
+          "description": "Local address of upstream connections, a template expanding to an IP address with an optional port; an empty expansion lets the system choose (nginx proxy_bind). Not for grpc."
+        },
         "cookies": {
           "$ref": "#/$defs/CookieEdits",
           "description": "Only for proxy actions.",
@@ -1940,9 +1992,25 @@
           "type": "boolean",
           "description": "Upstream responses of 300 or more that the route has an error page for get the page (nginx proxy_intercept_errors and the like). Not for memcached."
         },
+        "limitRate": {
+          "type": "string",
+          "description": "Bytes per second read from the upstream for one request, such as \"100k\" (nginx proxy_limit_rate). Not for grpc and memcached."
+        },
+        "passHeaders": {
+          "type": "array",
+          "description": "Upstream response headers the proxy hides by default that are passed on: Date, Server, X-Pad and X-Accel-* (nginx proxy_pass_header). A passed Date or Server replaces the proxy's own. Not for memcached.",
+          "items": {
+            "type": "string"
+          }
+        },
         "redirects": {
           "$ref": "#/$defs/Redirects",
           "description": "Rewrites of Location and the URL of Refresh in upstream responses, the first match wins (nginx proxy_redirect). Only for proxy actions.",
+          "x-nullable": true
+        },
+        "request": {
+          "$ref": "#/$defs/UpstreamRequest",
+          "description": "Only for proxy actions.",
           "x-nullable": true
         },
         "retry": {
@@ -1964,7 +2032,11 @@
         "retry",
         "interceptErrors",
         "redirects",
-        "cookies"
+        "cookies",
+        "passHeaders",
+        "limitRate",
+        "bind",
+        "request"
       ],
       "required": [
         "upstream"
@@ -2793,6 +2865,35 @@
       ],
       "required": [
         "files"
+      ]
+    },
+    "UpstreamRequest": {
+      "type": "object",
+      "description": "UpstreamRequest changes the request a proxy action sends upstream.",
+      "properties": {
+        "body": {
+          "type": "string",
+          "description": "Template of the body sent in place of the client's, with its Content-Length (nginx proxy_set_body).",
+          "x-nullable": true
+        },
+        "method": {
+          "type": "string",
+          "description": "Template of the method (nginx proxy_method). A HEAD request keeps HEAD, and one an error page made a GET stays GET."
+        },
+        "noBody": {
+          "type": "boolean",
+          "description": "Read and drop the client's body (nginx proxy_pass_request_body off)."
+        },
+        "noHeaders": {
+          "type": "boolean",
+          "description": "Leave out the client's headers; Host, the body framing and header policies are still sent (nginx proxy_pass_request_headers off)."
+        }
+      },
+      "x-order": [
+        "method",
+        "body",
+        "noHeaders",
+        "noBody"
       ]
     },
     "UpstreamSpec": {

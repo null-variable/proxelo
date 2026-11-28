@@ -696,7 +696,9 @@ directives:
   - name: fastcgi_bind
     module: ngx_http_fastcgi_module
     contexts: [http, server, location]
-    status: missing
+    status: partial
+    field: Route.spec.action.gateway.bind
+    note: no transparent
   - name: fastcgi_socket_keepalive
     module: ngx_http_fastcgi_module
     contexts: [http, server, location]
@@ -762,7 +764,8 @@ directives:
   - name: fastcgi_limit_rate
     module: ngx_http_fastcgi_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.gateway.limitRate
   - name: fastcgi_cache
     module: ngx_http_fastcgi_module
     contexts: [http, server, location]
@@ -858,7 +861,8 @@ directives:
   - name: fastcgi_pass_header
     module: ngx_http_fastcgi_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.gateway.passHeaders
   - name: fastcgi_hide_header
     module: ngx_http_fastcgi_module
     contexts: [http, server, location]
@@ -975,7 +979,8 @@ directives:
   - name: grpc_pass_header
     module: ngx_http_grpc_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.grpc.passHeaders
   - name: grpc_hide_header
     module: ngx_http_grpc_module
     contexts: [http, server, location]
@@ -1254,7 +1259,9 @@ directives:
   - name: memcached_bind
     module: ngx_http_memcached_module
     contexts: [http, server, location]
-    status: missing
+    status: partial
+    field: Route.spec.action.memcached.bind
+    note: no transparent
   - name: memcached_socket_keepalive
     module: ngx_http_memcached_module
     contexts: [http, server, location]
@@ -1391,7 +1398,9 @@ directives:
   - name: proxy_bind
     module: ngx_http_proxy_module
     contexts: [http, server, location]
-    status: missing
+    status: partial
+    field: Route.spec.action.proxy.bind
+    note: no transparent
   - name: proxy_socket_keepalive
     module: ngx_http_proxy_module
     contexts: [http, server, location]
@@ -1439,19 +1448,23 @@ directives:
   - name: proxy_set_body
     module: ngx_http_proxy_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.proxy.request.body
   - name: proxy_method
     module: ngx_http_proxy_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.proxy.request.method
   - name: proxy_pass_request_headers
     module: ngx_http_proxy_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.proxy.request.noHeaders
   - name: proxy_pass_request_body
     module: ngx_http_proxy_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.proxy.request.noBody
   - name: proxy_pass_trailers
     module: ngx_http_proxy_module
     contexts: [http, server, location]
@@ -1480,7 +1493,8 @@ directives:
   - name: proxy_limit_rate
     module: ngx_http_proxy_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.proxy.limitRate
   - name: proxy_cache
     module: ngx_http_proxy_module
     contexts: [http, server, location]
@@ -1596,7 +1610,8 @@ directives:
   - name: proxy_pass_header
     module: ngx_http_proxy_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.proxy.passHeaders
   - name: proxy_hide_header
     module: ngx_http_proxy_module
     contexts: [http, server, location]
@@ -1773,7 +1788,9 @@ directives:
   - name: scgi_bind
     module: ngx_http_scgi_module
     contexts: [http, server, location]
-    status: missing
+    status: partial
+    field: Route.spec.action.gateway.bind
+    note: no transparent
   - name: scgi_socket_keepalive
     module: ngx_http_scgi_module
     contexts: [http, server, location]
@@ -1834,7 +1851,8 @@ directives:
   - name: scgi_limit_rate
     module: ngx_http_scgi_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.gateway.limitRate
   - name: scgi_cache
     module: ngx_http_scgi_module
     contexts: [http, server, location]
@@ -1929,7 +1947,8 @@ directives:
   - name: scgi_pass_header
     module: ngx_http_scgi_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.gateway.passHeaders
   - name: scgi_hide_header
     module: ngx_http_scgi_module
     contexts: [http, server, location]
@@ -2383,7 +2402,9 @@ directives:
   - name: uwsgi_bind
     module: ngx_http_uwsgi_module
     contexts: [http, server, location]
-    status: missing
+    status: partial
+    field: Route.spec.action.gateway.bind
+    note: no transparent
   - name: uwsgi_socket_keepalive
     module: ngx_http_uwsgi_module
     contexts: [http, server, location]
@@ -2444,7 +2465,8 @@ directives:
   - name: uwsgi_limit_rate
     module: ngx_http_uwsgi_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.gateway.limitRate
   - name: uwsgi_cache
     module: ngx_http_uwsgi_module
     contexts: [http, server, location]
@@ -2543,7 +2565,8 @@ directives:
   - name: uwsgi_pass_header
     module: ngx_http_uwsgi_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Route.spec.action.gateway.passHeaders
   - name: uwsgi_hide_header
     module: ngx_http_uwsgi_module
     contexts: [http, server, location]

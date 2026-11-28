@@ -1056,3 +1056,65 @@ func TestValidateProxyEdits(t *testing.T) {
 		}
 	}
 }
+
+func TestCompileProxyRequestEdits(t *testing.T) {
+	cfg := validConfig()
+	p := cfg.Routes[0].Spec.Action.Proxy
+	body := ""
+	p.PassHeaders = []string{"X-Accel-Redirect", "Server"}
+	p.LimitRate = "100k"
+	p.Bind = "$arg_ip"
+	p.Request = &model.UpstreamRequest{Method: "POST", Body: &body, NoHeaders: true, NoBody: true}
+	if es := model.Validate(cfg.Routes[0]); es != nil {
+		t.Fatal(es)
+	}
+	snap, err := Compile(cfg, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pa := snap.GetSites()[0].GetRoutes()[0].GetAction().GetProxy()
+	if !slices.Equal(pa.GetPassHeaders(), []string{"x-accel-redirect", "server"}) || pa.GetLimitRate() != 100<<10 || pa.GetBind() != "$arg_ip" {
+		t.Errorf("proxy = %v", pa)
+	}
+	// An empty body is set: the client's is still replaced.
+	if pa.GetMethod() != "POST" || pa.Body == nil || pa.GetBody() != "" || !pa.GetNoRequestHeaders() || !pa.GetNoRequestBody() {
+		t.Errorf("request = %v", pa)
+	}
+}
+
+func TestValidateProxyRequestEdits(t *testing.T) {
+	proxy := func(p model.ProxyAction) model.Action {
+		p.Upstream = "u"
+		return model.Action{Type: model.ActionProxy, Proxy: &p}
+	}
+	for path, a := range map[string]model.Action{
+		"spec.action.proxy.passHeaders[0]":  proxy(model.ProxyAction{PassHeaders: []string{"Content-Type"}}),
+		"spec.action.proxy.passHeaders[1]":  proxy(model.ProxyAction{PassHeaders: []string{"X-Pad", "X-Accel-"}}),
+		"spec.action.proxy.limitRate":       proxy(model.ProxyAction{LimitRate: "0"}),
+		"spec.action.proxy.bind":            proxy(model.ProxyAction{Bind: "localhost"}),
+		"spec.action.proxy.request.method":  proxy(model.ProxyAction{Request: &model.UpstreamRequest{Method: "GET /"}}),
+		"spec.action.grpc.request":          {Type: model.ActionGrpc, Grpc: &model.ProxyAction{Upstream: "u", Request: &model.UpstreamRequest{NoBody: true}}},
+		"spec.action.grpc.limitRate":        {Type: model.ActionGrpc, Grpc: &model.ProxyAction{Upstream: "u", LimitRate: "1k"}},
+		"spec.action.grpc.bind":             {Type: model.ActionGrpc, Grpc: &model.ProxyAction{Upstream: "u", Bind: "10.0.0.1"}},
+		"spec.action.memcached.passHeaders": {Type: model.ActionMemcached, Memcached: &model.MemcachedAction{ProxyAction: model.ProxyAction{Upstream: "u", PassHeaders: []string{"Date"}}}},
+		"spec.action.memcached.limitRate":   {Type: model.ActionMemcached, Memcached: &model.MemcachedAction{ProxyAction: model.ProxyAction{Upstream: "u", LimitRate: "1k"}}},
+		"spec.action.gateway.request":       {Type: model.ActionGateway, Gateway: &model.GatewayAction{Protocol: model.GatewayFastCGI, ProxyAction: model.ProxyAction{Upstream: "u", Request: &model.UpstreamRequest{}}}},
+	} {
+		r := &model.Route{Meta: meta("rt_x", "x"), Spec: model.RouteSpec{Match: model.Match{Path: model.PathMatch{Type: model.PathPrefix, Value: "/"}}, Action: a}}
+		if es := model.Validate(r); !slices.ContainsFunc(es, func(e model.FieldError) bool { return e.Path == path }) {
+			t.Errorf("%s: got %v", path, es)
+		}
+	}
+	// What each kind supports passes.
+	for _, a := range []model.Action{
+		proxy(model.ProxyAction{PassHeaders: []string{"date", "X-Accel-Redirect"}, LimitRate: "1m", Bind: "[::1]:0"}),
+		{Type: model.ActionGateway, Gateway: &model.GatewayAction{Protocol: model.GatewayFastCGI, ProxyAction: model.ProxyAction{Upstream: "u", PassHeaders: []string{"server"}, LimitRate: "1k", Bind: "10.0.0.1"}}},
+		{Type: model.ActionMemcached, Memcached: &model.MemcachedAction{ProxyAction: model.ProxyAction{Upstream: "u", Bind: "10.0.0.1:4000"}}},
+		{Type: model.ActionGrpc, Grpc: &model.ProxyAction{Upstream: "u", PassHeaders: []string{"x-pad"}}},
+	} {
+		r := &model.Route{Meta: meta("rt_x", "x"), Spec: model.RouteSpec{Match: model.Match{Path: model.PathMatch{Type: model.PathPrefix, Value: "/"}}, Action: a}}
+		if es := model.Validate(r); es != nil {
+			t.Errorf("%s: %v", a.Type, es)
+		}
+	}
+}

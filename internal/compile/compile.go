@@ -666,6 +666,15 @@ func (st *site) proxyAction(routeID, kind string, p *model.ProxyAction) *snapsho
 		}
 	}
 	pa.InterceptErrors = p.InterceptErrors
+	for _, h := range p.PassHeaders {
+		pa.PassHeaders = append(pa.PassHeaders, strings.ToLower(h))
+	}
+	pa.LimitRate, _ = model.ParseSize(p.LimitRate)
+	pa.Bind = p.Bind
+	if r := p.Request; r != nil {
+		pa.Method, pa.Body = r.Method, r.Body
+		pa.NoRequestHeaders, pa.NoRequestBody = r.NoHeaders, r.NoBody
+	}
 	if kind == "proxy" {
 		u := st.upstreams.items[ui]
 		pa.Redirects = redirects(p.Redirects, u)

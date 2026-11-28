@@ -503,6 +503,34 @@ type ProxyAction struct {
 	Redirects *Redirects `json:"redirects,omitempty"`
 	// Only for proxy actions.
 	Cookies *CookieEdits `json:"cookies,omitempty"`
+	// Upstream response headers the proxy hides by default that are passed
+	// on: Date, Server, X-Pad and X-Accel-* (nginx proxy_pass_header). A
+	// passed Date or Server replaces the proxy's own. Not for memcached.
+	PassHeaders []string `json:"passHeaders,omitempty"`
+	// Bytes per second read from the upstream for one request, such as
+	// "100k" (nginx proxy_limit_rate). Not for grpc and memcached.
+	LimitRate string `json:"limitRate,omitempty"`
+	// Local address of upstream connections, a template expanding to an IP
+	// address with an optional port; an empty expansion lets the system
+	// choose (nginx proxy_bind). Not for grpc.
+	Bind string `json:"bind,omitempty"`
+	// Only for proxy actions.
+	Request *UpstreamRequest `json:"request,omitempty"`
+}
+
+// UpstreamRequest changes the request a proxy action sends upstream.
+type UpstreamRequest struct {
+	// Template of the method (nginx proxy_method). A HEAD request keeps
+	// HEAD, and one an error page made a GET stays GET.
+	Method string `json:"method,omitempty"`
+	// Template of the body sent in place of the client's, with its
+	// Content-Length (nginx proxy_set_body).
+	Body *string `json:"body,omitempty"`
+	// Leave out the client's headers; Host, the body framing and header
+	// policies are still sent (nginx proxy_pass_request_headers off).
+	NoHeaders bool `json:"noHeaders,omitempty"`
+	// Read and drop the client's body (nginx proxy_pass_request_body off).
+	NoBody bool `json:"noBody,omitempty"`
 }
 
 // Redirects is nginx proxy_redirect. Nil: only the default rule, which

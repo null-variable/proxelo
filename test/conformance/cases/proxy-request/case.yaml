@@ -1,0 +1,18 @@
+directives: [proxy_pass_header, proxy_method, proxy_set_body, proxy_pass_request_headers, proxy_pass_request_body, proxy_bind, proxy_limit_rate]
+# The echo records the request it got and answers with the headers that
+# X-Echo-Header lists: X-Pad and X-Accel-* are hidden unless passed. Left
+# out, as proxelo does not copy them: nginx sends an empty method when
+# proxy_method expands to nothing (proxelo keeps the client's), and with
+# proxy_pass_request_body off still sends the client's Content-Length, so
+# the upstream waits for a body that never comes (proxelo sends none).
+requests:
+  - {target: /plain/a, headers: {Host: example.com, X-Echo-Header: "X-Pad: avoid browser bug|X-Accel-Charset: utf-8|X-Accel-Buffering: no"}}
+  - {target: /pass/a, headers: {Host: example.com, X-Echo-Header: "X-Pad: avoid browser bug|X-Accel-Charset: utf-8|X-Accel-Buffering: no"}}
+  - {method: POST, target: /method/a, headers: {Host: example.com, Content-Type: text/plain}, body: "abc"}
+  - {method: HEAD, target: /method/b, headers: {Host: example.com}}
+  - {method: POST, target: "/varmethod/a?m=PATCH", headers: {Host: example.com}, body: "abc"}
+  - {method: POST, target: "/setbody/a?a=1", headers: {Host: example.com, Content-Type: text/plain}, body: "client body"}
+  - {target: /setbody/b, headers: {Host: example.com}}
+  - {target: /bare/a, headers: {Host: example.com, X-Custom: "1"}}
+  - {method: POST, target: /noheaders/a, headers: {Host: example.com, X-Custom: "1"}, body: "kept"}
+  - {target: /bind/a, headers: {Host: example.com}}

@@ -1,6 +1,7 @@
 package nginx
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -488,6 +489,82 @@ http {
 	if _, err := compile.Compile(cfg, 1); err == nil {
 		t.Log("compiled")
 	} else {
+		t.Error(err)
+	}
+}
+
+func TestProxyRequestEdits(t *testing.T) {
+	cfg, rep := convert(t, Files{"/etc/nginx/nginx.conf": `events {}
+http {
+    upstream app { server 127.0.0.1:9000; }
+    proxy_pass_header Server;
+    proxy_bind 10.0.0.1;
+    server {
+        listen 80;
+        proxy_limit_rate 100k;
+        location /plain/ { proxy_pass http://app; }
+        location /req/ {
+            proxy_pass_header X-Accel-Redirect;
+            proxy_method $arg_m;
+            proxy_set_body "a=$arg_a";
+            proxy_pass_request_headers off;
+            proxy_pass_request_body off;
+            proxy_bind off;
+            proxy_limit_rate 0;
+            proxy_pass http://app;
+        }
+        location /cgi/ { fastcgi_pass app; fastcgi_bind $arg_ip; fastcgi_limit_rate 1m; }
+        location /mc/ { memcached_pass app; memcached_bind 10.0.0.2; }
+        location /grpc/ { grpc_pass grpc://app; grpc_pass_header X-Accel-Buffering; grpc_bind 10.0.0.3; }
+        location /tr/ { proxy_bind $remote_addr transparent; proxy_pass http://app; }
+    }
+}`})
+	// By directive and line.
+	class := map[string]Class{}
+	for _, e := range rep.Entries {
+		class[fmt.Sprintf("%s:%d", e.Directive, e.Line)] = e.Class
+	}
+	for d, want := range map[string]Class{
+		"proxy_pass_header:4":           Converted,
+		"proxy_method:12":               Converted,
+		"proxy_pass_request_headers:14": Converted,
+		"fastcgi_bind:20":               Converted,
+		"grpc_bind:22":                  Unsupported,
+		"proxy_bind:23":                 Unsupported,
+	} {
+		if class[d] != want {
+			t.Errorf("%s: %s, want %s", d, class[d], want)
+		}
+	}
+	act := map[string]*model.Action{}
+	for _, r := range cfg.Routes {
+		act[r.Spec.Match.Path.Value] = &r.Spec.Action
+	}
+	if p := act["/plain/"].Proxy; !slices.Equal(p.PassHeaders, []string{"Server"}) || p.Bind != "10.0.0.1" || p.LimitRate != "100k" || p.Request != nil {
+		t.Errorf("plain: %+v", p)
+	}
+	p := act["/req/"].Proxy
+	want := model.UpstreamRequest{Method: "$arg_m", NoHeaders: true, NoBody: true}
+	if p.Request == nil || p.Request.Body == nil || *p.Request.Body != "a=$arg_a" {
+		t.Fatalf("req: %+v", p.Request)
+	}
+	if got := *p.Request; got.Method != want.Method || got.NoHeaders != want.NoHeaders || got.NoBody != want.NoBody {
+		t.Errorf("req: %+v", got)
+	}
+	// The level's first pass_header drops the inherited list.
+	if !slices.Equal(p.PassHeaders, []string{"X-Accel-Redirect"}) || p.Bind != "" || p.LimitRate != "" {
+		t.Errorf("req: %+v", p)
+	}
+	if g := act["/cgi/"].Gateway; g.Bind != "$arg_ip" || g.LimitRate != "1m" {
+		t.Errorf("cgi: %+v", g.ProxyAction)
+	}
+	if m := act["/mc/"].Memcached; m.Bind != "10.0.0.2" || m.PassHeaders != nil || m.LimitRate != "" {
+		t.Errorf("mc: %+v", m.ProxyAction)
+	}
+	if g := act["/grpc/"].Grpc; !slices.Equal(g.PassHeaders, []string{"X-Accel-Buffering"}) || g.Bind != "" || g.LimitRate != "" {
+		t.Errorf("grpc: %+v", g)
+	}
+	if _, err := compile.Compile(cfg, 1); err != nil {
 		t.Error(err)
 	}
 }
