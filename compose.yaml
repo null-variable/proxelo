@@ -1,0 +1,68 @@
+# Control plane and one proxy, talking over the control socket in a shared
+# volume, as the two systemd units do in production. Expects proxelo-proxy
+# checked out next to this repository (PROXELO_PROXY_SRC to change that):
+#   docker compose up --build
+#   docker compose logs control     # the one-time setup token
+name: proxelo
+
+services:
+  control:
+    build:
+      context: .
+      additional_contexts:
+        proxy: ${PROXELO_PROXY_SRC:-../proxelo-proxy}
+      args:
+        VERSION: ${PROXELO_VERSION:-dev}
+    image: proxelo:local
+    environment:
+      # Published on the host's loopback only (ports below); inside the
+      # container the admin API listens on every address and accepts the
+      # Docker networks the published port arrives from.
+      PROXELO_ADMIN_ALLOW: ${PROXELO_ADMIN_ALLOW:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
+      PROXELO_ACME_EMAIL: ${PROXELO_ACME_EMAIL:-}
+      PROXELO_SECURE_COOKIES: ${PROXELO_SECURE_COOKIES:-}
+    ports:
+      - "127.0.0.1:${PROXELO_ADMIN_PORT:-9443}:9443"
+    volumes:
+      - control-data:/var/lib/proxelo
+      - control-socket:/run/proxelo
+    restart: unless-stopped
+
+  proxy:
+    build:
+      context: ${PROXELO_PROXY_SRC:-../proxelo-proxy}
+      args:
+        FEATURES: ${PROXELO_FEATURES:-}
+    image: proxelo-proxy:local
+    hostname: proxy-1
+    command:
+      - run
+      - --data
+      - /var/lib/proxelo
+      - --socket
+      - /run/proxelo/control.sock
+      - --metrics
+      - 0.0.0.0:9145
+      - --drain
+      - "20"
+    stop_grace_period: 25s
+    # Listener addresses come from the configuration; this lets the
+    # unprivileged proxy bind 80 and 443.
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: 0
+    ports:
+      - "${PROXELO_HTTP_PORT:-80}:80"
+      - "${PROXELO_HTTPS_PORT:-443}:443"
+      - "${PROXELO_HTTPS_PORT:-443}:443/udp"
+      - "127.0.0.1:${PROXELO_METRICS_PORT:-9145}:9145"
+    volumes:
+      - proxy-data:/var/lib/proxelo
+      - control-socket:/run/proxelo
+    depends_on:
+      - control
+    restart: unless-stopped
+
+volumes:
+  control-data:
+  control-socket:
+  proxy-data:

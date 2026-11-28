@@ -8,7 +8,9 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -227,8 +229,21 @@ func printSetupToken(st *store.Store, listen string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stderr, "\nNo admin account yet. Create the owner with this one-time setup token:\n\n  %s\n\n  curl -X POST http://%s/api/v1/auth/setup -d '{\"token\":\"%s\",\"name\":\"owner\",\"password\":\"...\"}'\n\n", tok, listen, tok)
+	fmt.Fprintf(os.Stderr, "\nNo admin account yet. Create the owner with this one-time setup token:\n\n  %s\n\n  curl -X POST http://%s/api/v1/auth/setup -d '{\"token\":\"%s\",\"name\":\"owner\",\"password\":\"...\"}'\n\n", tok, dialAddr(listen), tok)
 	return nil
+}
+
+// dialAddr turns a listen address into one a client can connect to: a
+// wildcard host (all addresses, as in a container) becomes loopback.
+func dialAddr(listen string) string {
+	host, port, err := net.SplitHostPort(listen)
+	if err != nil {
+		return listen
+	}
+	if ip, err := netip.ParseAddr(host); host == "" || err == nil && ip.IsUnspecified() {
+		host = "127.0.0.1"
+	}
+	return net.JoinHostPort(host, port)
 }
 
 func splitList(s string) []string {

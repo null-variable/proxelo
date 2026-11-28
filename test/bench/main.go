@@ -193,8 +193,8 @@ func (h *harness) buildImages(ctx context.Context) error {
 			features = ""
 		}
 		fmt.Fprintln(os.Stderr, "building", proxyImage(t.Allocator), "from", h.proxySrc)
+		// The proxy repository's own Dockerfile.
 		if err := stream(ctx, "docker", "build", "-q", "-t", proxyImage(t.Allocator),
-			"-f", filepath.Join(dir, "proxy", "Dockerfile"),
 			"--build-arg", "FEATURES="+features, h.proxySrc); err != nil {
 			return err
 		}
@@ -355,7 +355,7 @@ func (h *harness) runOne(ctx context.Context, loadgen *container, sc Scenario, t
 // a bind mount from the host (a VM file share on macOS) would make S1 measure
 // the file share rather than the proxy.
 func (h *harness) startProxy(ctx context.Context, t Target) (*container, error) {
-	args := []string{"-v", h.work + ":/bench:ro", "--tmpfs", "/srv/www:size=1m,mode=0755", "--entrypoint", "sh"}
+	args := []string{"-v", h.work + ":/bench:ro", "--tmpfs", "/srv/www:size=1m,mode=0755,uid=10001,gid=10001", "--entrypoint", "sh"}
 	prep := "cp -r /bench/www/. /srv/www/ && chmod -R a+rX /srv/www && exec "
 	if t.Kind == "nginx" {
 		return startContainer(ctx, "proxelo-bench-proxy", h.proxyCPUs, h.proxyN, nginxImage, args,

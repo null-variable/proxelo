@@ -319,6 +319,76 @@ To change the schema, append a migration; never edit a released one.
 `TestNewAndMigratedSchemasMatch` checks that a new database and an
 upgraded one end up identical.
 
+## Run
+
+### Docker Compose
+
+`compose.yaml` runs the control plane and one proxy as two containers that
+share only the control socket, as the two systemd units do in production.
+It builds the proxy from a checkout next to this one:
+
+```sh
+git clone https://github.com/null-variable/proxelo
+git clone https://github.com/null-variable/proxelo-proxy
+cd proxelo
+docker compose up -d --build
+docker compose logs control            # prints the one-time setup token
+```
+
+Open http://127.0.0.1:9443, or create the owner with the printed `curl`
+command. Listeners you configure
+on ports 80 and 443 (TCP and UDP for HTTP/3) are published on the host; the
+admin API and the proxy's metrics (http://127.0.0.1:9145/metrics) only on
+the host's loopback.
+
+| Variable | Default | Effect |
+|---|---|---|
+| `PROXELO_PROXY_SRC` | `../proxelo-proxy` | proxelo-proxy checkout to build |
+| `PROXELO_ADMIN_PORT` | `9443` | Host port of the admin API and console (loopback) |
+| `PROXELO_HTTP_PORT`, `PROXELO_HTTPS_PORT` | `80`, `443` | Host ports for the proxy's listeners on 80 and 443 |
+| `PROXELO_METRICS_PORT` | `9145` | Host port of the proxy's metrics (loopback) |
+| `PROXELO_ADMIN_ALLOW` | private ranges | Networks the admin API accepts besides loopback |
+| `PROXELO_ACME_EMAIL` | empty | ACME account contact |
+| `PROXELO_SECURE_COOKIES` | empty | `1` marks session cookies Secure behind a TLS front |
+| `PROXELO_FEATURES` | empty | Proxy allocator: `jemalloc` or `mimalloc` |
+| `PROXELO_VERSION` | `dev` | Version `proxelo version` prints |
+
+State lives in the volumes `control-data` (database, ACME account,
+break-glass socket) and `proxy-data` (the proxy's last-known-good snapshot
+and cache), so a proxy restarted while the control plane is down keeps
+serving. Listeners on other ports need a matching `ports:` entry for the
+`proxy` service. Break-glass commands run inside the control container:
+
+```sh
+docker compose exec control proxelo admin reset-password --user owner
+docker compose down        # stop; add -v to delete the volumes
+```
+
+The `proxelo` image alone (`docker build --build-context
+proxy=../proxelo-proxy -t proxelo .`) runs `proxelo control` and carries
+`proxelo-proxy` for dry-loads and the request simulator.
+
+### From source
+
+Requires Go, [bun](https://bun.sh) and a proxelo-proxy build (see its
+README):
+
+```sh
+(cd web && bun install && bun run build)   # web console, embedded by go build
+go build -o proxelo ./cmd/proxelo
+cp ../proxelo-proxy/target/release/proxelo-proxy .
+./proxelo up -data ./data                  # control plane and proxy, restarted on exit
+```
+
+`proxelo up` supervises both processes for development and home labs;
+arguments after `--` go to `proxelo-proxy run`, for example `-- --workers 4`.
+In production run `proxelo control` and `proxelo-proxy run` as separate
+services with the same control socket (`-socket`, `--socket`; default
+`/run/proxelo/control.sock`) and data directory. `proxelo control -h` lists
+its flags and their environment variables. `proxelo compile config.json
+snapshot.bin` compiles a resource file for `proxelo-proxy serve` without a
+control plane.
+
 ## Layout
 
 | Path | Contents |
@@ -343,6 +413,7 @@ upgraded one end up identical.
 | `web` | Web console source (Vite + React + TypeScript, bun) |
 | `examples` | Sample resource files |
 | `test/bench` | Benchmark harness: nginx vs `proxelo-proxy` (S1, S3), see its README |
+| `Dockerfile`, `compose.yaml` | Control plane image and the two-container setup |
 | `test/conformance` | Differential test against nginx and the nginx directive coverage list, see its README |
 
 ## Development
