@@ -1049,6 +1049,38 @@ type FiltersPolicy struct {
 	SSI      *SSIFilter      `json:"ssi,omitempty"`
 	Addition *AdditionFilter `json:"addition,omitempty"`
 	Userid   *UseridFilter   `json:"userid,omitempty"`
+	Charset  *CharsetFilter  `json:"charset,omitempty"`
+}
+
+// CharsetFilter is nginx charset, source_charset, override_charset,
+// charset_types and charset_map: the charset added to Content-Type, and
+// responses recoded to it from Source.
+type CharsetFilter struct {
+	// Added to Content-Type as "; charset=". "off" turns off a charset
+	// filter inherited from further out.
+	Charset string `json:"charset"`
+	// The charset of responses that state none. Recoding to Charset needs
+	// a Map between the two.
+	Source string `json:"source,omitempty"`
+	// Also recode responses that state a charset (override_charset).
+	Override bool `json:"override,omitempty"`
+	// Media types besides text/html, or "*" for any. Empty: nginx's
+	// charset_types default (text/html, text/xml, text/plain,
+	// text/vnd.wap.wml, application/javascript, application/rss+xml).
+	Types []string    `json:"types,omitempty"`
+	Map   *CharsetMap `json:"map,omitempty"`
+}
+
+// CharsetMap is one nginx charset_map: how the bytes of From stand for
+// characters of To, used for recoding either way.
+type CharsetMap struct {
+	// A charset other than UTF-8.
+	From string `json:"from"`
+	To   string `json:"to"`
+	// A byte of From as two hex digits to the To byte as two hex digits,
+	// or to the UTF-8 bytes in hex when To is "utf-8" ("C0": "D18E").
+	// Unlisted bytes below 80 are themselves; the others become "?".
+	Bytes map[string]string `json:"bytes"`
 }
 
 // SubFilter is nginx sub_filter with sub_filter_once, sub_filter_types and

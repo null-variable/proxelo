@@ -121,7 +121,7 @@ func (c *converter) scopePolicies(s, parent scope) []string {
 		g := *s.gzip
 		out = append(out, c.policy("compression", model.PolicySpec{Type: model.PolicyCompression, Compression: &g}))
 	}
-	if f, ok := filtersPolicy(s, parent); ok {
+	if f, ok := c.filtersPolicy(s, parent); ok {
 		out = append(out, c.policy("filters", model.PolicySpec{Type: model.PolicyFilters, Filters: f}))
 	}
 	if s.rate != "" && (s.rate != parent.rate || s.after != parent.after) && s.rate != "0" {
@@ -132,7 +132,7 @@ func (c *converter) scopePolicies(s, parent scope) []string {
 
 // filtersPolicy is the filters a level changes over its parent: an ssi or
 // addition filter set (or turned off) here.
-func filtersPolicy(s, parent scope) (*model.FiltersPolicy, bool) {
+func (c *converter) filtersPolicy(s, parent scope) (*model.FiltersPolicy, bool) {
 	f := &model.FiltersPolicy{}
 	if !same(s.sub, parent.sub) && (len(s.sub.Pairs) > 0 || len(parent.sub.Pairs) > 0) {
 		sub := s.sub
@@ -153,11 +153,15 @@ func filtersPolicy(s, parent scope) (*model.FiltersPolicy, bool) {
 		}
 		f.SSI = &ssi
 	}
+	if !same(s.charset, parent.charset) {
+		cs := c.charsetFilter(s)
+		f.Charset = &cs
+	}
 	if !same(s.addition, parent.addition) {
 		a := s.addition
 		f.Addition = &a
 	}
-	return f, f.Sub != nil || f.SSI != nil || f.Addition != nil || f.Userid != nil
+	return f, f.Sub != nil || f.SSI != nil || f.Addition != nil || f.Userid != nil || f.Charset != nil
 }
 
 // same reports whether two settings read the same, pointers by value.

@@ -35,7 +35,8 @@ Static routes serve files with index, try_files and gzip_static, and can list
 directories (autoindex as HTML, JSON, JSONP or XML), pick a random index file,
 take WebDAV PUT, DELETE, MKCOL, COPY and MOVE, and seek FLV files.
 A filters policy runs sub_filter, SSI (include, echo, set, if/elif/else,
-block), nginx addition and userid visitor cookies on responses; routes can be internal-only and mirror
+block), nginx addition, userid visitor cookies and charset recoding on
+responses; routes can be internal-only and mirror
 requests to other paths, as nginx `internal` and `mirror`.
 
 Listeners can terminate TLS and offer HTTP/2 and HTTP/3 (QUIC on the same UDP

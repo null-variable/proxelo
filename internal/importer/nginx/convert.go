@@ -65,6 +65,8 @@ type converter struct {
 	policies map[string]string
 	// Log formats by name.
 	formats map[string]logFormat
+	// charset_map blocks.
+	charsetMaps []*model.CharsetMap
 }
 
 type logFormat struct {
@@ -185,10 +187,12 @@ type scope struct {
 	flv         bool
 	// ssi on|off and the ssi_* settings; add_before_body, add_after_body
 	// and addition_types; mirror (nil: off) and mirror_request_body off.
-	ssiOn        bool
-	ssi          model.SSIFilter
-	sub          model.SubFilter
-	userid       model.UseridFilter
+	ssiOn  bool
+	ssi    model.SSIFilter
+	sub    model.SubFilter
+	userid model.UseridFilter
+	// charset, source_charset, override_charset and charset_types.
+	charset      model.CharsetFilter
 	addition     model.AdditionFilter
 	mirror       []string
 	mirrorNoBody bool
@@ -262,6 +266,7 @@ func (s scope) clone() scope {
 	out.jwt.Audiences = slices.Clone(s.jwt.Audiences)
 	out.ssi.Types = slices.Clone(s.ssi.Types)
 	out.sub.Types = slices.Clone(s.sub.Types)
+	out.charset.Types = slices.Clone(s.charset.Types)
 	out.sub.Pairs = slices.Clone(s.sub.Pairs)
 	if v := s.userid.Service; v != nil {
 		n := *v
@@ -300,13 +305,15 @@ func (c *converter) http(h *Directive) {
 			c.cachePath(d)
 		case "oidc_provider":
 			c.oidcProvider(d)
+		case "charset_map":
+			c.charsetMap(d)
 		case "map", "geo", "split_clients":
 			c.lookup(d)
 		}
 	}
 	for _, d := range h.Block {
 		switch d.Name {
-		case "upstream", "log_format", "limit_req_zone", "limit_conn_zone", "proxy_cache_path", "oidc_provider", "map", "geo", "split_clients":
+		case "upstream", "log_format", "limit_req_zone", "limit_conn_zone", "proxy_cache_path", "oidc_provider", "charset_map", "map", "geo", "split_clients":
 		case "server":
 			servers = append(servers, d)
 		default:
@@ -365,6 +372,25 @@ func (c *converter) common(d *Directive, s *scope) bool {
 	case "ssi_min_file_chunk", "ssi_ignore_recycled_buffers":
 		c.note(d, Replaced, "buffers are handled by the proxy")
 		return true
+	case "charset", "source_charset":
+		if strings.Contains(arg(0), "$") {
+			c.note(d, Unsupported, "a charset from a variable")
+			return true
+		}
+		if d.Name == "charset" {
+			s.charset.Charset = arg(0)
+		} else {
+			s.charset.Source = arg(0)
+		}
+	case "override_charset":
+		s.charset.Override = arg(0) == "on"
+	case "charset_types":
+		// Unlike the other *_types, an empty list means nginx's default
+		// here, so text/html stays when it is the only type.
+		s.charset.Types = mediaTypes(a)
+		if len(s.charset.Types) == 0 {
+			s.charset.Types = []string{"text/html"}
+		}
 	case "sub_filter":
 		s.sub.Pairs = append(slices.Clip(fresh(s, "sub_filter", s.sub.Pairs)), model.SubPair{Match: arg(0), Replacement: arg(1)})
 	case "sub_filter_once":
@@ -721,7 +747,7 @@ func (c *converter) common(d *Directive, s *scope) bool {
 		"output_buffers", "postpone_output", "fastcgi_buffers", "fastcgi_buffer_size", "proxy_temp_path", "client_body_temp_path",
 		"fastcgi_temp_path", "uwsgi_temp_path", "scgi_temp_path", "proxy_max_temp_file_size", "aio", "directio",
 		"ssl_buffer_size", "variables_hash_max_size", "variables_hash_bucket_size", "map_hash_bucket_size", "map_hash_max_size",
-		"charset_types", "log_not_found", "log_subrequest", "msie_padding", "lingering_close", "lingering_time", "lingering_timeout",
+		"log_not_found", "log_subrequest", "msie_padding", "lingering_close", "lingering_time", "lingering_timeout",
 		"proxy_http_version", "chunked_transfer_encoding", "absolute_redirect", "port_in_redirect", "server_name_in_redirect",
 		"resolver", "resolver_timeout":
 		c.note(d, Replaced, "the proxy uses fixed buffers, timeouts and HTTP/1.1 upstream connections")
@@ -789,6 +815,41 @@ func davAccess(a []string) (string, bool) {
 		}
 	}
 	return fmt.Sprintf("0%o", mode), true
+}
+
+// charsetMap reads an nginx charset_map block.
+func (c *converter) charsetMap(d *Directive) {
+	if len(d.Args) != 2 {
+		c.note(d, Unsupported, "needs two charsets")
+		return
+	}
+	m := &model.CharsetMap{From: d.Args[0], To: d.Args[1], Bytes: map[string]string{}}
+	for _, e := range d.Block {
+		if len(e.Args) != 1 {
+			c.note(e, Unsupported, "needs a byte and its value")
+			continue
+		}
+		m.Bytes[strings.ToUpper(e.Name)] = strings.ToUpper(e.Args[0])
+	}
+	c.charsetMaps = append(c.charsetMaps, m)
+	c.note(d, Converted, "")
+}
+
+// charsetFilter is the charset filter of s with the charset_map it needs.
+func (c *converter) charsetFilter(s scope) model.CharsetFilter {
+	f := s.charset
+	if f.Charset == "" {
+		f.Charset = "off"
+	}
+	if f.Source == "" || f.Charset == "off" || strings.EqualFold(f.Source, f.Charset) {
+		return f
+	}
+	for _, m := range c.charsetMaps {
+		if strings.EqualFold(m.From, f.Source) && strings.EqualFold(m.To, f.Charset) || strings.EqualFold(m.From, f.Charset) && strings.EqualFold(m.To, f.Source) {
+			f.Map = m
+		}
+	}
+	return f
 }
 
 // noneEmpty reads nginx's "none" as unset.

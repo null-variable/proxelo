@@ -1,0 +1,12 @@
+directives: [charset, source_charset, charset_types, charset_map]
+requests:
+  - {target: /koi/a.html, headers: {Host: example.com}}
+  - {target: /koi/a.css, headers: {Host: example.com}}
+  - {target: /koi/a.html, headers: {Host: example.com, Range: bytes=0-3}}
+  - {target: /win/a.html, headers: {Host: example.com}}
+  - {target: /u8/a.html, headers: {Host: example.com}}
+  - {target: /plain/a.txt, headers: {Host: example.com}}
+  - {target: /plain/a.json, headers: {Host: example.com}}
+  - {target: /off/a.txt, headers: {Host: example.com}}
+  - {target: /koi/missing, headers: {Host: example.com}}
+  - {method: HEAD, target: /win/a.html, headers: {Host: example.com}}

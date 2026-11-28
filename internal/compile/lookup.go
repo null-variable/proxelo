@@ -2,10 +2,13 @@ package compile
 
 import (
 	"cmp"
+	"encoding/hex"
 	"fmt"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	snapshotv1 "github.com/null-variable/proxelo-api/gen/go/proxelo/snapshot/v1"
 
@@ -172,15 +175,20 @@ func filters(pols []*model.Policy) *snapshotv1.Filters {
 	var ssi *model.SSIFilter
 	var add *model.AdditionFilter
 	var uid *model.UseridFilter
+	var cs *model.CharsetFilter
 	for _, p := range pols {
 		if f := p.Spec.Filters; p.Spec.Type == model.PolicyFilters && f != nil {
 			sub = cmp.Or(f.Sub, sub)
 			ssi = cmp.Or(f.SSI, ssi)
 			add = cmp.Or(f.Addition, add)
 			uid = cmp.Or(f.Userid, uid)
+			cs = cmp.Or(f.Charset, cs)
 		}
 	}
 	out := &snapshotv1.Filters{}
+	if cs != nil && cs.Charset != "off" {
+		out.Charset = charset(cs)
+	}
 	if sub != nil && len(sub.Pairs) > 0 {
 		out.Sub = &snapshotv1.SubFilter{All: sub.All, LastModified: sub.LastModified, Types: lower(sub.Types)}
 		for _, p := range sub.Pairs {
@@ -202,9 +210,68 @@ func filters(pols []*model.Policy) *snapshotv1.Filters {
 	if add != nil && (add.Before != "" || add.After != "") {
 		out.Addition = &snapshotv1.Addition{Before: add.Before, After: add.After, Types: lower(add.Types)}
 	}
-	if out.Sub == nil && out.Ssi == nil && out.Addition == nil && out.Userid == nil {
+	if out.Sub == nil && out.Ssi == nil && out.Addition == nil && out.Userid == nil && out.Charset == nil {
 		return nil
 	}
+	return out
+}
+
+// charsetTypes is nginx's charset_types default.
+var charsetTypes = []string{"text/html", "text/xml", "text/plain", "text/vnd.wap.wml", "application/javascript", "application/rss+xml"}
+
+// charset builds nginx charset: the recode table runs from the source to
+// the charset, whichever way the map was written.
+func charset(c *model.CharsetFilter) *snapshotv1.Charset {
+	out := &snapshotv1.Charset{Charset: c.Charset, Source: c.Source, Override: c.Override, Types: lower(c.Types)}
+	if len(out.Types) == 0 {
+		out.Types = charsetTypes
+	} else if !slices.Contains(out.Types, "*") && !slices.Contains(out.Types, "text/html") {
+		out.Types = append([]string{"text/html"}, out.Types...)
+	}
+	m := c.Map
+	if m == nil || c.Source == "" || strings.EqualFold(c.Source, c.Charset) {
+		return out
+	}
+	forward := strings.EqualFold(m.From, c.Source)
+	pairs := map[byte][]byte{}
+	for k, v := range m.Bytes {
+		b, _ := strconv.ParseUint(k, 16, 8)
+		raw, _ := hex.DecodeString(v)
+		pairs[byte(b)] = raw
+	}
+	if strings.EqualFold(m.To, "utf-8") {
+		codes := make([]uint32, 256)
+		for i := range 128 {
+			codes[i] = uint32(i)
+		}
+		for b, raw := range pairs {
+			r, _ := utf8.DecodeRune(raw)
+			codes[b] = uint32(r)
+		}
+		if forward {
+			out.Recode = &snapshotv1.Charset_ToUtf8{ToUtf8: &snapshotv1.CharsetCodes{CodePoints: codes}}
+		} else {
+			out.Recode = &snapshotv1.Charset_FromUtf8{FromUtf8: &snapshotv1.CharsetCodes{CodePoints: codes}}
+		}
+		return out
+	}
+	// Bytes below 80 stay; the rest become "?" unless mapped, as nginx
+	// fills a table before reading charset_map.
+	table := make([]byte, 256)
+	for i := range table {
+		table[i] = '?'
+		if i < 0x80 {
+			table[i] = byte(i)
+		}
+	}
+	for b, raw := range pairs {
+		if forward {
+			table[b] = raw[0]
+		} else {
+			table[raw[0]] = b
+		}
+	}
+	out.Recode = &snapshotv1.Charset_Table{Table: table}
 	return out
 }
 

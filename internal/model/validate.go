@@ -1,6 +1,7 @@
 package model
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -15,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // FieldError points at the field that is invalid, for example
@@ -517,8 +519,11 @@ func (s *PolicySpec) validate(es *FieldErrors) {
 }
 
 func (f *FiltersPolicy) validate(es *FieldErrors) {
-	if f.Sub == nil && f.SSI == nil && f.Addition == nil && f.Userid == nil {
-		es.add("spec.filters", "needs sub, ssi, addition or userid")
+	if f.Sub == nil && f.SSI == nil && f.Addition == nil && f.Userid == nil && f.Charset == nil {
+		es.add("spec.filters", "needs sub, ssi, addition, userid or charset")
+	}
+	if c := f.Charset; c != nil {
+		c.validate(es)
 	}
 	if s := f.Sub; s != nil {
 		checkMediaTypes(es, "spec.filters.sub.types", s.Types)
@@ -568,6 +573,54 @@ func (u *UseridFilter) validate(es *FieldErrors) {
 	}
 	if m := u.Mark; m != "" && (len(m) != 1 || !(m[0] == '=' || m[0] >= '0' && m[0] <= '9' || m[0] >= 'A' && m[0] <= 'Z' || m[0] >= 'a' && m[0] <= 'z')) {
 		es.add("spec.filters.userid.mark", "must be one letter, digit or \"=\"")
+	}
+}
+
+func (c *CharsetFilter) validate(es *FieldErrors) {
+	const p = "spec.filters.charset"
+	for _, f := range []struct{ path, v string }{{p + ".charset", c.Charset}, {p + ".source", c.Source}} {
+		if strings.ContainsFunc(f.v, func(r rune) bool { return r <= ' ' || r >= 0x7f || r == ';' || r == '"' || r == '$' }) {
+			es.add(f.path, "must be a charset name such as \"windows-1251\"")
+		}
+	}
+	if c.Charset == "" {
+		es.add(p+".charset", "is required; \"off\" turns it off")
+	}
+	checkMediaTypes(es, p+".types", c.Types)
+	recode := c.Source != "" && c.Charset != "off" && !strings.EqualFold(c.Source, c.Charset)
+	m := c.Map
+	switch {
+	case m == nil:
+		if recode {
+			es.add(p+".map", "is required to recode from %q to %q", c.Source, c.Charset)
+		}
+		return
+	case !recode:
+		es.add(p+".map", "is only used when source and charset differ")
+	case !(strings.EqualFold(m.From, c.Source) && strings.EqualFold(m.To, c.Charset) ||
+		strings.EqualFold(m.From, c.Charset) && strings.EqualFold(m.To, c.Source)):
+		es.add(p+".map", "must map between %q and %q", c.Source, c.Charset)
+	}
+	if strings.EqualFold(m.From, "utf-8") {
+		es.add(p+".map.from", "must not be utf-8; put utf-8 in to")
+	}
+	utf8To := strings.EqualFold(m.To, "utf-8")
+	for k, v := range m.Bytes {
+		if _, err := strconv.ParseUint(k, 16, 8); err != nil || len(k) != 2 {
+			es.add(p+".map.bytes["+k+"]", "the key must be a byte as two hex digits")
+			continue
+		}
+		raw, err := hex.DecodeString(v)
+		switch {
+		case err != nil || len(raw) == 0:
+			es.add(p+".map.bytes["+k+"]", "must be hex bytes")
+		case !utf8To && len(raw) != 1:
+			es.add(p+".map.bytes["+k+"]", "must be one byte as two hex digits")
+		case utf8To:
+			if r, n := utf8.DecodeRune(raw); r == utf8.RuneError || n != len(raw) || r > 0xffff {
+				es.add(p+".map.bytes["+k+"]", "must be one UTF-8 character up to U+FFFF")
+			}
+		}
 	}
 }
 

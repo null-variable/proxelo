@@ -1,0 +1,36 @@
+{
+  "listeners": [
+    {"id": "lst_main", "name": "main", "spec": {"address": "127.0.0.1:18480", "defaultSite": "site_main"}}
+  ],
+  "sites": [
+    {"id": "site_main", "name": "main", "spec": {"listeners": ["lst_main"],
+      "hostnames": [{"type": "exact", "value": "example.com"}],
+      "routes": ["rt_koi", "rt_win", "rt_u8", "rt_plain", "rt_off", "rt_root"], "policies": ["pol_utf8"]}}
+  ],
+  "routes": [
+    {"id": "rt_koi", "name": "koi", "spec": {"match": {"path": {"type": "prefix", "value": "/koi/"}}, "policies": ["pol_koi"],
+      "action": {"type": "static", "static": {"root": "/srv/www"}}}},
+    {"id": "rt_win", "name": "win", "spec": {"match": {"path": {"type": "prefix", "value": "/win/"}}, "policies": ["pol_win"],
+      "action": {"type": "static", "static": {"root": "/srv/www"}}}},
+    {"id": "rt_u8", "name": "u8", "spec": {"match": {"path": {"type": "prefix", "value": "/u8/"}}, "policies": ["pol_u8"],
+      "action": {"type": "static", "static": {"root": "/srv/www"}}}},
+    {"id": "rt_plain", "name": "plain", "spec": {"match": {"path": {"type": "prefix", "value": "/plain/"}}, "policies": ["pol_json"],
+      "action": {"type": "static", "static": {"root": "/srv/www"}}}},
+    {"id": "rt_off", "name": "off", "spec": {"match": {"path": {"type": "prefix", "value": "/off/"}}, "policies": ["pol_off"],
+      "rewrite": [{"regex": "^/off/(.*)$", "replacement": "/plain/$1", "flag": "break"}],
+      "action": {"type": "static", "static": {"root": "/srv/www"}}}},
+    {"id": "rt_root", "name": "root", "spec": {"match": {"path": {"type": "prefix", "value": "/"}},
+      "action": {"type": "static", "static": {"root": "/srv/www"}}}}
+  ],
+  "policies": [
+    {"id": "pol_utf8", "name": "utf8", "spec": {"type": "filters", "filters": {"charset": {"charset": "utf-8"}}}},
+    {"id": "pol_koi", "name": "koi", "spec": {"type": "filters", "filters": {"charset": {"charset": "windows-1251", "source": "koi8-r",
+      "map": {"from": "koi8-r", "to": "windows-1251", "bytes": {"C1": "E1", "C2": "E2"}}}}}},
+    {"id": "pol_win", "name": "win", "spec": {"type": "filters", "filters": {"charset": {"charset": "utf-8", "source": "windows-1251",
+      "map": {"from": "windows-1251", "to": "utf-8", "bytes": {"C0": "D090", "E0": "D0B0"}}}}}},
+    {"id": "pol_u8", "name": "u8", "spec": {"type": "filters", "filters": {"charset": {"charset": "windows-1251", "source": "utf-8",
+      "map": {"from": "windows-1251", "to": "utf-8", "bytes": {"C0": "D090", "E0": "D0B0"}}}}}},
+    {"id": "pol_json", "name": "json", "spec": {"type": "filters", "filters": {"charset": {"charset": "utf-8", "types": ["application/json"]}}}},
+    {"id": "pol_off", "name": "off", "spec": {"type": "filters", "filters": {"charset": {"charset": "off"}}}}
+  ]
+}

@@ -222,23 +222,29 @@ directives:
   - name: charset
     module: ngx_http_charset_filter_module
     contexts: [http, server, location, location if]
-    status: missing
+    status: implemented
+    field: Policy.spec.filters.charset.charset
+    note: a charset from a variable is not supported
   - name: source_charset
     module: ngx_http_charset_filter_module
     contexts: [http, server, location, location if]
-    status: missing
+    status: implemented
+    field: Policy.spec.filters.charset.source
   - name: override_charset
     module: ngx_http_charset_filter_module
     contexts: [http, server, location, location if]
-    status: missing
+    status: implemented
+    field: Policy.spec.filters.charset.override
   - name: charset_types
     module: ngx_http_charset_filter_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.filters.charset.types
   - name: charset_map
     module: ngx_http_charset_filter_module
     contexts: [http]
-    status: missing
+    status: implemented
+    field: Policy.spec.filters.charset.map
   - name: output_buffers
     module: ngx_http_copy_filter_module
     contexts: [http, server, location]

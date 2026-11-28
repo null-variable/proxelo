@@ -447,6 +447,75 @@
         "status"
       ]
     },
+    "CharsetFilter": {
+      "type": "object",
+      "description": "CharsetFilter is nginx charset, source_charset, override_charset, charset_types and charset_map: the charset added to Content-Type, and responses recoded to it from Source.",
+      "properties": {
+        "charset": {
+          "type": "string",
+          "description": "Added to Content-Type as \"; charset=\". \"off\" turns off a charset filter inherited from further out."
+        },
+        "map": {
+          "$ref": "#/$defs/CharsetMap",
+          "x-nullable": true
+        },
+        "override": {
+          "type": "boolean",
+          "description": "Also recode responses that state a charset (override_charset)."
+        },
+        "source": {
+          "type": "string",
+          "description": "The charset of responses that state none. Recoding to Charset needs a Map between the two."
+        },
+        "types": {
+          "type": "array",
+          "description": "Media types besides text/html, or \"*\" for any. Empty: nginx's charset_types default (text/html, text/xml, text/plain, text/vnd.wap.wml, application/javascript, application/rss+xml).",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "x-order": [
+        "charset",
+        "source",
+        "override",
+        "types",
+        "map"
+      ],
+      "required": [
+        "charset"
+      ]
+    },
+    "CharsetMap": {
+      "type": "object",
+      "description": "CharsetMap is one nginx charset_map: how the bytes of From stand for characters of To, used for recoding either way.",
+      "properties": {
+        "bytes": {
+          "type": "object",
+          "description": "A byte of From as two hex digits to the To byte as two hex digits, or to the UTF-8 bytes in hex when To is \"utf-8\" (\"C0\": \"D18E\"). Unlisted bytes below 80 are themselves; the others become \"?\".",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "from": {
+          "type": "string",
+          "description": "A charset other than UTF-8."
+        },
+        "to": {
+          "type": "string"
+        }
+      },
+      "x-order": [
+        "from",
+        "to",
+        "bytes"
+      ],
+      "required": [
+        "from",
+        "to",
+        "bytes"
+      ]
+    },
     "ClientAuth": {
       "type": "object",
       "description": "ClientAuth asks for a client certificate. A missing (require) or invalid one answers 400; the result is in $ssl_client_verify.",
@@ -731,6 +800,10 @@
           "$ref": "#/$defs/AdditionFilter",
           "x-nullable": true
         },
+        "charset": {
+          "$ref": "#/$defs/CharsetFilter",
+          "x-nullable": true
+        },
         "ssi": {
           "$ref": "#/$defs/SSIFilter",
           "x-nullable": true
@@ -748,7 +821,8 @@
         "sub",
         "ssi",
         "addition",
-        "userid"
+        "userid",
+        "charset"
       ]
     },
     "ForwardAuthPolicy": {

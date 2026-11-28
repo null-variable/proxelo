@@ -384,3 +384,52 @@ http {
 		}
 	}
 }
+
+func TestCharsetFilter(t *testing.T) {
+	cfg, rep := convert(t, Files{"/etc/nginx/nginx.conf": `events {}
+http {
+    charset_map koi8-r windows-1251 {
+        C1 E1;
+        41 61;
+    }
+    charset_map windows-1251 utf-8 {
+        C0 D090;
+        E0 D0B0;
+    }
+    server {
+        listen 80;
+        root /srv;
+        charset utf-8;
+        location /koi/ { charset windows-1251; source_charset koi8-r; charset_types text/css; }
+        location /win/ { source_charset windows-1251; override_charset on; }
+        location /off/ { charset off; }
+        location /html/ { charset_types text/html; }
+    }
+}`})
+	snap, err := compile.Compile(cfg, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	site := snap.GetSites()[0]
+	if c := site.GetFilters().GetCharset(); c.GetCharset() != "utf-8" || c.GetRecode() != nil || len(c.GetTypes()) != 6 {
+		t.Errorf("site: %v", c)
+	}
+	by := map[string]*snapshotv1.Charset{}
+	for _, r := range site.GetRoutes() {
+		by[r.GetPath().GetValue()] = r.GetFilters().GetCharset()
+	}
+	if k := by["/koi/"]; k.GetTable()[0xC1] != 0xE1 || k.GetTable()[0xC2] != '?' || k.GetTable()['A'] != 'a' || k.GetTable()['B'] != 'B' || !slices.Equal(k.GetTypes(), []string{"text/html", "text/css"}) {
+		t.Errorf("koi: %v", k)
+	}
+	if w := by["/win/"]; w.GetToUtf8().GetCodePoints()[0xC0] != 0x410 || w.GetToUtf8().GetCodePoints()[0xE0] != 0x430 || !w.GetOverride() {
+		t.Errorf("win: %v", w)
+	}
+	if by["/off/"] != nil || !slices.Equal(by["/html/"].GetTypes(), []string{"text/html"}) {
+		t.Errorf("off or html: %v %v", by["/off/"], by["/html/"])
+	}
+	for _, e := range rep.Entries {
+		if strings.Contains(e.Directive, "charset") && e.Class != Converted {
+			t.Errorf("%s: %s", e.Directive, e.Class)
+		}
+	}
+}

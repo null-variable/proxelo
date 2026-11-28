@@ -944,3 +944,42 @@ func TestCompileSubAndUserid(t *testing.T) {
 		t.Errorf("empty match: got %v", es)
 	}
 }
+
+func TestValidateCharset(t *testing.T) {
+	m := &model.CharsetMap{From: "koi8-r", To: "utf-8", Bytes: map[string]string{"C1": "D0B0"}}
+	ok := &model.CharsetFilter{Charset: "utf-8", Source: "koi8-r", Map: m}
+	p := &model.Policy{Meta: meta("pol_c", "c"), Spec: model.PolicySpec{Type: model.PolicyFilters, Filters: &model.FiltersPolicy{Charset: ok}}}
+	if es := model.Validate(p); es != nil {
+		t.Fatal(es)
+	}
+	cfg := validConfig()
+	cfg.Policies = []*model.Policy{p}
+	cfg.Sites[0].Spec.Policies = []string{"pol_c"}
+	snap, err := Compile(cfg, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c := snap.GetSites()[0].GetFilters().GetCharset(); c.GetToUtf8().GetCodePoints()[0xC1] != 0x430 || c.GetToUtf8().GetCodePoints()['a'] != 'a' {
+		t.Errorf("charset = %v", c)
+	}
+	// The other way round, the same map recodes from UTF-8.
+	ok.Charset, ok.Source = "koi8-r", "utf-8"
+	snap, _ = Compile(cfg, 1)
+	if c := snap.GetSites()[0].GetFilters().GetCharset(); c.GetFromUtf8().GetCodePoints()[0xC1] != 0x430 {
+		t.Errorf("from utf-8 = %v", c)
+	}
+
+	for path, c := range map[string]model.CharsetFilter{
+		"spec.filters.charset.charset":        {},
+		"spec.filters.charset.source":         {Charset: "utf-8", Source: "a b"},
+		"spec.filters.charset.map":            {Charset: "utf-8", Source: "koi8-r"},
+		"spec.filters.charset.map.from":       {Charset: "koi8-r", Source: "utf-8", Map: &model.CharsetMap{From: "utf-8", To: "koi8-r"}},
+		"spec.filters.charset.map.bytes[C1]":  {Charset: "utf-8", Source: "koi8-r", Map: &model.CharsetMap{From: "koi8-r", To: "utf-8", Bytes: map[string]string{"C1": "FF"}}},
+		"spec.filters.charset.map.bytes[XYZ]": {Charset: "utf-8", Source: "koi8-r", Map: &model.CharsetMap{From: "koi8-r", To: "utf-8", Bytes: map[string]string{"XYZ": "41"}}},
+	} {
+		p := &model.Policy{Meta: meta("pol_x", "x"), Spec: model.PolicySpec{Type: model.PolicyFilters, Filters: &model.FiltersPolicy{Charset: &c}}}
+		if es := model.Validate(p); !slices.ContainsFunc(es, func(e model.FieldError) bool { return e.Path == path }) {
+			t.Errorf("%s: got %v", path, es)
+		}
+	}
+}
