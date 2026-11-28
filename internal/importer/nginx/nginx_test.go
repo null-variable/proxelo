@@ -331,3 +331,56 @@ http {
 		}
 	}
 }
+
+func TestSubAndUseridFilters(t *testing.T) {
+	cfg, rep := convert(t, Files{"/etc/nginx/nginx.conf": `events {}
+http {
+    sub_filter_types text/css;
+    userid on;
+    userid_name vid;
+    userid_expires 365d;
+    userid_flags secure samesite=lax;
+    server {
+        listen 80;
+        root /srv;
+        sub_filter 'http://old' 'https://$host';
+        sub_filter_once off;
+        location /one/ { sub_filter a b; userid_domain none; userid_mark A; }
+        location /plain/ { userid off; }
+        location /forever/ { userid_expires max; userid_service 7; }
+    }
+}`})
+	snap, err := compile.Compile(cfg, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	site := snap.GetSites()[0]
+	f := site.GetFilters()
+	if s := f.GetSub(); len(s.GetPairs()) != 1 || s.GetPairs()[0].GetReplacement() != "https://$host" || !s.GetAll() || !slices.Equal(s.GetTypes(), []string{"text/css"}) {
+		t.Errorf("site sub: %v", s)
+	}
+	if u := f.GetUserid(); u.GetMode() != snapshotv1.Userid_MODE_ON || u.GetName() != "vid" || u.GetExpiresS() != 365*86400 || !u.GetSecure() || u.GetSameSite() != "lax" {
+		t.Errorf("site userid: %v", u)
+	}
+	by := map[string]*snapshotv1.Filters{}
+	for _, r := range site.GetRoutes() {
+		by[r.GetPath().GetValue()] = r.GetFilters()
+	}
+	// sub_filter pairs are an array directive: the location's replace the server's.
+	if p := by["/one/"].GetSub().GetPairs(); len(p) != 1 || p[0].GetMatch() != "a" || by["/one/"].GetUserid().GetMark() != "A" {
+		t.Errorf("one: %v", by["/one/"])
+	}
+	if by["/plain/"].GetUserid() != nil || by["/plain/"].GetSub() == nil {
+		t.Errorf("plain: %v", by["/plain/"])
+	}
+	if u := by["/forever/"].GetUserid(); !u.GetExpiresMax() || u.GetService() != 7 || u.GetName() != "vid" {
+		t.Errorf("forever: %v", u)
+	}
+	for _, e := range rep.Entries {
+		if strings.HasPrefix(e.Directive, "sub_filter") || strings.HasPrefix(e.Directive, "userid") {
+			if e.Class != Converted {
+				t.Errorf("%s: %s", e.Directive, e.Class)
+			}
+		}
+	}
+}

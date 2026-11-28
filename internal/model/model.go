@@ -1045,8 +1045,70 @@ type CompressionPolicy struct {
 // FiltersPolicy holds response body filters. Each filter is taken from the
 // closest policy that sets it, as nginx merges each module on its own.
 type FiltersPolicy struct {
+	Sub      *SubFilter      `json:"sub,omitempty"`
 	SSI      *SSIFilter      `json:"ssi,omitempty"`
 	Addition *AdditionFilter `json:"addition,omitempty"`
+	Userid   *UseridFilter   `json:"userid,omitempty"`
+}
+
+// SubFilter is nginx sub_filter with sub_filter_once, sub_filter_types and
+// sub_filter_last_modified: text replaced in responses, matched without
+// regard to case. No pairs turns off a sub filter inherited from further
+// out.
+type SubFilter struct {
+	Pairs []SubPair `json:"pairs,omitempty"`
+	// Replace every occurrence, not only the first (sub_filter_once off).
+	All bool `json:"all,omitempty"`
+	// Media types besides text/html, or "*" for any.
+	Types []string `json:"types,omitempty"`
+	// Keep Last-Modified and send ETag weak.
+	LastModified bool `json:"lastModified,omitempty"`
+}
+
+// SubPair is one sub_filter: both are templates with variables such as
+// $host; a match empty once expanded is skipped.
+type SubPair struct {
+	Match       string `json:"match"`
+	Replacement string `json:"replacement"`
+}
+
+type UseridMode string
+
+const (
+	// Only read the cookie into $uid_got (userid log).
+	UseridLog UseridMode = "log"
+	// Set version 1 cookies (userid v1).
+	UseridV1 UseridMode = "v1"
+	// Set version 2 cookies (userid on).
+	UseridOn UseridMode = "on"
+	// Turn off a userid filter inherited from further out (userid off).
+	UseridOff UseridMode = "off"
+)
+
+// UseridFilter is nginx userid with its userid_* settings: a visitor
+// cookie and the $uid_got and $uid_set variables.
+type UseridFilter struct {
+	Mode UseridMode `json:"mode"`
+	// Cookie name. Empty: "uid".
+	Name string `json:"name,omitempty"`
+	// Empty: no Domain attribute.
+	Domain string `json:"domain,omitempty"`
+	// Empty: "/".
+	Path string `json:"path,omitempty"`
+	// Cookie lifetime such as "365d" in seconds, or "max" for 2037.
+	// Empty: a session cookie.
+	Expires  string `json:"expires,omitempty"`
+	Secure   bool   `json:"secure,omitempty"`
+	HTTPOnly bool   `json:"httpOnly,omitempty"`
+	// "strict", "lax" or "none".
+	SameSite string `json:"sameSite,omitempty"`
+	// Sent as a P3P header.
+	P3P string `json:"p3p,omitempty"`
+	// First word of new identifiers (userid_service). Nil: the server's
+	// IPv4 address for version 2, 0 for version 1.
+	Service *uint32 `json:"service,omitempty"`
+	// A letter, digit or "=" written into cookies (userid_mark).
+	Mark string `json:"mark,omitempty"`
 }
 
 // SSIFilter is nginx ssi with ssi_silent_errors, ssi_types,

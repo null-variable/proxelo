@@ -1,0 +1,38 @@
+{
+  "listeners": [
+    {"id": "lst_main", "name": "main", "spec": {"address": "127.0.0.1:18480", "defaultSite": "site_main"}}
+  ],
+  "sites": [
+    {"id": "site_main", "name": "main", "spec": {"listeners": ["lst_main"],
+      "hostnames": [{"type": "exact", "value": "example.com"}],
+      "routes": ["rt_sub", "rt_once", "rt_all", "rt_uid", "rt_got", "rt_got1", "rt_root"]}}
+  ],
+  "routes": [
+    {"id": "rt_sub", "name": "sub", "spec": {"match": {"path": {"type": "prefix", "value": "/sub/"}}, "policies": ["pol_sub"],
+      "action": {"type": "static", "static": {"root": "/srv/www"}}}},
+    {"id": "rt_once", "name": "once", "spec": {"match": {"path": {"type": "prefix", "value": "/once/"}}, "policies": ["pol_once"],
+      "rewrite": [{"regex": "^/once/(.*)$", "replacement": "/sub/$1", "flag": "break"}],
+      "action": {"type": "static", "static": {"root": "/srv/www"}}}},
+    {"id": "rt_all", "name": "all", "spec": {"match": {"path": {"type": "prefix", "value": "/all/"}}, "policies": ["pol_all"],
+      "rewrite": [{"regex": "^/all/(.*)$", "replacement": "/sub/$1", "flag": "break"}],
+      "action": {"type": "static", "static": {"root": "/srv/www"}}}},
+    {"id": "rt_uid", "name": "uid", "spec": {"match": {"path": {"type": "prefix", "value": "/uid/"}}, "policies": ["pol_uid"],
+      "action": {"type": "static", "static": {"root": "/srv/www"}}}},
+    {"id": "rt_got", "name": "got", "spec": {"match": {"path": {"type": "prefix", "value": "/got"}}, "policies": ["pol_got"],
+      "action": {"type": "return", "return": {"status": 200, "text": "got=$uid_got set=$uid_set\n"}}}},
+    {"id": "rt_got1", "name": "got1", "spec": {"match": {"path": {"type": "prefix", "value": "/got1"}}, "policies": ["pol_got1"],
+      "action": {"type": "return", "return": {"status": 200, "text": "got=$uid_got set=$uid_set\n"}}}},
+    {"id": "rt_root", "name": "root", "spec": {"match": {"path": {"type": "prefix", "value": "/"}},
+      "action": {"type": "static", "static": {"root": "/srv/www"}}}}
+  ],
+  "policies": [
+    {"id": "pol_sub", "name": "sub", "spec": {"type": "filters", "filters": {"sub": {
+      "pairs": [{"match": "http://old.example", "replacement": "https://$host"}, {"match": "old", "replacement": "new"}], "types": ["text/css"]}}}},
+    {"id": "pol_once", "name": "once", "spec": {"type": "filters", "filters": {"sub": {"pairs": [{"match": "old", "replacement": "new"}]}}}},
+    {"id": "pol_all", "name": "all", "spec": {"type": "filters", "filters": {"sub": {
+      "pairs": [{"match": "old", "replacement": "new"}], "all": true, "lastModified": true}}}},
+    {"id": "pol_uid", "name": "uid", "spec": {"type": "filters", "filters": {"userid": {"mode": "on", "name": "vid", "p3p": "CP=\"NOI\""}}}},
+    {"id": "pol_got", "name": "got", "spec": {"type": "filters", "filters": {"userid": {"mode": "log", "name": "vid"}}}},
+    {"id": "pol_got1", "name": "got1", "spec": {"type": "filters", "filters": {"userid": {"mode": "v1", "name": "vid"}}}}
+  ]
+}

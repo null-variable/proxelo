@@ -517,8 +517,22 @@ func (s *PolicySpec) validate(es *FieldErrors) {
 }
 
 func (f *FiltersPolicy) validate(es *FieldErrors) {
-	if f.SSI == nil && f.Addition == nil {
-		es.add("spec.filters", "needs ssi or addition")
+	if f.Sub == nil && f.SSI == nil && f.Addition == nil && f.Userid == nil {
+		es.add("spec.filters", "needs sub, ssi, addition or userid")
+	}
+	if s := f.Sub; s != nil {
+		checkMediaTypes(es, "spec.filters.sub.types", s.Types)
+		if len(s.Pairs) > 255 {
+			es.add("spec.filters.sub.pairs", "at most 255 pairs")
+		}
+		for i, p := range s.Pairs {
+			if p.Match == "" {
+				es.add(fmt.Sprintf("spec.filters.sub.pairs[%d].match", i), "must not be empty")
+			}
+		}
+	}
+	if u := f.Userid; u != nil {
+		u.validate(es)
 	}
 	if s := f.SSI; s != nil {
 		checkMediaTypes(es, "spec.filters.ssi.types", s.Types)
@@ -527,6 +541,33 @@ func (f *FiltersPolicy) validate(es *FieldErrors) {
 		checkMediaTypes(es, "spec.filters.addition.types", a.Types)
 		checkPath(es, "spec.filters.addition.before", a.Before)
 		checkPath(es, "spec.filters.addition.after", a.After)
+	}
+}
+
+func (u *UseridFilter) validate(es *FieldErrors) {
+	switch u.Mode {
+	case UseridLog, UseridV1, UseridOn, UseridOff:
+	default:
+		es.add("spec.filters.userid.mode", "must be log, v1, on or off")
+	}
+	for _, f := range []struct{ path, v string }{
+		{"spec.filters.userid.name", u.Name}, {"spec.filters.userid.domain", u.Domain},
+		{"spec.filters.userid.path", u.Path}, {"spec.filters.userid.p3p", u.P3P},
+	} {
+		if strings.ContainsFunc(f.v, func(r rune) bool { return r < ' ' || r == 0x7f || r == ';' }) {
+			es.add(f.path, "must not have control characters or \";\"")
+		}
+	}
+	if u.Expires != "max" {
+		checkSeconds(es, "spec.filters.userid.expires", u.Expires)
+	}
+	switch u.SameSite {
+	case "", "strict", "lax", "none":
+	default:
+		es.add("spec.filters.userid.sameSite", "must be strict, lax or none")
+	}
+	if m := u.Mark; m != "" && (len(m) != 1 || !(m[0] == '=' || m[0] >= '0' && m[0] <= '9' || m[0] >= 'A' && m[0] <= 'Z' || m[0] >= 'a' && m[0] <= 'z')) {
+		es.add("spec.filters.userid.mark", "must be one letter, digit or \"=\"")
 	}
 }
 

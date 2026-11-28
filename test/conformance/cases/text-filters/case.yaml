@@ -1,0 +1,18 @@
+directives: [sub_filter, sub_filter_types, sub_filter_once, sub_filter_last_modified, userid, userid_name, userid_p3p]
+# A new visitor cookie is random on both sides; requests that get one
+# leave Set-Cookie out, the others compare it.
+requests:
+  - {target: /sub/page.html, headers: {Host: example.com}}
+  - {target: /sub/s.css, headers: {Host: example.com}}
+  - {target: /sub/t.txt, headers: {Host: example.com}}
+  - {target: /sub/page.html, headers: {Host: example.com, Range: bytes=0-4}}
+  - {method: HEAD, target: /sub/page.html, headers: {Host: example.com}}
+  - {target: /sub/missing, headers: {Host: example.com}}
+  - {target: /once/page.html, headers: {Host: example.com}}
+  - {target: /all/page.html, headers: {Host: example.com}}
+  - {target: /all/s.css, headers: {Host: example.com}}
+  - {target: /uid/a.html, headers: {Host: example.com, Cookie: vid=fwAAAWZJVhIAAAAAAwMDAg==}}
+  - {target: /got, headers: {Host: example.com}}
+  - {target: /got, headers: {Host: example.com, Cookie: vid=fwAAAWZJVhIAAAAAAwMDAg==}}
+  - {target: /got, headers: {Host: example.com, Cookie: "a=1; vid=bad"}}
+  - {target: /got1, headers: {Host: example.com, Cookie: vid=fwAAAWZJVhIAAAAAAwMDAg==}}

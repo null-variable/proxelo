@@ -901,3 +901,46 @@ func TestCompileFiltersMirrorInternal(t *testing.T) {
 		}
 	}
 }
+
+func TestCompileSubAndUserid(t *testing.T) {
+	cfg := validConfig()
+	svc := uint32(9)
+	cfg.Policies = []*model.Policy{{Meta: meta("pol_f", "f"), Spec: model.PolicySpec{Type: model.PolicyFilters, Filters: &model.FiltersPolicy{
+		Sub:    &model.SubFilter{Pairs: []model.SubPair{{Match: "a", Replacement: "$host"}}, Types: []string{"*"}},
+		Userid: &model.UseridFilter{Mode: model.UseridV1, Expires: "1h", HTTPOnly: true, Service: &svc, Mark: "="},
+	}}}}
+	if es := model.Validate(cfg.Policies[0]); es != nil {
+		t.Fatal(es)
+	}
+	cfg.Sites[0].Spec.Policies = []string{"pol_f"}
+	snap, err := Compile(cfg, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := snap.GetSites()[0].GetRoutes()[0].GetFilters()
+	if s := f.GetSub(); s.GetPairs()[0].GetReplacement() != "$host" || s.GetTypes()[0] != "*" {
+		t.Errorf("sub = %v", s)
+	}
+	if u := f.GetUserid(); u.GetMode() != snapshotv1.Userid_MODE_V1 || u.GetExpiresS() != 3600 || !u.GetHttpOnly() || u.GetService() != 9 || u.GetMark() != "=" {
+		t.Errorf("userid = %v", u)
+	}
+
+	for path, uf := range map[string]model.UseridFilter{
+		"spec.filters.userid.mode":     {},
+		"spec.filters.userid.name":     {Mode: model.UseridOn, Name: "a;b"},
+		"spec.filters.userid.expires":  {Mode: model.UseridOn, Expires: "forever"},
+		"spec.filters.userid.sameSite": {Mode: model.UseridOn, SameSite: "loose"},
+		"spec.filters.userid.mark":     {Mode: model.UseridOn, Mark: "ab"},
+	} {
+		p := &model.Policy{Meta: meta("pol_x", "x"), Spec: model.PolicySpec{Type: model.PolicyFilters, Filters: &model.FiltersPolicy{Userid: &uf}}}
+		if es := model.Validate(p); !slices.ContainsFunc(es, func(e model.FieldError) bool { return e.Path == path }) {
+			t.Errorf("%s: got %v", path, es)
+		}
+	}
+	p := &model.Policy{Meta: meta("pol_x", "x"), Spec: model.PolicySpec{Type: model.PolicyFilters, Filters: &model.FiltersPolicy{
+		Sub: &model.SubFilter{Pairs: []model.SubPair{{Replacement: "x"}}},
+	}}}
+	if es := model.Validate(p); !slices.ContainsFunc(es, func(e model.FieldError) bool { return e.Path == "spec.filters.sub.pairs[0].match" }) {
+		t.Errorf("empty match: got %v", es)
+	}
+}

@@ -134,7 +134,18 @@ func (c *converter) scopePolicies(s, parent scope) []string {
 // addition filter set (or turned off) here.
 func filtersPolicy(s, parent scope) (*model.FiltersPolicy, bool) {
 	f := &model.FiltersPolicy{}
-	if s.ssiOn != parent.ssiOn || s.ssiOn && fmt.Sprint(s.ssi) != fmt.Sprint(parent.ssi) {
+	if !same(s.sub, parent.sub) && (len(s.sub.Pairs) > 0 || len(parent.sub.Pairs) > 0) {
+		sub := s.sub
+		f.Sub = &sub
+	}
+	if !same(s.userid, parent.userid) && (s.userid.Mode != "" || parent.userid.Mode != "") {
+		u := s.userid
+		if u.Mode == "" {
+			u.Mode = model.UseridOff
+		}
+		f.Userid = &u
+	}
+	if s.ssiOn != parent.ssiOn || s.ssiOn && !same(s.ssi, parent.ssi) {
 		ssi := s.ssi
 		if !s.ssiOn {
 			off := false
@@ -142,11 +153,18 @@ func filtersPolicy(s, parent scope) (*model.FiltersPolicy, bool) {
 		}
 		f.SSI = &ssi
 	}
-	if fmt.Sprint(s.addition) != fmt.Sprint(parent.addition) {
+	if !same(s.addition, parent.addition) {
 		a := s.addition
 		f.Addition = &a
 	}
-	return f, f.SSI != nil || f.Addition != nil
+	return f, f.Sub != nil || f.SSI != nil || f.Addition != nil || f.Userid != nil
+}
+
+// same reports whether two settings read the same, pointers by value.
+func same(a, b any) bool {
+	x, _ := json.Marshal(a)
+	y, _ := json.Marshal(b)
+	return string(x) == string(y)
 }
 
 // oidcProvider reads an nginx Plus oidc_provider block.

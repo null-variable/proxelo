@@ -2131,19 +2131,23 @@ directives:
   - name: sub_filter
     module: ngx_http_sub_filter_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.filters.sub.pairs
   - name: sub_filter_types
     module: ngx_http_sub_filter_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.filters.sub.types
   - name: sub_filter_once
     module: ngx_http_sub_filter_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.filters.sub.all
   - name: sub_filter_last_modified
     module: ngx_http_sub_filter_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.filters.sub.lastModified
   - name: try_files
     module: ngx_http_try_files_module
     contexts: [server, location]
@@ -2283,39 +2287,49 @@ directives:
   - name: userid
     module: ngx_http_userid_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.filters.userid.mode
   - name: userid_service
     module: ngx_http_userid_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.filters.userid.service
   - name: userid_name
     module: ngx_http_userid_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.filters.userid.name
   - name: userid_domain
     module: ngx_http_userid_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.filters.userid.domain
   - name: userid_path
     module: ngx_http_userid_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.filters.userid.path
   - name: userid_expires
     module: ngx_http_userid_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.filters.userid.expires
   - name: userid_flags
     module: ngx_http_userid_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.filters.userid
+    note: secure, httpOnly and sameSite
   - name: userid_p3p
     module: ngx_http_userid_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.filters.userid.p3p
   - name: userid_mark
     module: ngx_http_userid_module
     contexts: [http, server, location]
-    status: missing
+    status: implemented
+    field: Policy.spec.filters.userid.mark
   - name: uwsgi_pass
     module: ngx_http_uwsgi_module
     contexts: [location, location if]

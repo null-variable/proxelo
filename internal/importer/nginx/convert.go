@@ -187,6 +187,8 @@ type scope struct {
 	// and addition_types; mirror (nil: off) and mirror_request_body off.
 	ssiOn        bool
 	ssi          model.SSIFilter
+	sub          model.SubFilter
+	userid       model.UseridFilter
 	addition     model.AdditionFilter
 	mirror       []string
 	mirrorNoBody bool
@@ -259,6 +261,12 @@ func (s scope) clone() scope {
 	}
 	out.jwt.Audiences = slices.Clone(s.jwt.Audiences)
 	out.ssi.Types = slices.Clone(s.ssi.Types)
+	out.sub.Types = slices.Clone(s.sub.Types)
+	out.sub.Pairs = slices.Clone(s.sub.Pairs)
+	if v := s.userid.Service; v != nil {
+		n := *v
+		out.userid.Service = &n
+	}
 	out.addition.Types = slices.Clone(s.addition.Types)
 	out.mirror = slices.Clone(s.mirror)
 	return out
@@ -357,6 +365,54 @@ func (c *converter) common(d *Directive, s *scope) bool {
 	case "ssi_min_file_chunk", "ssi_ignore_recycled_buffers":
 		c.note(d, Replaced, "buffers are handled by the proxy")
 		return true
+	case "sub_filter":
+		s.sub.Pairs = append(slices.Clip(fresh(s, "sub_filter", s.sub.Pairs)), model.SubPair{Match: arg(0), Replacement: arg(1)})
+	case "sub_filter_once":
+		s.sub.All = arg(0) == "off"
+	case "sub_filter_types":
+		s.sub.Types = mediaTypes(a)
+	case "sub_filter_last_modified":
+		s.sub.LastModified = arg(0) == "on"
+	case "userid":
+		s.userid.Mode = model.UseridMode(arg(0))
+	case "userid_name":
+		s.userid.Name = arg(0)
+	case "userid_domain":
+		s.userid.Domain = noneEmpty(arg(0))
+	case "userid_path":
+		s.userid.Path = arg(0)
+	case "userid_p3p":
+		s.userid.P3P = noneEmpty(arg(0))
+	case "userid_expires":
+		switch arg(0) {
+		case "off":
+			s.userid.Expires = ""
+		case "max":
+			s.userid.Expires = "max"
+		default:
+			s.userid.Expires = duration(arg(0))
+		}
+	case "userid_service":
+		n := atou(arg(0))
+		s.userid.Service = &n
+	case "userid_mark":
+		s.userid.Mark = arg(0)
+		if s.userid.Mark == "off" {
+			s.userid.Mark = ""
+		}
+	case "userid_flags":
+		u := &s.userid
+		u.Secure, u.HTTPOnly, u.SameSite = false, false, ""
+		for _, f := range a {
+			switch {
+			case f == "secure":
+				u.Secure = true
+			case f == "httponly":
+				u.HTTPOnly = true
+			case strings.HasPrefix(f, "samesite="):
+				u.SameSite = f[len("samesite="):]
+			}
+		}
 	case "add_before_body":
 		s.addition.Before = arg(0)
 	case "add_after_body":
@@ -733,6 +789,14 @@ func davAccess(a []string) (string, bool) {
 		}
 	}
 	return fmt.Sprintf("0%o", mode), true
+}
+
+// noneEmpty reads nginx's "none" as unset.
+func noneEmpty(v string) string {
+	if v == "none" {
+		return ""
+	}
+	return v
 }
 
 // mediaTypes reads a *_types list; nginx always adds text/html, so it is

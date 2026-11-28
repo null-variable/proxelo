@@ -1,6 +1,7 @@
 package compile
 
 import (
+	"cmp"
 	"fmt"
 	"regexp"
 	"slices"
@@ -167,26 +168,41 @@ var proxiedFlags = map[string]snapshotv1.Compression_Proxied{
 // filters returns the response filters as the proxy takes them, each from
 // the closest policy that sets it; one turned off there is left out.
 func filters(pols []*model.Policy) *snapshotv1.Filters {
+	var sub *model.SubFilter
 	var ssi *model.SSIFilter
 	var add *model.AdditionFilter
+	var uid *model.UseridFilter
 	for _, p := range pols {
 		if f := p.Spec.Filters; p.Spec.Type == model.PolicyFilters && f != nil {
-			if f.SSI != nil {
-				ssi = f.SSI
-			}
-			if f.Addition != nil {
-				add = f.Addition
-			}
+			sub = cmp.Or(f.Sub, sub)
+			ssi = cmp.Or(f.SSI, ssi)
+			add = cmp.Or(f.Addition, add)
+			uid = cmp.Or(f.Userid, uid)
 		}
 	}
 	out := &snapshotv1.Filters{}
+	if sub != nil && len(sub.Pairs) > 0 {
+		out.Sub = &snapshotv1.SubFilter{All: sub.All, LastModified: sub.LastModified, Types: lower(sub.Types)}
+		for _, p := range sub.Pairs {
+			out.Sub.Pairs = append(out.Sub.Pairs, &snapshotv1.SubPair{Match: p.Match, Replacement: p.Replacement})
+		}
+	}
+	if uid != nil && uid.Mode != model.UseridOff {
+		out.Userid = &snapshotv1.Userid{
+			Mode: map[model.UseridMode]snapshotv1.Userid_Mode{
+				model.UseridLog: snapshotv1.Userid_MODE_LOG, model.UseridV1: snapshotv1.Userid_MODE_V1, model.UseridOn: snapshotv1.Userid_MODE_ON,
+			}[uid.Mode],
+			Name: uid.Name, Domain: uid.Domain, Path: uid.Path, ExpiresMax: uid.Expires == "max", ExpiresS: seconds(uid.Expires),
+			Secure: uid.Secure, HttpOnly: uid.HTTPOnly, SameSite: uid.SameSite, P3P: uid.P3P, Service: uid.Service, Mark: uid.Mark,
+		}
+	}
 	if ssi != nil && (ssi.Enabled == nil || *ssi.Enabled) {
 		out.Ssi = &snapshotv1.Ssi{SilentErrors: ssi.SilentErrors, Types: lower(ssi.Types), LastModified: ssi.LastModified, ValueLength: ssi.ValueLength}
 	}
 	if add != nil && (add.Before != "" || add.After != "") {
 		out.Addition = &snapshotv1.Addition{Before: add.Before, After: add.After, Types: lower(add.Types)}
 	}
-	if out.Ssi == nil && out.Addition == nil {
+	if out.Sub == nil && out.Ssi == nil && out.Addition == nil && out.Userid == nil {
 		return nil
 	}
 	return out
